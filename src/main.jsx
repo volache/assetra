@@ -79,22 +79,49 @@ function App() {
   const [store, setStore] = useState(loadStore);
   const [session, setSession] = useState(null);
   const [page, setPage] = useState('home');
+  const [isLoadingSession, setIsLoadingSession] = useState(false);
+  const [isEnteringPortal, setIsEnteringPortal] = useState(false);
+  const [isLeavingPortal, setIsLeavingPortal] = useState(false);
   useEffect(() => saveStore(store), [store]);
-  if (!session) return <Login users={store.users} onLogin={setSession} />;
-  return <Portal store={store} setStore={setStore} user={session} page={page} setPage={setPage} onLogout={() => setSession(null)} />;
+  function startSession(user) {
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion) return setSession(user);
+    setIsLoadingSession(true);
+    window.setTimeout(() => {
+      setSession(user);
+      setIsLoadingSession(false);
+      setIsEnteringPortal(true);
+      window.setTimeout(() => setIsEnteringPortal(false), 560);
+    }, 1180);
+  }
+  function endSession() {
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion) { setPage('home'); return setSession(null); }
+    setIsLeavingPortal(true);
+    window.setTimeout(() => {
+      setPage('home');
+      setSession(null);
+      setIsLeavingPortal(false);
+    }, 420);
+  }
+  if (!session) return <Login isLoading={isLoadingSession} users={store.users} onLogin={startSession} />;
+  return <Portal entering={isEnteringPortal} leaving={isLeavingPortal} store={store} setStore={setStore} user={session} page={page} setPage={setPage} onLogout={endSession} />;
 }
 
-function Login({ users, onLogin }) {
+function Login({ isLoading, users, onLogin }) {
   const [email, setEmail] = useState('admin@example.local'); const [password, setPassword] = useState('Admin@1234'); const [error, setError] = useState('');
-  function submit(e) { e.preventDefault(); const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password); if (user) onLogin(user); else setError('帳號或密碼不正確，請重新輸入。'); }
-  return <main className="login-shell"><section className="login-intro"><p className="eyebrow">INTERNAL ASSET LEDGER</p><h1>讓每件財物<br />都有清楚去向。</h1><p>管理者匯入清冊。保管人登入後，只會看到自己負責的資料。</p><div className="intro-mark" aria-hidden="true"><span /><span /><span /></div></section><section className="login-panel"><div><p className="eyebrow">登入系統</p><h2>財物清冊</h2><p className="muted">此為本機原型。管理者可先使用預設帳號登入。</p></div><form onSubmit={submit}><label>帳號<input value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="username" /></label><label>密碼<input value={password} onChange={(e) => setPassword(e.target.value)} type="password" autoComplete="current-password" /></label>{error && <p className="form-error" role="alert">{error}</p>}<button className="button button-primary" type="submit">登入</button></form><div className="credential-note"><strong>管理者示範帳號</strong><span>admin@example.local ／ Admin@1234</span></div></section></main>;
+  function submit(e) { e.preventDefault(); if (isLoading) return; const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password); if (user) onLogin(user); else setError('帳號或密碼不正確，請重新輸入。'); }
+  return <main className={`login-shell ${isLoading ? 'is-loading' : ''}`}><section className="login-intro"><p className="eyebrow">INTERNAL ASSET LEDGER</p><h1>讓每件財物<br />都有清楚去向。</h1><p>管理者匯入清冊。保管人登入後，只會看到自己負責的資料。</p><div className="intro-mark" aria-hidden="true"><span /><span /><span /></div></section><section className="login-panel"><div><p className="eyebrow">登入系統</p><h2>財物清冊</h2><p className="muted">此為本機原型。管理者可先使用預設帳號登入。</p></div><form onSubmit={submit}><label>帳號<input value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="username" /></label><label>密碼<input value={password} onChange={(e) => setPassword(e.target.value)} type="password" autoComplete="current-password" /></label>{error && <p className="form-error" role="alert">{error}</p>}<button className="button button-primary" disabled={isLoading} type="submit">登入</button></form><div className="credential-note"><strong>管理者示範帳號</strong><span>admin@example.local ／ Admin@1234</span></div></section><div className="session-loader" aria-live="polite" aria-label="正在載入系統工作區"><div className="session-loader-pills" aria-hidden="true"><span /><span /><span /></div><strong>正在載入工作區</strong><small>準備財物清冊資料</small></div></main>;
 }
 
-function Portal({ store, setStore, user, page, setPage, onLogout }) {
+function Portal({ entering, leaving, store, setStore, user, page, setPage, onLogout }) {
   const canAdmin = user.roles.includes('admin'); const canChief = user.roles.includes('chief');
   const visible = useMemo(() => allowedAssets(store.assets, user), [store.assets, user]);
+  const previousPage = useRef(page);
+  const isPageSwitch = previousPage.current !== page;
+  useEffect(() => { previousPage.current = page; }, [page]);
   const navigation = [{ id: 'home', label: '總覽' }, { id: 'query', label: '財物查詢' }, ...(canAdmin ? [{ id: 'import', label: '匯入清冊' }, { id: 'accounts', label: '帳號與權限' }] : []), { id: 'password', label: '修改密碼' }];
-  return <div className="app-shell"><aside className="side-nav"><div className="brand"><span className="brand-dot" />財物清冊</div><nav aria-label="主要功能">{navigation.map((item) => <button key={item.id} className={page === item.id ? 'nav-item active' : 'nav-item'} onClick={() => setPage(item.id)}>{item.label}</button>)}</nav><div className="side-user"><span>{user.name}</span><small>{user.roles.map((role) => roleLabels[role]).join('、')}</small><button className="text-button" onClick={onLogout}>登出</button></div></aside><main className="main-area"><header className="mobile-header"><div className="brand"><span className="brand-dot" />財物清冊</div><button className="text-button" onClick={onLogout}>登出</button></header>{page === 'home' && <Home visible={visible} user={user} imports={store.imports} setPage={setPage} canAdmin={canAdmin} canChief={canChief} />}{page === 'query' && <Query assets={visible} imports={store.imports} />}{page === 'import' && canAdmin && <Import store={store} setStore={setStore} />}{page === 'accounts' && canAdmin && <Accounts store={store} setStore={setStore} />}{page === 'password' && <Password user={user} setStore={setStore} />}</main></div>;
+  return <div className={`app-shell ${entering ? 'is-entering' : ''} ${leaving ? 'is-leaving' : ''}`}><aside className="side-nav"><div className="brand"><span className="brand-dot" />財物清冊</div><nav aria-label="主要功能">{navigation.map((item) => <button key={item.id} className={page === item.id ? 'nav-item active' : 'nav-item'} onClick={() => setPage(item.id)}>{item.label}</button>)}</nav><div className="side-user"><span>{user.name}</span><small>{user.roles.map((role) => roleLabels[role]).join('、')}</small><button className="text-button" onClick={onLogout}>登出</button></div></aside><main className="main-area"><header className="mobile-header"><div className="brand"><span className="brand-dot" />財物清冊</div><button className="text-button" onClick={onLogout}>登出</button></header><div className={`page-transition ${isPageSwitch ? 'is-switching' : ''}`} key={page}>{page === 'home' && <Home visible={visible} user={user} imports={store.imports} setPage={setPage} canAdmin={canAdmin} canChief={canChief} />}{page === 'query' && <Query assets={visible} imports={store.imports} />}{page === 'import' && canAdmin && <Import store={store} setStore={setStore} />}{page === 'accounts' && canAdmin && <Accounts store={store} setStore={setStore} />}{page === 'password' && <Password user={user} setStore={setStore} />}</div></main></div>;
 }
 
 function Home({ visible, user, imports, setPage, canAdmin, canChief }) {
