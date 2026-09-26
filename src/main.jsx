@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import * as XLSX from 'xlsx';
 import './styles.css';
@@ -12,6 +12,11 @@ const initialUsers = [
 
 const sourceLabels = { asset: '財產清冊', item: '物品清冊' };
 const roleLabels = { custodian: '保管人', chief: '單位主管', admin: '系統管理員' };
+const roleDescriptions = {
+  custodian: '查看已配對保管人代碼的財物。',
+  chief: '查看已指派所屬單位的財物。',
+  admin: '管理全部財物、清冊匯入與使用者。',
+};
 const columns = {
   assetNo: ['財產編號'], serialNo: ['流水號'], name: ['中文名稱'], oldNo: ['OLDNUMBER'],
   acquiredAt: ['購置日期'], unitCode: ['保管單位代碼'], unitName: ['保管單位中文'], useUnitName: ['使用單位中文'],
@@ -22,8 +27,8 @@ const columns = {
 };
 
 function loadStore() {
-  try { return JSON.parse(localStorage.getItem(STORE)) || { users: initialUsers, assets: [], imports: [] }; }
-  catch { return { users: initialUsers, assets: [], imports: [] }; }
+  try { const saved = JSON.parse(localStorage.getItem(STORE)); return saved ? { users: initialUsers, assets: [], imports: [], custodianProfiles: {}, unitProfiles: {}, ...saved, custodianProfiles: saved.custodianProfiles || {}, unitProfiles: saved.unitProfiles || {} } : { users: initialUsers, assets: [], imports: [], custodianProfiles: {}, unitProfiles: {} }; }
+  catch { return { users: initialUsers, assets: [], imports: [], custodianProfiles: {}, unitProfiles: {} }; }
 }
 function saveStore(value) { localStorage.setItem(STORE, JSON.stringify(value)); }
 function valueOf(row, keys) { for (const key of keys) if (row[key] !== undefined && row[key] !== null) return row[key]; return ''; }
@@ -75,6 +80,7 @@ function allowedAssets(assets, user) {
   if (user.roles.includes('admin')) return assets;
   return assets.filter((asset) => (user.roles.includes('custodian') && user.custodianCodes?.includes(asset.custodianCode)) || (user.roles.includes('chief') && user.unitCodes?.includes(asset.unitCode)));
 }
+function accountCodeFor(user) { return String(user.accountCode || user.custodianCodes?.[0] || user.email || '').trim(); }
 function App() {
   const [store, setStore] = useState(loadStore);
   const [session, setSession] = useState(null);
@@ -110,18 +116,18 @@ function App() {
 
 function Login({ isLoading, users, onLogin }) {
   const [email, setEmail] = useState('admin@example.local'); const [password, setPassword] = useState('Admin@1234'); const [error, setError] = useState('');
-  function submit(e) { e.preventDefault(); if (isLoading) return; const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password); if (user) onLogin(user); else setError('帳號或密碼不正確，請重新輸入。'); }
-  return <main className={`login-shell ${isLoading ? 'is-loading' : ''}`}><section className="login-intro"><p className="eyebrow">INTERNAL ASSET LEDGER</p><h1>讓每件財物<br />都有清楚去向。</h1><p>管理者匯入清冊。保管人登入後，只會看到自己負責的資料。</p><div className="intro-mark" aria-hidden="true"><span /><span /><span /></div></section><section className="login-panel"><div><p className="eyebrow">登入系統</p><h2>財物清冊</h2><p className="muted">此為本機原型。管理者可先使用預設帳號登入。</p></div><form onSubmit={submit}><label>帳號<input value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="username" /></label><label>密碼<input value={password} onChange={(e) => setPassword(e.target.value)} type="password" autoComplete="current-password" /></label>{error && <p className="form-error" role="alert">{error}</p>}<button className="button button-primary" disabled={isLoading} type="submit">登入</button></form><div className="credential-note"><strong>管理者示範帳號</strong><span>admin@example.local ／ Admin@1234</span></div></section><div className="session-loader" aria-live="polite" aria-label="正在載入系統工作區"><div className="session-loader-pills" aria-hidden="true"><span /><span /><span /></div><strong>正在載入工作區</strong><small>準備財物清冊資料</small></div></main>;
+  function submit(e) { e.preventDefault(); if (isLoading) return; const user = users.find((u) => (u.email.toLowerCase() === email.toLowerCase() || accountCodeFor(u).toLowerCase() === email.toLowerCase()) && u.password === password && (u.status || 'active') === 'active'); if (user) onLogin(user); else setError('帳號或密碼不正確，或帳號尚未啟用。'); }
+  return <main className={`login-shell ${isLoading ? 'is-loading' : ''}`}><section className="login-intro"><p className="eyebrow">INTERNAL ASSET LEDGER</p><h1>讓每件財物<br />都有清楚去向。</h1><p>管理者匯入清冊。保管人登入後，只會看到自己負責的資料。</p><div className="intro-mark" aria-hidden="true"><span /><span /><span /></div></section><section className="login-panel"><div><p className="eyebrow">登入系統</p><h2>財物清冊</h2><p className="muted">此為本機原型。管理者可先使用預設帳號登入。</p></div><form onSubmit={submit}><label>帳號<input value={email} onChange={(e) => setEmail(e.target.value)} type="text" autoComplete="username" /></label><label>密碼<input value={password} onChange={(e) => setPassword(e.target.value)} type="password" autoComplete="current-password" /></label>{error && <p className="form-error" role="alert">{error}</p>}<button className="button button-primary" disabled={isLoading} type="submit">登入</button></form><div className="credential-note"><strong>管理者示範帳號</strong><span>admin@example.local ／ Admin@1234</span></div></section><div className="session-loader" aria-live="polite" aria-label="正在載入系統工作區"><div className="session-loader-pills" aria-hidden="true"><span /><span /><span /></div><strong>正在載入工作區</strong><small>準備財物清冊資料</small></div></main>;
 }
 
 function Portal({ entering, leaving, store, setStore, user, page, setPage, onLogout }) {
   const canAdmin = user.roles.includes('admin'); const canChief = user.roles.includes('chief');
-  const visible = useMemo(() => allowedAssets(store.assets, user), [store.assets, user]);
+  const visible = useMemo(() => allowedAssets(store.assets, user).map((asset) => ({ ...asset, rawCustodianName: asset.custodianName, custodianName: store.custodianProfiles?.[asset.custodianCode]?.displayName || asset.custodianName })), [store.assets, store.custodianProfiles, user]);
   const previousPage = useRef(page);
   const isPageSwitch = previousPage.current !== page;
   useEffect(() => { previousPage.current = page; }, [page]);
-  const navigation = [{ id: 'home', label: '總覽' }, { id: 'query', label: '財物查詢' }, ...(canAdmin ? [{ id: 'import', label: '匯入清冊' }, { id: 'accounts', label: '帳號與權限' }] : []), { id: 'password', label: '修改密碼' }];
-  return <div className={`app-shell ${entering ? 'is-entering' : ''} ${leaving ? 'is-leaving' : ''}`}><aside className="side-nav"><div className="brand"><span className="brand-dot" />財物清冊</div><nav aria-label="主要功能">{navigation.map((item) => <button key={item.id} className={page === item.id ? 'nav-item active' : 'nav-item'} onClick={() => setPage(item.id)}>{item.label}</button>)}</nav><div className="side-user"><span>{user.name}</span><small>{user.roles.map((role) => roleLabels[role]).join('、')}</small><button className="text-button" onClick={onLogout}>登出</button></div></aside><main className="main-area"><header className="mobile-header"><div className="brand"><span className="brand-dot" />財物清冊</div><button className="text-button" onClick={onLogout}>登出</button></header><div className={`page-transition ${isPageSwitch ? 'is-switching' : ''}`} key={page}>{page === 'home' && <Home visible={visible} user={user} imports={store.imports} setPage={setPage} canAdmin={canAdmin} canChief={canChief} />}{page === 'query' && <Query assets={visible} imports={store.imports} />}{page === 'import' && canAdmin && <Import store={store} setStore={setStore} />}{page === 'accounts' && canAdmin && <Accounts store={store} setStore={setStore} />}{page === 'password' && <Password user={user} setStore={setStore} />}</div></main></div>;
+  const navigation = [{ id: 'home', label: '總覽' }, { id: 'query', label: '財物查詢' }, ...(canAdmin ? [{ id: 'import', label: '匯入清冊' }, { id: 'organization', label: '組織管理' }, { id: 'accounts', label: '使用者管理' }] : []), { id: 'password', label: '修改密碼' }];
+  return <div className={`app-shell ${entering ? 'is-entering' : ''} ${leaving ? 'is-leaving' : ''}`}><aside className="side-nav"><div className="brand"><span className="brand-dot" />財物清冊</div><nav aria-label="主要功能">{navigation.map((item) => <button key={item.id} className={page === item.id ? 'nav-item active' : 'nav-item'} onClick={() => setPage(item.id)}>{item.label}</button>)}</nav><div className="side-user"><span>{user.name}</span><small>{user.roles.map((role) => roleLabels[role]).join('、')}</small><button className="text-button" onClick={onLogout}>登出</button></div></aside><main className="main-area"><header className="mobile-header"><div className="brand"><span className="brand-dot" />財物清冊</div><button className="text-button" onClick={onLogout}>登出</button></header><div className={`page-transition ${isPageSwitch ? 'is-switching' : ''}`} key={page}>{page === 'home' && <Home visible={visible} user={user} imports={store.imports} setPage={setPage} canAdmin={canAdmin} canChief={canChief} />}{page === 'query' && <Query assets={visible} imports={store.imports} />}{page === 'import' && canAdmin && <Import store={store} setStore={setStore} />}{page === 'accounts' && canAdmin && <Accounts store={store} setStore={setStore} />}{page === 'organization' && canAdmin && <Organization store={store} setStore={setStore} />}{page === 'password' && <Password user={user} setStore={setStore} />}</div></main></div>;
 }
 
 function Home({ visible, user, imports, setPage, canAdmin, canChief }) {
@@ -263,11 +269,211 @@ function Import({ store, setStore }) {
   return <section className="page"><div className="page-heading"><div><p className="eyebrow">IMPORT REGISTER</p><h1>匯入清冊</h1><p>上傳一份 Excel，系統會以資料類型、財產編號與流水號更新資料。</p></div></div><form className="import-form" onSubmit={importFile}><fieldset><legend>清冊類型</legend><div className="source-options">{Object.entries(sourceLabels).map(([value, label]) => <label key={value}><input type="radio" checked={sourceType === value} onChange={() => setSourceType(value)} /><span><strong>{label}</strong><small>{value === 'asset' ? '含原值、累折與淨值' : '通常不含折舊資料'}</small></span></label>)}</div></fieldset><label className="file-field">Excel 檔案<input type="file" accept=".xlsx,.xls,.xlsm" onChange={(e) => setFile(e.target.files?.[0] || null)} /><span>{file ? file.name : '選擇 .xlsx、.xls 或 .xlsm 檔案'}</span></label><button className="button button-primary" disabled={busy} type="submit">{busy ? '正在匯入…' : '開始匯入'}</button>{message && <p className={message.startsWith('已完成') ? 'form-success' : 'form-error'} role="status">{message}</p>}</form><section className="import-history"><h2>匯入紀錄</h2>{store.imports.length ? <ul>{store.imports.map((entry, i) => <li key={`${entry.at}-${i}`}><span className={`source-tag ${entry.sourceType}`}>{sourceLabels[entry.sourceType]}</span><strong>{entry.fileName}</strong><span>{entry.count.toLocaleString()} 筆</span><time>{entry.at}</time></li>)}</ul> : <p className="muted">尚無匯入紀錄。</p>}</section></section>;
 }
 
+function UserFilterCombo({ id, label, value, options, open, onChange, onOpenChange }) {
+  const selected = options.find((option) => option.value === value) || options[0];
+  return <label className="filter-field">{label}<span className="filter-combobox"><input aria-controls={`${id}-options`} aria-expanded={open} aria-haspopup="listbox" readOnly placeholder={options[0]?.label} value={value ? selected?.label || '' : ''} onFocus={() => onOpenChange(id)} onKeyDown={(event) => { if (event.key === 'Escape') onOpenChange(null); }} /><button aria-label={`開啟${label}選項`} className={`combo-toggle ${open ? 'open' : ''}`} onMouseDown={(event) => event.preventDefault()} onClick={() => onOpenChange(open ? null : id)} type="button"><span aria-hidden="true" /></button>{open && <span className="combo-menu" id={`${id}-options`} role="listbox">{options.map((option) => <button aria-selected={option.value === value} key={option.value || 'all'} onMouseDown={(event) => event.preventDefault()} onClick={() => { onChange(option.value); onOpenChange(null); }} role="option" type="button">{option.label}</button>)}</span>}</span></label>;
+}
+
+function FormCombo({ id, label, value, options, open, onChange, onOpenChange }) {
+  const selected = options.find((option) => option.value === value) || options[0];
+  const comboRef = useRef(null);
+  useEffect(() => { if (!open) return undefined; const close = (event) => { if (!comboRef.current?.contains(event.target)) onOpenChange(null); }; document.addEventListener('pointerdown', close); return () => document.removeEventListener('pointerdown', close); }, [open, onOpenChange]);
+  return <label className="editor-combo" ref={comboRef}>{label}<span className="filter-combobox"><input aria-controls={`${id}-options`} aria-expanded={open} aria-haspopup="listbox" readOnly value={selected?.label || ''} onFocus={() => onOpenChange(id)} onKeyDown={(event) => { if (event.key === 'Escape') onOpenChange(null); }} /><button aria-label={`開啟${label}選項`} className={`combo-toggle ${open ? 'open' : ''}`} onMouseDown={(event) => event.preventDefault()} onClick={() => onOpenChange(open ? null : id)} type="button"><span aria-hidden="true" /></button>{open && <span className="combo-menu" id={`${id}-options`} role="listbox">{options.map((option) => <button aria-selected={option.value === value} key={option.value || 'empty'} onMouseDown={(event) => event.preventDefault()} onClick={() => { onChange(option.value); onOpenChange(null); }} role="option" type="button">{option.label}</button>)}</span>}</span></label>;
+}
+
+function UnitMasterDialog({ error, profiles, units, onClose, onSave }) {
+  const [selectedCode, setSelectedCode] = useState(units[0]?.code || '');
+  const [draft, setDraft] = useState({ name: '', parentCode: '' });
+  const [openCombo, setOpenCombo] = useState(null);
+  const selected = units.find((unit) => unit.code === selectedCode);
+  useEffect(() => {
+    if (!selected) return;
+    const profile = profiles[selected.code] || {};
+    setDraft({ name: profile.name || selected.rawName, parentCode: profile.parentCode ?? selected.defaultParentCode ?? '' });
+    setOpenCombo(null);
+  }, [selectedCode]);
+  if (!selected) return null;
+  const unitOptions = units.map((unit) => ({ value: unit.code, label: `${unit.code}／${unit.name}` }));
+  const parentOptions = [{ value: '', label: '花蓮航空站' }, ...units.filter((unit) => unit.code !== selected.code).map((unit) => ({ value: unit.code, label: `${unit.code}／${unit.name}` }))];
+  function submit(event) { event.preventDefault(); onSave(selected.code, draft); }
+  return <dialog className="detail-dialog user-editor unit-master-editor" open onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}><div><header><div><p className="eyebrow">UNIT DIRECTORY</p><h2>編輯單位</h2></div><button aria-label="關閉" className="close-button" onClick={onClose} type="button">×</button></header><form className="account-form user-account-form" onSubmit={submit}><div className="user-form-grid user-editor-grid"><FormCombo id="unit-master-unit" label="選擇單位" onChange={setSelectedCode} onOpenChange={setOpenCombo} open={openCombo === 'unit-master-unit'} options={unitOptions} value={selected.code} /><FormCombo id="unit-master-parent" label="上級單位" onChange={(parentCode) => setDraft((current) => ({ ...current, parentCode }))} onOpenChange={setOpenCombo} open={openCombo === 'unit-master-parent'} options={parentOptions} value={draft.parentCode} /><label>單位名稱<input onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} value={draft.name} /></label><label>單位代碼<input readOnly value={selected.code} /></label></div>{error && <p className="form-error" role="alert">{error}</p>}<div className="user-editor-actions"><button className="button button-secondary" onClick={onClose} type="button">取消</button><button className="button button-primary" type="submit">儲存變更</button></div></form></div></dialog>;
+}
+
+function Organization({ store, setStore }) {
+  const [collapsed, setCollapsed] = useState({});
+  const [isMasterOpen, setIsMasterOpen] = useState(false);
+  const [masterError, setMasterError] = useState('');
+  const [isPanning, setIsPanning] = useState(false);
+  const [chartZoom, setChartZoom] = useState(1);
+  const [edgeLayer, setEdgeLayer] = useState({ height: 0, paths: [], width: 0 });
+  const chartRef = useRef(null);
+  const chartSurfaceRef = useRef(null);
+  const cardRefs = useRef(new Map());
+  const spaceHeldRef = useRef(false);
+  const panRef = useRef(null);
+  const profiles = store.unitProfiles || {};
+  const unitSort = (left, right) => left.code.localeCompare(right.code, 'en', { numeric: true, sensitivity: 'base' });
+  const tree = useMemo(() => {
+    const units = [...new Map(store.assets.filter((asset) => asset.unitCode).map((asset) => [asset.unitCode, asset.unitName || asset.unitCode])).entries()]
+      .map(([code, rawName]) => { const profile = profiles[code] || {}; return { code, rawName, name: profile.name || rawName, hasConfiguredParent: Object.prototype.hasOwnProperty.call(profile, 'parentCode'), parentCode: profile.parentCode || '' }; })
+      .sort(unitSort);
+    const aviationUnit = units.find((unit) => unit.rawName.includes('航務組'));
+    units.forEach((unit) => { unit.defaultParentCode = !unit.hasConfiguredParent && unit.rawName.includes('消防班') && aviationUnit ? aviationUnit.code : ''; });
+    const nodes = [{ id: 'root', name: '花蓮航空站', code: 'HUALIEN AIRPORT', parentId: null, virtual: true, children: [] }, ...units.map((unit) => ({ id: `unit:${unit.code}`, ...unit, parentId: null, virtual: false, children: [] }))];
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+    nodes.forEach((node) => { if (!node.id.startsWith('unit:')) return; const parentCode = node.parentCode || node.defaultParentCode; const requestedParent = parentCode ? `unit:${parentCode}` : 'root'; node.parentId = requestedParent !== node.id && byId.has(requestedParent) ? requestedParent : 'root'; });
+    nodes.forEach((node) => { if (node.parentId) byId.get(node.parentId)?.children.push(node); });
+    nodes.forEach((node) => node.children.sort(unitSort));
+    const members = new Map(nodes.map((node) => [node.id, []]));
+    const unassigned = [];
+    store.users.forEach((user) => { const code = user.unitCode || user.unitCodes?.[0]; const bucket = code ? members.get(`unit:${code}`) : null; if (bucket) bucket.push(user); else unassigned.push(user); });
+    const assetCounts = new Map();
+    store.assets.forEach((asset) => asset.unitCode && assetCounts.set(asset.unitCode, (assetCounts.get(asset.unitCode) || 0) + 1));
+    return { root: byId.get('root'), members, unassigned, assetCounts, units };
+  }, [store.assets, store.users, profiles]);
+  const chartLayout = useMemo(() => {
+    if (!tree.root) return null;
+    const nodes = [];
+    const edges = [];
+    let maxDepth = 0;
+    function measure(node, depth) {
+      const children = node.children.length && !collapsed[node.id] ? node.children : [];
+      const metrics = children.map((child) => measure(child, depth + 1));
+      const span = metrics.length ? metrics.reduce((total, child) => total + child.span, 0) : 1;
+      maxDepth = Math.max(maxDepth, depth);
+      return { node, depth, children: metrics, span, start: 1 };
+    }
+    const root = measure(tree.root, 0);
+    let nextColumn = 1;
+    function assign(metric) {
+      metric.start = nextColumn;
+      if (metric.children.length) {
+        metric.children.forEach((child) => { edges.push({ from: metric.node.id, to: child.node.id }); assign(child); });
+      } else nextColumn += 1;
+      nodes.push(metric);
+    }
+    assign(root);
+    const columnWidth = 250 * chartZoom;
+    const gap = 16 * chartZoom;
+    return {
+      edges,
+      nodes,
+      width: root.span * columnWidth + Math.max(root.span - 1, 0) * gap,
+      css: {
+        '--org-level-columns': `repeat(${root.span}, ${columnWidth}px)`,
+        '--org-column-gap': `${gap}px`,
+        '--org-level-count': maxDepth + 1,
+        '--org-row-gap': `${56 * chartZoom}px`,
+        '--org-level-width': `${root.span * columnWidth + Math.max(root.span - 1, 0) * gap}px`,
+        '--org-zoom': chartZoom,
+      },
+    };
+  }, [chartZoom, collapsed, tree.root]);
+  useEffect(() => {
+    function keyDown(event) { if (event.code !== 'Space' || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) return; spaceHeldRef.current = true; event.preventDefault(); }
+    function keyUp(event) { if (event.code === 'Space') spaceHeldRef.current = false; }
+    window.addEventListener('keydown', keyDown); window.addEventListener('keyup', keyUp);
+    return () => { window.removeEventListener('keydown', keyDown); window.removeEventListener('keyup', keyUp); };
+  }, []);
+  useEffect(() => {
+    const canvas = chartRef.current;
+    if (!canvas) return undefined;
+    const frame = requestAnimationFrame(() => { canvas.scrollLeft = Math.max(0, (canvas.scrollWidth - canvas.clientWidth) / 2); });
+    return () => cancelAnimationFrame(frame);
+  }, [chartLayout?.width, chartZoom]);
+  useLayoutEffect(() => {
+    const surface = chartSurfaceRef.current;
+    if (!surface || !chartLayout) return undefined;
+    const redraw = () => {
+      const surfaceRect = surface.getBoundingClientRect();
+      const paths = chartLayout.edges.flatMap(({ from, to }) => {
+        const parent = cardRefs.current.get(from);
+        const child = cardRefs.current.get(to);
+        if (!parent || !child) return [];
+        const parentRect = parent.getBoundingClientRect();
+        const childRect = child.getBoundingClientRect();
+        const x1 = parentRect.left - surfaceRect.left + parentRect.width / 2;
+        const y1 = parentRect.bottom - surfaceRect.top;
+        const x2 = childRect.left - surfaceRect.left + childRect.width / 2;
+        const y2 = childRect.top - surfaceRect.top;
+        const midY = y1 + (y2 - y1) / 2;
+        return [`M ${x1} ${y1} V ${midY} H ${x2} V ${y2}`];
+      });
+      setEdgeLayer({ height: surface.scrollHeight, paths, width: surface.scrollWidth });
+    };
+    const frame = requestAnimationFrame(redraw);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(redraw);
+    observer?.observe(surface);
+    cardRefs.current.forEach((card) => observer?.observe(card));
+    window.addEventListener('resize', redraw);
+    return () => { cancelAnimationFrame(frame); observer?.disconnect(); window.removeEventListener('resize', redraw); };
+  }, [chartLayout]);
+  function saveUnitProfile(code, draft) { const visited = new Set([code]); let parentCode = draft.parentCode; while (parentCode) { if (visited.has(parentCode)) { setMasterError('無法將單位編入自己的下層單位。'); return; } visited.add(parentCode); const parent = tree.units.find((unit) => unit.code === parentCode); parentCode = parent?.parentCode || parent?.defaultParentCode || ''; } setStore((current) => ({ ...current, unitProfiles: { ...(current.unitProfiles || {}), [code]: { name: draft.name.trim(), parentCode: draft.parentCode } } })); setMasterError(''); setIsMasterOpen(false); }
+  function toggle(id) { setCollapsed((current) => ({ ...current, [id]: !current[id] })); }
+  function beginPan(event) { if (!spaceHeldRef.current || event.button !== 0 || !chartRef.current) return; event.preventDefault(); panRef.current = { pointerId: event.pointerId, startX: event.clientX, startScrollLeft: chartRef.current.scrollLeft }; chartRef.current.setPointerCapture?.(event.pointerId); setIsPanning(true); }
+  function pan(event) { const state = panRef.current; if (!state || state.pointerId !== event.pointerId || !chartRef.current) return; chartRef.current.scrollLeft = state.startScrollLeft - (event.clientX - state.startX); }
+  function endPan(event) { if (panRef.current?.pointerId !== event.pointerId) return; panRef.current = null; setIsPanning(false); }
+  function zoomChart(event) { event.preventDefault(); setChartZoom((current) => Math.min(1.5, Math.max(.65, Math.round((current + (event.deltaY < 0 ? .1 : -.1)) * 100) / 100))); }
+  function renderCard(node, ref) { const members = tree.members.get(node.id) || []; const isCollapsed = collapsed[node.id]; const hasChildren = node.children.length > 0; return <article className={`org-unit-card ${node.virtual ? 'org-unit-root' : ''}`} ref={ref}><button aria-expanded={!isCollapsed} className="org-unit-toggle" disabled={!hasChildren} onClick={() => toggle(node.id)} type="button"><span className="org-unit-mark" aria-hidden="true" /><span><small>{node.code}</small><strong>{node.name}</strong><em>{node.virtual ? '組織節點' : `${tree.assetCounts.get(node.code) || 0} 筆財物`}</em></span>{hasChildren && <b aria-hidden="true">{isCollapsed ? '+' : '−'}</b>}</button>{members.length ? <div className="org-members">{members.map((member) => <div className="org-member" key={member.id}><span aria-hidden="true">{(member.name || '?').slice(0, 1)}</span><div><strong>{member.name || '未命名使用者'}</strong><small>{member.title || '未設定職稱'} · {member.roles.map((role) => roleLabels[role]).join('、')}</small></div></div>)}</div> : <p className="org-empty">尚無已編制使用者</p>}</article>; }
+  function renderMobileBranch(node, depth = 0) { const expanded = node.children.length && !collapsed[node.id]; return <li className="org-mobile-node" key={node.id} style={{ '--org-depth': depth }}>{renderCard(node)}{expanded ? <ul>{node.children.map((child) => renderMobileBranch(child, depth + 1))}</ul> : null}</li>; }
+  return <section className="page organization-page"><div className="page-heading"><div><p className="eyebrow">ORGANIZATION DIRECTORY</p><h1>組織管理</h1><p>結合花蓮航空站的單位階層與已建立使用者的成員編制。</p></div><button className="button button-primary" disabled={!tree.units.length} onClick={() => { setMasterError(''); setIsMasterOpen(true); }} type="button">編輯單位</button></div><section className="organization-intro"><p><strong>編制規則</strong> 同層單位一律依單位代碼排列；可在單位主檔設定顯示名稱與上層單位。消防班預設隸屬清冊中的航務組，其餘清冊單位預設為航空站直屬。</p></section>{tree.root && <section aria-label="花蓮航空站組織與成員編制" className="organization-chart"><div className="org-zoom-status"><span>滾輪縮放</span><strong>{Math.round(chartZoom * 100)}%</strong><button aria-label="還原組織圖比例" disabled={chartZoom === 1} onClick={() => setChartZoom(1)} type="button">還原</button></div><div className={`org-scroll-canvas ${isPanning ? 'is-panning' : ''}`} onPointerCancel={endPan} onPointerDown={beginPan} onPointerMove={pan} onPointerUp={endPan} onWheel={zoomChart} ref={chartRef}><div className="org-level-canvas" ref={chartSurfaceRef} style={chartLayout?.css}><svg aria-hidden="true" className="org-edge-layer" height={edgeLayer.height} viewBox={`0 0 ${edgeLayer.width} ${edgeLayer.height}`} width={edgeLayer.width}>{edgeLayer.paths.map((path, index) => <path d={path} key={`${path}-${index}`} />)}</svg>{chartLayout?.nodes.map((item) => <div className="org-level-node" key={item.node.id} style={{ gridColumn: `${item.start} / span ${item.span}`, gridRow: item.depth + 1 }}>{renderCard(item.node, (element) => { if (element) cardRefs.current.set(item.node.id, element); else cardRefs.current.delete(item.node.id); })}</div>)}</div></div><ul className="org-mobile-tree">{renderMobileBranch(tree.root)}</ul></section>}{tree.unassigned.length > 0 && <section className="org-unassigned"><header><h2>未編制使用者</h2><p>尚未設定所屬單位的使用者不會放入組織圖。</p></header><div className="org-members">{tree.unassigned.map((member) => <div className="org-member" key={member.id}><span aria-hidden="true">{(member.name || '?').slice(0, 1)}</span><div><strong>{member.name || '未命名使用者'}</strong><small>{member.title || '未設定職稱'} · {member.roles.map((role) => roleLabels[role]).join('、')}</small></div></div>)}</div></section>}{isMasterOpen && <UnitMasterDialog error={masterError} onClose={() => setIsMasterOpen(false)} onSave={saveUnitProfile} profiles={profiles} units={tree.units} />}</section>;
+}
+
 function Accounts({ store, setStore }) {
+  const emptyForm = { accountCode: '', custodianCode: '', name: '', unitCode: '', title: '', email: '', password: '', roles: ['custodian'], status: 'active' };
+  const [form, setForm] = useState(emptyForm); const [editingId, setEditingId] = useState(null); const [isEditorOpen, setIsEditorOpen] = useState(false); const [term, setTerm] = useState(''); const [appliedTerm, setAppliedTerm] = useState(''); const [roleFilter, setRoleFilter] = useState(''); const [statusFilter, setStatusFilter] = useState(''); const [unitFilter, setUnitFilter] = useState(''); const [openFilterId, setOpenFilterId] = useState(null); const [openEditorCombo, setOpenEditorCombo] = useState(null); const [userPage, setUserPage] = useState(1); const [userPageSize, setUserPageSize] = useState(25); const [message, setMessage] = useState(''); const [compactUserFilters, setCompactUserFilters] = useState(false); const [compactUserFiltersOpen, setCompactUserFiltersOpen] = useState(false); const userFilterSentinelRef = useRef(null);
+  const profiles = store.custodianProfiles || {};
+  const directory = useMemo(() => {
+    const people = new Map();
+    store.assets.forEach((asset) => { const code = String(asset.custodianCode || '').trim(); if (!code) return; const person = people.get(code) || { code, names: new Set(), units: new Map() }; if (asset.custodianName) person.names.add(asset.custodianName); if (asset.unitCode) person.units.set(asset.unitCode, asset.unitName || asset.unitCode); people.set(code, person); });
+    return [...people.values()].map((person) => ({ ...person, names: [...person.names], displayName: profiles[person.code]?.displayName || [...person.names][0] || '', units: [...person.units.entries()] })).sort((a, b) => a.code.localeCompare(b.code, 'en', { numeric: true }));
+  }, [store.assets, profiles]);
+  const units = useMemo(() => [...new Map(directory.flatMap((person) => person.units)).entries()].sort((a, b) => a[1].localeCompare(b[1], 'zh-Hant')), [directory]);
+  const unitOptions = useMemo(() => [{ value: '', label: '全部單位' }, ...units.map(([value, label]) => ({ value, label: `${label}（${value}）` }))], [units]);
+  const roleOptions = useMemo(() => [{ value: '', label: '全部權限' }, ...Object.entries(roleLabels).map(([value, label]) => ({ value, label }))], []);
+  const statusOptions = useMemo(() => [{ value: '', label: '全部狀態' }, ...Object.entries({ active: '啟用', pending: '待啟用', inactive: '停用' }).map(([value, label]) => ({ value, label }))], []);
+  const editorUnitOptions = [{ value: '', label: '未指定單位' }, ...((directory.find((person) => person.code === form.custodianCode)?.units || units).map(([value, label]) => ({ value, label: `${label}（${value}）` })))];
+  const editorStatusOptions = statusOptions.slice(1);
+  const accountOptions = [{ value: '', label: '不配對保管人' }, ...directory.map((person) => ({ value: person.code, label: `${person.code}／${person.displayName || '未提供姓名'}` }))];
+  const filteredUsers = useMemo(() => store.users.filter((user) => {
+    const unitCode = user.unitCode || user.unitCodes?.[0] || '';
+    const unitName = units.find(([code]) => code === unitCode)?.[1] || '';
+    const status = user.status || 'active';
+    const statusName = statusOptions.find((option) => option.value === status)?.label || '';
+    const roles = (user.roles || []).map((role) => roleLabels[role]).filter(Boolean);
+    const text = [accountCodeFor(user), user.name, user.email, user.title, unitCode, unitName, status, statusName, ...roles].map(normalized).join(' ');
+    return (!appliedTerm || text.includes(normalized(appliedTerm))) && (!roleFilter || user.roles.includes(roleFilter)) && (!statusFilter || status === statusFilter) && (!unitFilter || user.unitCode === unitFilter || user.unitCodes?.includes(unitFilter));
+  }).sort((a, b) => accountCodeFor(a).localeCompare(accountCodeFor(b), 'en', { numeric: true })), [store.users, appliedTerm, roleFilter, statusFilter, unitFilter, units, statusOptions]);
+  const totalUserPages = Math.max(1, Math.ceil(filteredUsers.length / userPageSize));
+  const currentUserPage = Math.min(userPage, totalUserPages);
+  const pageUsers = filteredUsers.slice((currentUserPage - 1) * userPageSize, currentUserPage * userPageSize);
+  const unitLabel = (code) => units.find(([value]) => value === code)?.[1] || code || '—';
+  const activeUserFilterCount = Number(Boolean(appliedTerm)) + Number(Boolean(unitFilter)) + Number(Boolean(roleFilter)) + Number(Boolean(statusFilter));
+  function userHighlightTerms(field) {
+    const terms = appliedTerm ? [appliedTerm] : [];
+    if (field === 'unit' && unitFilter) terms.push(unitLabel(unitFilter));
+    if (field === 'role' && roleFilter) terms.push(roleOptions.find((option) => option.value === roleFilter)?.label || '');
+    if (field === 'status' && statusFilter) terms.push(statusOptions.find((option) => option.value === statusFilter)?.label || '');
+    return terms;
+  }
+  useEffect(() => { const updateCompactMode = () => { if (window.innerWidth < 960 || !userFilterSentinelRef.current) return setCompactUserFilters(false); setCompactUserFilters(userFilterSentinelRef.current.getBoundingClientRect().bottom <= 0); }; updateCompactMode(); window.addEventListener('scroll', updateCompactMode, { passive: true }); window.addEventListener('resize', updateCompactMode); return () => { window.removeEventListener('scroll', updateCompactMode); window.removeEventListener('resize', updateCompactMode); }; }, []);
+  useEffect(() => { const close = (event) => { if (!(event.target instanceof Element)) return; if (!event.target.closest('.user-management-panel .filter-combobox') && !event.target.closest('.compact-filter-bar .filter-combobox')) setOpenFilterId(null); if (!event.target.closest('.user-editor .filter-combobox')) setOpenEditorCombo(null); if (!event.target.closest('.compact-filter-bar')) setCompactUserFiltersOpen(false); }; document.addEventListener('pointerdown', close); return () => document.removeEventListener('pointerdown', close); }, []);
+  useEffect(() => { setUserPage(1); }, [appliedTerm, roleFilter, statusFilter, unitFilter, userPageSize]);
+  function clearFilters() { setTerm(''); setAppliedTerm(''); setRoleFilter(''); setStatusFilter(''); setUnitFilter(''); setOpenFilterId(null); setCompactUserFiltersOpen(false); }
+  function runUserSearch() { setAppliedTerm(term.trim()); }
+  function openCreate() { setEditingId(null); setForm(emptyForm); setMessage(''); setIsEditorOpen(true); }
+  function openEdit(user) { const custodianCode = user.custodianCodes?.[0] || ''; setEditingId(user.id); setForm({ accountCode: accountCodeFor(user), custodianCode, name: user.name || profiles[custodianCode]?.displayName || directory.find((person) => person.code === custodianCode)?.displayName || '', unitCode: user.unitCode || user.unitCodes?.[0] || '', title: user.title || '', email: user.email || '', password: '', roles: user.roles || [], status: user.status || 'active' }); setMessage(''); setIsEditorOpen(true); }
+  function setFromDirectory(code) { const person = directory.find((item) => item.code === code); setForm((current) => ({ ...current, custodianCode: code, name: profiles[code]?.displayName || person?.displayName || current.name, unitCode: person?.units[0]?.[0] || current.unitCode })); }
+  function toggleRole(role) { setForm((current) => ({ ...current, roles: current.roles.includes(role) ? current.roles.filter((item) => item !== role) : [...current.roles, role] })); }
+  function saveUser(event) { event.preventDefault(); if (!form.accountCode || !form.name || !form.roles.length || (!editingId && !form.password)) return setMessage('請填寫帳號、姓名、權限與初始密碼。'); if (store.users.some((user) => user.id !== editingId && accountCodeFor(user).toLowerCase() === form.accountCode.toLowerCase())) return setMessage('此帳號已由其他使用者使用。'); const existing = store.users.find((user) => user.id === editingId); const user = { ...existing, id: editingId || crypto.randomUUID(), accountCode: form.accountCode.trim(), name: form.name, unitCode: form.unitCode, unitCodes: form.unitCode ? [form.unitCode] : [], title: form.title, email: form.email, roles: form.roles, status: form.status, custodianCodes: form.custodianCode ? [form.custodianCode] : [], ...(form.password ? { password: form.password } : {}) }; setStore((current) => ({ ...current, users: editingId ? current.users.map((item) => item.id === editingId ? user : item) : [...current.users, user], custodianProfiles: form.custodianCode ? { ...(current.custodianProfiles || {}), [form.custodianCode]: { displayName: form.name.trim() } } : current.custodianProfiles || {} })); setIsEditorOpen(false); setMessage(''); }
+  return <section className="page"><div className="page-heading"><div><p className="eyebrow">USER DIRECTORY</p><h1>使用者管理</h1><p>帳號可自由建立；可選擇配對清冊保管人，並校正本系統的顯示名稱。</p></div><button className="button button-primary" onClick={openCreate} type="button">新增使用者</button></div><div aria-hidden="true" className="filter-sentinel" ref={userFilterSentinelRef} />{compactUserFilters && <div className="compact-filter-bar compact-filter-bar-fixed"><button aria-expanded={compactUserFiltersOpen} className="compact-filter-trigger" onClick={() => setCompactUserFiltersOpen((open) => !open)} type="button">篩選條件{activeUserFilterCount ? <b>{activeUserFilterCount}</b> : null}</button><label className="compact-search"><span className="sr-only">全局關鍵字搜尋</span><input value={term} onChange={(event) => setTerm(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') runUserSearch(); }} placeholder="輸入後按 Enter 搜尋…" /></label><button className="compact-clear" disabled={!activeUserFilterCount} onClick={clearFilters} type="button">清除</button>{compactUserFiltersOpen && <div className="compact-filter-popover"><div className="filter-grid"><UserFilterCombo id="compact-user-unit" label="所屬單位" value={unitFilter} options={unitOptions} open={openFilterId === 'compact-user-unit'} onChange={setUnitFilter} onOpenChange={setOpenFilterId} /><UserFilterCombo id="compact-user-role" label="權限" value={roleFilter} options={roleOptions} open={openFilterId === 'compact-user-role'} onChange={setRoleFilter} onOpenChange={setOpenFilterId} /><UserFilterCombo id="compact-user-status" label="狀態" value={statusFilter} options={statusOptions} open={openFilterId === 'compact-user-status'} onChange={setStatusFilter} onOpenChange={setOpenFilterId} /></div></div>}</div>}<section className="search-panel user-management-panel" aria-label="使用者篩選"><div className="filter-panel-heading"><div><h2>篩選條件</h2><p>依所屬單位、權限與狀態篩選，可搜尋帳號、姓名、職稱或 Email。</p></div><button className="button button-secondary filter-reset" onClick={clearFilters} type="button">清除篩選</button></div><div className="filter-grid"><UserFilterCombo id="user-unit" label="所屬單位" value={unitFilter} options={unitOptions} open={openFilterId === 'user-unit'} onChange={setUnitFilter} onOpenChange={setOpenFilterId} /><UserFilterCombo id="user-role" label="權限" value={roleFilter} options={roleOptions} open={openFilterId === 'user-role'} onChange={setRoleFilter} onOpenChange={setOpenFilterId} /><UserFilterCombo id="user-status" label="狀態" value={statusFilter} options={statusOptions} open={openFilterId === 'user-status'} onChange={setStatusFilter} onOpenChange={setOpenFilterId} /></div><div className="advanced-search user-advanced-search"><label className="search-field">全局關鍵字搜尋<input value={term} onChange={(event) => setTerm(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') runUserSearch(); }} placeholder="輸入帳號、姓名、職稱或 Email" /></label><div className="advanced-search-actions"><button className={`button button-primary search-submit ${term !== appliedTerm ? 'pending' : ''}`} onClick={runUserSearch} type="button">搜尋</button></div></div></section><div className="result-summary user-result-summary"><p className="result-count">使用者：<strong>{filteredUsers.length.toLocaleString()}</strong> 位</p><p className="directory-note">清冊已辨識 {directory.length.toLocaleString()} 位保管人</p><label className="page-size">每頁顯示<select aria-label="每頁顯示使用者數" value={userPageSize} onChange={(event) => setUserPageSize(Number(event.target.value))}><option value="25">25 筆</option><option value="50">50 筆</option><option value="100">100 筆</option></select></label><p>第 {currentUserPage}／{totalUserPages} 頁</p></div>{filteredUsers.length ? <><div className="asset-table-wrap user-table-wrap"><table className="user-table"><thead><tr><th>狀態</th><th>帳號</th><th>姓名</th><th>所屬單位</th><th>職稱</th><th>權限</th><th>Email</th><th>管理</th></tr></thead><tbody>{pageUsers.map((user) => <tr key={user.id}><td><span className={`user-status ${user.status || 'active'}`}><HighlightText value={({ active: '啟用', pending: '待啟用', inactive: '停用' })[user.status || 'active']} terms={userHighlightTerms('status')} /></span></td><td className="mono"><HighlightText value={accountCodeFor(user)} terms={userHighlightTerms('global')} /></td><td><HighlightText value={user.name || '—'} terms={userHighlightTerms('global')} /></td><td><HighlightText value={unitLabel(user.unitCode || user.unitCodes?.[0])} terms={userHighlightTerms('unit')} /></td><td><HighlightText value={user.title || '—'} terms={userHighlightTerms('global')} /></td><td><div className="role-tags">{user.roles.map((role) => <span className="role-tag" key={role}><HighlightText value={roleLabels[role]} terms={userHighlightTerms('role')} /></span>)}</div></td><td><HighlightText value={user.email || '—'} terms={userHighlightTerms('global')} /></td><td><button aria-haspopup="dialog" className="row-action" onClick={() => openEdit(user)} type="button">編輯</button></td></tr>)}</tbody></table></div>{totalUserPages > 1 && <nav className="pagination" aria-label="使用者分頁"><button className="button button-secondary" disabled={currentUserPage === 1} onClick={() => setUserPage(currentUserPage - 1)} type="button">上一頁</button><span>第 {currentUserPage}／{totalUserPages} 頁</span><button className="button button-secondary" disabled={currentUserPage === totalUserPages} onClick={() => setUserPage(currentUserPage + 1)} type="button">下一頁</button></nav>}</> : <div className="empty-state"><h2>找不到符合的使用者</h2><p>請調整篩選條件或搜尋文字。</p></div>}{isEditorOpen && <dialog open className="detail-dialog user-editor" onClick={(event) => { if (event.target === event.currentTarget) setIsEditorOpen(false); }}><div><header><div><p className="eyebrow">{editingId ? 'EDIT USER' : 'CREATE USER'}</p><h2>{editingId ? '編輯使用者' : '新增使用者'}</h2></div><button className="close-button" onClick={() => setIsEditorOpen(false)} aria-label="關閉">×</button></header><form className="account-form user-account-form" onSubmit={saveUser}><div className="user-form-grid user-editor-grid"><label>帳號<input value={form.accountCode} readOnly={Boolean(editingId)} onChange={(event) => setForm({ ...form, accountCode: event.target.value })} /></label><label>{editingId ? '修改密碼' : '初始密碼'}<input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label><label>姓名<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label><FormCombo id="editor-custodian" label="配對保管人（選填）" value={form.custodianCode} options={accountOptions} open={openEditorCombo === 'editor-custodian'} onChange={setFromDirectory} onOpenChange={setOpenEditorCombo} /><FormCombo id="editor-unit" label="所屬單位" value={form.unitCode} options={editorUnitOptions} open={openEditorCombo === 'editor-unit'} onChange={(value) => setForm({ ...form, unitCode: value })} onOpenChange={setOpenEditorCombo} /><label>職稱<input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /></label><label>Email（選填）<input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label><FormCombo id="editor-status" label="狀態" value={form.status} options={editorStatusOptions} open={openEditorCombo === 'editor-status'} onChange={(value) => setForm({ ...form, status: value })} onOpenChange={setOpenEditorCombo} /></div><fieldset><legend>權限</legend><div className="role-checks">{Object.entries(roleLabels).map(([role, label]) => <label key={role}><input type="checkbox" checked={form.roles.includes(role)} onChange={() => toggleRole(role)} /><span>{label}</span></label>)}</div></fieldset><div className="role-guidance" aria-label="權限說明">{Object.entries(roleDescriptions).map(([role, description]) => <p key={role}><strong>{roleLabels[role]}</strong><span>{description}</span></p>)}</div>{message && <p className="form-error" role="alert">{message}</p>}<footer className="user-editor-actions"><button className="button button-secondary" onClick={() => setIsEditorOpen(false)} type="button">取消</button><button className="button button-primary" type="submit">{editingId ? '儲存變更' : '新增使用者'}</button></footer></form></div></dialog>}</section>;
+}
+
+function LegacyAccounts({ store, setStore }) {
   const [form, setForm] = useState({ name: '', email: '', password: '', custodianCodes: '', unitCodes: '', roles: ['custodian'] }); const [message, setMessage] = useState('');
   function toggleRole(role) { setForm((f) => ({ ...f, roles: f.roles.includes(role) ? f.roles.filter((r) => r !== role) : [...f.roles, role] })); }
   function submit(e) { e.preventDefault(); if (!form.name || !form.email || !form.password || !form.roles.length) return setMessage('請填寫姓名、帳號、初始密碼與至少一個角色。'); if (store.users.some((u) => u.email.toLowerCase() === form.email.toLowerCase())) return setMessage('此帳號已存在。'); const user = { id: crypto.randomUUID(), ...form, custodianCodes: form.custodianCodes.split(',').map((x) => x.trim()).filter(Boolean), unitCodes: form.unitCodes.split(',').map((x) => x.trim()).filter(Boolean) }; setStore({ ...store, users: [...store.users, user] }); setForm({ name: '', email: '', password: '', custodianCodes: '', unitCodes: '', roles: ['custodian'] }); setMessage('帳號已建立。保管人可在登入後自行修改密碼。'); }
-  return <section className="page"><div className="page-heading"><div><p className="eyebrow">ACCOUNT ACCESS</p><h1>帳號與權限</h1><p>同一帳號可同時擁有保管人、單位主管與系統管理員角色。</p></div></div><div className="account-grid"><form className="account-form" onSubmit={submit}><h2>建立帳號</h2><label>姓名<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label><label>登入帳號<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label><label>初始密碼<input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label><fieldset><legend>角色</legend><div className="role-checks">{Object.entries(roleLabels).map(([role, label]) => <label key={role}><input type="checkbox" checked={form.roles.includes(role)} onChange={() => toggleRole(role)} /><span>{label}</span></label>)}</div></fieldset><label>保管人代碼<span className="helper">多個代碼以逗號分隔</span><input value={form.custodianCodes} onChange={(e) => setForm({ ...form, custodianCodes: e.target.value })} placeholder="例如：OP23, MS22" /></label><label>主管單位代碼<span className="helper">多個代碼以逗號分隔</span><input value={form.unitCodes} onChange={(e) => setForm({ ...form, unitCodes: e.target.value })} placeholder="例如：B04" /></label><button className="button button-primary" type="submit">建立帳號</button>{message && <p className={message.startsWith('帳號已') ? 'form-success' : 'form-error'}>{message}</p>}</form><section className="user-list"><h2>現有帳號</h2>{store.users.map((account) => <article key={account.id}><div><strong>{account.name}</strong><span>{account.email}</span></div><p>{account.roles.map((role) => <span className="role-tag" key={role}>{roleLabels[role]}</span>)}</p><small>{account.custodianCodes?.length ? `保管人：${account.custodianCodes.join('、')}` : ''}{account.unitCodes?.length ? ` 單位：${account.unitCodes.join('、')}` : ''}</small></article>)}</section></div></section>;
+  return <section className="page"><div className="page-heading"><div><p className="eyebrow">ACCOUNT ACCESS</p><h1>帳號與權限</h1><p>同一帳號可同時擁有保管人、單位主管與系統管理員角色。</p></div></div><div className="account-grid"><form className="account-form" onSubmit={submit}><h2>建立帳號</h2><label>姓名<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label><label>登入帳號<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label><label>初始密碼<input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label><fieldset><legend>角色</legend><div className="role-checks">{Object.entries(roleLabels).map(([role, label]) => <label key={role}><input type="checkbox" checked={form.roles.includes(role)} onChange={() => toggleRole(role)} /><span>{label}</span></label>)}</div></fieldset><label>保管人代碼<span className="helper">多個代碼以逗號分隔</span><input value={form.custodianCodes} onChange={(e) => setForm({ ...form, custodianCodes: e.target.value })} placeholder="例如：OP23, MS22" /></label><label>主管單位代碼<span className="helper">多個代碼以逗號分隔</span><input value={form.unitCodes} onChange={(e) => setForm({ ...form, unitCodes: e.target.value })} placeholder="例如：B04" /></label><button className="button button-primary" type="submit">建立帳號</button>{message && <p className={message.startsWith('帳號已') ? 'form-success' : 'form-error'}>{message}</p>}</form><section className="user-list"><h2>現有帳號</h2>{store.users.map((account) => <article key={account.id}><div><strong>{account.name}</strong><span>{account.email}</span></div><p>{account.roles.map((role) => <span className="role-tag" key={role}><HighlightText value={roleLabels[role]} terms={userHighlightTerms('role')} /></span>)}</p><small>{account.custodianCodes?.length ? `保管人：${account.custodianCodes.join('、')}` : ''}{account.unitCodes?.length ? ` 單位：${account.unitCodes.join('、')}` : ''}</small></article>)}</section></div></section>;
 }
 
 function Password({ user, setStore }) { const [oldPassword, setOld] = useState(''); const [nextPassword, setNext] = useState(''); const [message, setMessage] = useState(''); function submit(e) { e.preventDefault(); if (oldPassword !== user.password) return setMessage('目前密碼不正確。'); if (nextPassword.length < 8) return setMessage('新密碼至少需要 8 個字元。'); setStore((store) => ({ ...store, users: store.users.map((u) => u.id === user.id ? { ...u, password: nextPassword } : u) })); user.password = nextPassword; setOld(''); setNext(''); setMessage('密碼已更新。'); } return <section className="page narrow"><div className="page-heading"><div><p className="eyebrow">PASSWORD</p><h1>修改密碼</h1><p>新密碼至少 8 個字元。帳號與角色權限仍由系統管理員管理。</p></div></div><form className="account-form" onSubmit={submit}><label>目前密碼<input type="password" value={oldPassword} onChange={(e) => setOld(e.target.value)} /></label><label>新密碼<input type="password" value={nextPassword} onChange={(e) => setNext(e.target.value)} /></label><button className="button button-primary" type="submit">更新密碼</button>{message && <p className={message === '密碼已更新。' ? 'form-success' : 'form-error'}>{message}</p>}</form></section>; }
