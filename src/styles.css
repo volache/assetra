@@ -256,7 +256,8 @@ input:focus, select:focus { border-color: var(--color-accent-deep); box-shadow: 
 .geo-list-item { align-items: center; background: transparent; border: 0; border-bottom: 1px solid var(--color-rule); color: var(--color-ink); display: grid; gap: .45rem; grid-template-columns: auto minmax(0, 1fr) auto; padding: .55rem var(--space-lg); text-align: start; transition: background-color var(--dur-fast) var(--ease-out); width: 100%; }
 .geo-list-item:hover { background: var(--color-paper-2); }
 .geo-list-item.is-selected { background: oklch(92% .06 88); }
-.geo-list-item > span { color: var(--color-accent); font-size: 1.1rem; line-height: 1; }
+.geo-list-map-icon { color: var(--color-accent); display: grid; height: 1.15rem; place-items: center; width: 1.15rem; }
+.geo-list-map-icon svg { display: block; height: 100%; width: 100%; }
 .geo-list-item strong, .geo-list-item small { display: block; }
 .geo-list-item strong { font-size: var(--text-sm); }
 .geo-list-item small { color: var(--color-muted); font-size: var(--text-xs); margin-top: .12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -270,6 +271,11 @@ input:focus, select:focus { border-color: var(--color-accent-deep); box-shadow: 
 .geo-map-panel > header { align-items: center; display: flex; font-family: var(--font-mono); font-size: var(--text-xs); height: 2.5rem; justify-content: space-between; padding: 0 var(--space-lg); }
 .geo-map-panel > header .text-button { font-family: var(--font-body); padding: 0; }
 .geo-map-actions { align-items: center; display: flex; gap: var(--space-md); }
+.geo-basemap-toggle { background: var(--color-paper); border: 1px solid var(--color-rule); border-radius: var(--radius-pill); display: inline-flex; overflow: hidden; }
+.geo-basemap-toggle button, .geo-3d-toggle { background: transparent; border: 0; color: var(--color-ink-2); font: inherit; min-height: 1.65rem; padding: 0 .55rem; }
+.geo-basemap-toggle button + button { border-inline-start: 1px solid var(--color-rule); }
+.geo-basemap-toggle button.is-active, .geo-3d-toggle.is-active { background: var(--color-accent); color: white; }
+.geo-basemap-toggle button:focus-visible, .geo-3d-toggle:focus-visible { outline: 2px solid var(--color-accent-deep); outline-offset: -2px; }
 .geo-live-dot { background: oklch(59% .16 155); border-radius: 50%; display: inline-block; height: .55rem; margin-inline-end: .4rem; width: .55rem; }
 .geo-map-stage { min-height: 31rem; overflow: hidden; position: relative; }
 .geo-mapbox { height: 100%; min-height: 31rem; width: 100%; }
