@@ -8,3 +8,10 @@ dist/
 *.xls
 *.xlsm
 ~$*
+
+# Locally provisioned source records and ownership documents.
+/data/private/
+
+# Local package-manager caches and development-server output.
+.pnpm-store/
+vite-server.*.log
