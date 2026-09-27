@@ -597,10 +597,10 @@ function BatchHistory({ imports, onDeleted }) {
     return () => { alive = false; };
   }, [selected]);
 
-  const latestBySource = useMemo(() => Object.fromEntries(['asset', 'item'].map((sourceType) => {
-    const latest = imports.filter((entry) => entry.sourceType === sourceType).sort((left, right) => String(right.at).localeCompare(String(left.at)))[0];
-    return [sourceType, latest?.id || null];
-  })), [imports]);
+  const latestBySource = useMemo(() => Object.fromEntries(['asset', 'item'].map((sourceType) => [
+    sourceType,
+    imports.find((entry) => entry.sourceType === sourceType)?.id || null,
+  ])), [imports]);
   const fieldLabels = { name: '中文名稱', old_no: '舊編號', acquired_at: '購置日期', unit_code: '保管單位代碼', unit_name: '保管單位', use_unit_name: '使用單位', location_code: '存置地點代碼', location_name: '存置地點', custodian_code: '保管人代碼', custodian_name: '保管人', user_code: '使用人代碼', user_name: '使用人', quantity: '數量', measure_unit: '計量單位', original_value: '原值', depreciation: '累折', net_value: '淨值', useful_life: '年限', category_name: '財產別名', category_type: '區分別', model: '型式', brand: '廠牌', notes: '備註', status: '使用現況' };
   const annotated = changes.map((change) => {
     if (change.change_kind !== 'changed') return change;
