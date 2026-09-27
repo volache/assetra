@@ -9,10 +9,10 @@ npm install
 npm run dev
 ```
 
-瀏覽器開啟終端機顯示的網址。預設管理者帳號為 `admin@example.local`，密碼為 `Admin@1234`。
+瀏覽器開啟終端機顯示的網址。登入帳號與權限由 Assetra 的 Supabase 專案管理。
 
 ## 原型限制
 
-- 帳號、密碼與匯入資料暫存在瀏覽器的 Local Storage，僅供介面與流程驗證，不可作正式上線用途。
-- 正式版應使用 Supabase Auth。帳號建立、密碼重設與 Excel 匯入應改由伺服器端 API 執行，絕不可在瀏覽器暴露 `service_role` 金鑰。
+- 匯入資料暫存在瀏覽器的 Local Storage，僅供介面與流程驗證，不可作正式上線用途。
+- 帳號、密碼與角色權限使用 Supabase Auth 與受保護的伺服器端 Function；絕不可在瀏覽器暴露 `service_role` 金鑰。
 - `supabase/schema.sql` 提供資料表與 RLS 的初步設計。執行前請先依實際單位授權範圍檢視與測試政策。

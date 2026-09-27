@@ -1,7 +1,8 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import mapboxgl from 'mapbox-gl';
 import * as XLSX from 'xlsx';
+import { authEmailFor, supabase } from './supabase';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import './styles.css';
 
@@ -12,11 +13,6 @@ const landPropertiesText = Object.values(landPropertyFiles)[0] || '{"type":"Feat
 const landProperties = JSON.parse(landPropertiesText);
 
 const STORE = 'asset-ledger-prototype-v1';
-const initialUsers = [
-  { id: 'admin', name: '系統管理員', email: 'admin@example.local', password: 'Admin@1234', roles: ['admin'] },
-  { id: 'chief-b04', name: '單位主管示範', email: 'chief@example.local', password: 'Chief@1234', roles: ['chief'], unitCodes: ['B04'] },
-  { id: 'custodian-op23', name: '保管人示範', email: 'keeper@example.local', password: 'Keeper@1234', roles: ['custodian'], custodianCodes: ['OP23'] },
-];
 
 const sourceLabels = { asset: '財產清冊', item: '物品清冊' };
 const roleLabels = { custodian: '保管人', chief: '單位主管', admin: '系統管理員' };
@@ -31,14 +27,14 @@ const columns = {
   locationCode: ['存置地點代碼'], locationName: ['存置地點中文'],
   custodianCode: ['保管人'], custodianName: ['保管人中文'], userCode: ['使用人'], userName: ['使用人中文'], quantity: ['數量'], measureUnit: ['單位'],
   originalValue: ['原值'], depreciation: ['累折'], netValue: ['淨值'], usefulLife: ['年限'],
-  categoryName: ['財產別名'], categoryType: ['區分別中文', '區分別'], model: ['型式', '型試'], brand: ['廠牌'], notes: ['備註'], status: ['是否報廢'],
+  categoryName: ['財產別名'], categoryTypeCode: ['區分別代碼', '區分別'], categoryType: ['區分別中文'], model: ['型式', '型試'], brand: ['廠牌'], notes: ['備註'], status: ['是否報廢'],
 };
 
 function loadStore() {
-  try { const saved = JSON.parse(localStorage.getItem(STORE)); return saved ? { users: initialUsers, assets: [], imports: [], custodianProfiles: {}, unitProfiles: {}, ...saved, custodianProfiles: saved.custodianProfiles || {}, unitProfiles: saved.unitProfiles || {} } : { users: initialUsers, assets: [], imports: [], custodianProfiles: {}, unitProfiles: {} }; }
-  catch { return { users: initialUsers, assets: [], imports: [], custodianProfiles: {}, unitProfiles: {} }; }
+  try { const saved = JSON.parse(localStorage.getItem(STORE)); const { users: _legacyUsers, assets: _cachedAssets, imports: _cachedImports, ...localData } = saved || {}; return saved ? { users: [], assets: [], imports: [], custodianProfiles: {}, unitProfiles: {}, ...localData, custodianProfiles: localData.custodianProfiles || {}, unitProfiles: localData.unitProfiles || {} } : { users: [], assets: [], imports: [], custodianProfiles: {}, unitProfiles: {} }; }
+  catch { return { users: [], assets: [], imports: [], custodianProfiles: {}, unitProfiles: {} }; }
 }
-function saveStore(value) { localStorage.setItem(STORE, JSON.stringify(value)); }
+function saveStore({ users: _remoteUsers, assets: _remoteAssets, imports: _remoteImports, ...localData }) { localStorage.setItem(STORE, JSON.stringify(localData)); }
 function valueOf(row, keys) { for (const key of keys) if (row[key] !== undefined && row[key] !== null) return row[key]; return ''; }
 function rocDate(value) {
   const text = String(value ?? '').trim();
@@ -79,10 +75,27 @@ function normalizeRows(rows, sourceType) {
       locationCode: String(get('locationCode') || ''), locationName: String(get('locationName') || ''),
       custodianCode: String(get('custodianCode') || ''), custodianName: String(get('custodianName') || ''), userCode: String(get('userCode') || ''), userName: String(get('userName') || ''),
       quantity: get('quantity'), measureUnit: String(get('measureUnit') || ''), originalValue: get('originalValue'), depreciation: get('depreciation'), netValue: get('netValue'),
-      usefulLife: get('usefulLife'), categoryName: String(get('categoryName') || ''), categoryType: String(get('categoryType') || ''), model: String(get('model') || ''),
+      usefulLife: get('usefulLife'), categoryName: String(get('categoryName') || ''), categoryTypeCode: String(get('categoryTypeCode') || ''), categoryType: String(get('categoryType') || get('categoryTypeCode') || ''), model: String(get('model') || ''),
       brand: String(get('brand') || ''), notes: String(get('notes') || ''), status: String(get('status') || ''),
     };
   });
+}
+function toRocDate(value) {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${Number(match[1]) - 1911}/${match[2]}/${match[3]}` : String(value || '');
+}
+function fromDatabaseAsset(row) {
+  return {
+    id: row.id, sourceType: row.source_type, assetNo: row.asset_no, serialNo: row.serial_no || '', name: row.name,
+    oldNo: row.old_no || '', acquiredAt: toRocDate(row.acquired_at), unitCode: row.unit_code || '', unitName: row.unit_name || '', useUnitName: row.use_unit_name || '',
+    locationCode: row.location_code || '', locationName: row.location_name || '', custodianCode: row.custodian_code || '', custodianName: row.custodian_name || '',
+    userCode: row.user_code || '', userName: row.user_name || '', quantity: row.quantity, measureUnit: row.measure_unit || '', originalValue: row.original_value,
+    depreciation: row.depreciation, netValue: row.net_value, usefulLife: row.useful_life, categoryName: row.category_name || '', categoryTypeCode: row.category_type_code || '', categoryType: row.category_type || '',
+    model: row.model || '', brand: row.brand || '', notes: row.notes || '', status: row.status || '',
+  };
+}
+function fromDatabaseImport(row) {
+  return { id: row.id, fileName: row.file_name, sourceType: row.source_type, count: row.record_count, summary: row.summary || {}, at: new Date(row.committed_at || row.imported_at).toLocaleString('zh-TW', { hour12: false }) };
 }
 function allowedAssets(assets, user) {
   if (user.roles.includes('admin')) return assets;
@@ -96,7 +109,47 @@ function App() {
   const [isLoadingSession, setIsLoadingSession] = useState(false);
   const [isEnteringPortal, setIsEnteringPortal] = useState(false);
   const [isLeavingPortal, setIsLeavingPortal] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
   useEffect(() => saveStore(store), [store]);
+  const loadProfile = async () => {
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    if (!authUser) return null;
+    const [{ data: profile }, { data: roles }, { data: units }, { data: custodians }] = await Promise.all([
+      supabase.from('profiles').select('id, account_code, display_name, title, contact_email, status').eq('id', authUser.id).maybeSingle(),
+      supabase.from('user_roles').select('role').eq('user_id', authUser.id),
+      supabase.from('user_units').select('unit_code').eq('user_id', authUser.id),
+      supabase.from('user_custodians').select('custodian_code').eq('user_id', authUser.id),
+    ]);
+    if (!profile || profile.status !== 'active') return null;
+    return { id: profile.id, accountCode: profile.account_code, name: profile.display_name, title: profile.title, email: profile.contact_email, status: profile.status, roles: (roles || []).map((x) => x.role), unitCodes: (units || []).map((x) => x.unit_code), custodianCodes: (custodians || []).map((x) => x.custodian_code) };
+  };
+  const refreshUsers = async () => {
+    const { data: { session: authSession } } = await supabase.auth.getSession();
+    if (!authSession) return;
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/manage-users`, { headers: { Authorization: `Bearer ${authSession.access_token}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY } });
+    if (!response.ok) return;
+    const { users = [] } = await response.json();
+    setStore((current) => ({ ...current, users: users.map((u) => ({ id: u.id, accountCode: u.account_code, name: u.display_name, title: u.title, email: u.contact_email, status: u.status, roles: (u.user_roles || []).map((x) => x.role), unitCodes: (u.user_units || []).map((x) => x.unit_code), custodianCodes: (u.user_custodians || []).map((x) => x.custodian_code) })) }));
+  };
+  const refreshInventory = async () => {
+    const loadAllRecords = async () => {
+      const pageSize = 1000;
+      const records = [];
+      for (let from = 0; ; from += pageSize) {
+        const { data, error } = await supabase.from('asset_records').select('*').eq('is_current', true).order('category_type_code').order('asset_no').order('serial_no').range(from, from + pageSize - 1);
+        if (error) throw error;
+        records.push(...(data || []));
+        if (!data || data.length < pageSize) return records;
+      }
+    };
+    const [records, { data: imports, error: importError }] = await Promise.all([
+      loadAllRecords(),
+      supabase.from('imports').select('id, file_name, source_type, record_count, summary, imported_at, committed_at').eq('status', 'committed').order('committed_at', { ascending: false }),
+    ]);
+    // 非管理員沒有匯入歷程權限；此情況仍可正常取得自己可看的清冊。
+    setStore((current) => ({ ...current, assets: records.map(fromDatabaseAsset), imports: importError ? [] : (imports || []).map(fromDatabaseImport) }));
+  };
+  useEffect(() => { if (!supabase) return setAuthReady(true); loadProfile().then(async (user) => { if (user) { setSession(user); refreshUsers(); try { await refreshInventory(); } catch { /* 留在空清冊狀態，避免中斷登入。 */ } } setAuthReady(true); }); }, []);
   function startSession(user) {
     const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     if (reduceMotion) return setSession(user);
@@ -108,7 +161,8 @@ function App() {
       window.setTimeout(() => setIsEnteringPortal(false), 560);
     }, 1180);
   }
-  function endSession() {
+  async function endSession() {
+    await supabase.auth.signOut();
     const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     if (reduceMotion) { setPage('home'); return setSession(null); }
     setIsLeavingPortal(true);
@@ -118,24 +172,25 @@ function App() {
       setIsLeavingPortal(false);
     }, 420);
   }
-  if (!session) return <Login isLoading={isLoadingSession} users={store.users} onLogin={startSession} />;
-  return <Portal entering={isEnteringPortal} leaving={isLeavingPortal} store={store} setStore={setStore} user={session} page={page} setPage={setPage} onLogout={endSession} />;
+  if (!authReady) return <main className="login-shell"><section className="login-panel"><p className="muted">正在連線至 Assetra…</p></section></main>;
+  if (!session) return <Login isLoading={isLoadingSession} onLogin={async (accountCode, password) => { const { error } = await supabase.auth.signInWithPassword({ email: authEmailFor(accountCode), password }); if (error) throw error; const user = await loadProfile(); if (!user) { await supabase.auth.signOut(); throw new Error('帳號尚未啟用或未完成系統授權。'); } startSession(user); refreshUsers(); await refreshInventory(); }} />;
+  return <Portal entering={isEnteringPortal} leaving={isLeavingPortal} store={store} setStore={setStore} user={session} page={page} setPage={setPage} onLogout={endSession} refreshUsers={refreshUsers} refreshInventory={refreshInventory} />;
 }
 
-function Login({ isLoading, users, onLogin }) {
-  const [email, setEmail] = useState('admin@example.local'); const [password, setPassword] = useState('Admin@1234'); const [error, setError] = useState('');
-  function submit(e) { e.preventDefault(); if (isLoading) return; const user = users.find((u) => (u.email.toLowerCase() === email.toLowerCase() || accountCodeFor(u).toLowerCase() === email.toLowerCase()) && u.password === password && (u.status || 'active') === 'active'); if (user) onLogin(user); else setError('帳號或密碼不正確，或帳號尚未啟用。'); }
-  return <main className={`login-shell ${isLoading ? 'is-loading' : ''}`}><section className="login-intro"><p className="eyebrow">INTERNAL ASSET LEDGER</p><h1>讓每件財物<br />都有清楚去向。</h1><p>管理者匯入清冊。保管人登入後，只會看到自己負責的資料。</p><div className="intro-mark" aria-hidden="true"><span /><span /><span /></div></section><section className="login-panel"><div><p className="eyebrow">登入系統</p><h2>財物清冊</h2><p className="muted">此為本機原型。管理者可先使用預設帳號登入。</p></div><form onSubmit={submit}><label>帳號<input value={email} onChange={(e) => setEmail(e.target.value)} type="text" autoComplete="username" /></label><label>密碼<input value={password} onChange={(e) => setPassword(e.target.value)} type="password" autoComplete="current-password" /></label>{error && <p className="form-error" role="alert">{error}</p>}<button className="button button-primary" disabled={isLoading} type="submit">登入</button></form><div className="credential-note"><strong>管理者示範帳號</strong><span>admin@example.local ／ Admin@1234</span></div></section><div className="session-loader" aria-live="polite" aria-label="正在載入系統工作區"><div className="session-loader-pills" aria-hidden="true"><span /><span /><span /></div><strong>正在載入工作區</strong><small>準備財物清冊資料</small></div></main>;
+function Login({ isLoading, onLogin }) {
+  const [accountCode, setAccountCode] = useState('admin'); const [password, setPassword] = useState(''); const [error, setError] = useState('');
+  async function submit(e) { e.preventDefault(); if (isLoading) return; setError(''); try { await onLogin(accountCode, password); } catch { setError('帳號或密碼不正確，或帳號尚未啟用。'); } }
+  return <main className={`login-shell ${isLoading ? 'is-loading' : ''}`}><section className="login-intro"><p className="eyebrow">ASSETRA</p><h1>讓每件財物<br />都有清楚去向。</h1><p>管理者匯入清冊。保管人登入後，只會看到自己負責的資料。</p><div className="intro-mark" aria-hidden="true"><span /><span /><span /></div></section><section className="login-panel"><div><p className="eyebrow">登入系統</p><h2>Assetra</h2><p className="muted">請使用系統帳號登入。</p></div><form onSubmit={submit}><label>帳號<input value={accountCode} onChange={(e) => setAccountCode(e.target.value)} type="text" autoComplete="username" /></label><label>密碼<input value={password} onChange={(e) => setPassword(e.target.value)} type="password" autoComplete="current-password" /></label>{error && <p className="form-error" role="alert">{error}</p>}<button className="button button-primary" disabled={isLoading} type="submit">登入</button></form></section><div className="session-loader" aria-live="polite"><strong>正在載入工作區</strong></div></main>;
 }
 
-function Portal({ entering, leaving, store, setStore, user, page, setPage, onLogout }) {
+function Portal({ entering, leaving, store, setStore, user, page, setPage, onLogout, refreshUsers, refreshInventory }) {
   const canAdmin = user.roles.includes('admin'); const canChief = user.roles.includes('chief');
   const visible = useMemo(() => allowedAssets(store.assets, user).map((asset) => ({ ...asset, rawCustodianName: asset.custodianName, custodianName: store.custodianProfiles?.[asset.custodianCode]?.displayName || asset.custodianName })), [store.assets, store.custodianProfiles, user]);
   const previousPage = useRef(page);
   const isPageSwitch = previousPage.current !== page;
   useEffect(() => { previousPage.current = page; }, [page]);
-  const navigation = [{ id: 'home', label: '總覽' }, { id: 'query', label: '財物查詢' }, ...(canAdmin ? [{ id: 'import', label: '匯入清冊' }, { id: 'geo', label: '地理圖資' }, { id: 'organization', label: '組織管理' }, { id: 'accounts', label: '使用者管理' }] : []), { id: 'password', label: '修改密碼' }];
-  return <div className={`app-shell ${entering ? 'is-entering' : ''} ${leaving ? 'is-leaving' : ''}`}><aside className="side-nav"><div className="brand"><span className="brand-dot" />財物清冊</div><nav aria-label="主要功能">{navigation.map((item) => <button key={item.id} className={page === item.id ? 'nav-item active' : 'nav-item'} onClick={() => setPage(item.id)}>{item.label}</button>)}</nav><div className="side-user"><span>{user.name}</span><small>{user.roles.map((role) => roleLabels[role]).join('、')}</small><button className="text-button" onClick={onLogout}>登出</button></div></aside><main className="main-area"><header className="mobile-header"><div className="brand"><span className="brand-dot" />財物清冊</div><button className="text-button" onClick={onLogout}>登出</button></header><div className={`page-transition ${isPageSwitch ? 'is-switching' : ''}`} key={page}>{page === 'home' && <Home visible={visible} user={user} imports={store.imports} setPage={setPage} canAdmin={canAdmin} canChief={canChief} />}{page === 'query' && <Query assets={visible} imports={store.imports} />}{page === 'import' && canAdmin && <Import store={store} setStore={setStore} />}{page === 'geo' && canAdmin && <GeographicAssets />}{page === 'accounts' && canAdmin && <Accounts store={store} setStore={setStore} />}{page === 'organization' && canAdmin && <Organization store={store} setStore={setStore} />}{page === 'password' && <Password user={user} setStore={setStore} />}</div></main></div>;
+  const navigation = [{ id: 'home', label: '總覽' }, { id: 'query', label: '財物查詢' }, ...(canAdmin ? [{ id: 'import', label: '匯入清冊' }, { id: 'batches', label: '匯入批次' }, { id: 'geo', label: '地理圖資' }, { id: 'organization', label: '組織管理' }, { id: 'accounts', label: '使用者管理' }] : []), { id: 'password', label: '修改密碼' }];
+  return <div className={`app-shell ${entering ? 'is-entering' : ''} ${leaving ? 'is-leaving' : ''}`}><aside className="side-nav"><div className="brand"><span className="brand-dot" />Assetra</div><nav aria-label="主要功能">{navigation.map((item) => <button key={item.id} className={page === item.id ? 'nav-item active' : 'nav-item'} onClick={() => setPage(item.id)}>{item.label}</button>)}</nav><div className="side-user"><span>{user.name}</span><small>{user.roles.map((role) => roleLabels[role]).join('、')}</small><button className="text-button" onClick={onLogout}>登出</button></div></aside><main className="main-area"><header className="mobile-header"><div className="brand"><span className="brand-dot" />Assetra</div><button className="text-button" onClick={onLogout}>登出</button></header><div className={`page-transition ${isPageSwitch ? 'is-switching' : ''}`} key={page}>{page === 'home' && <Home visible={visible} user={user} imports={store.imports} setPage={setPage} canAdmin={canAdmin} canChief={canChief} />}{page === 'query' && <Query assets={visible} imports={store.imports} />}{page === 'import' && canAdmin && <Import store={store} onImported={refreshInventory} />}{page === 'batches' && canAdmin && <BatchHistory imports={store.imports} />}{page === 'geo' && canAdmin && <GeographicAssets />}{page === 'accounts' && canAdmin && <Accounts store={store} setStore={setStore} onUsersChanged={refreshUsers} />}{page === 'organization' && canAdmin && <Organization store={store} setStore={setStore} />}{page === 'password' && <Password />}</div></main></div>;
 }
 
 function useCountUp(target, duration = 900) {
@@ -298,6 +353,40 @@ function readWorksheetRows(sheet) {
   return records.filter((record) => record.some((value) => String(value ?? '').trim())).map((record) => Object.fromEntries(fields.map((field, index) => [field, record[index] ?? ''])));
 }
 
+function inspectImportRows(rows, sourceType) {
+  const errors = [];
+  const accepted = [];
+  rows.forEach((row, index) => {
+    const line = index + 2;
+    const get = (field) => String(valueOf(row, columns[field]) ?? '').trim();
+    const categoryTypeCode = get('categoryTypeCode');
+    const assetNo = get('assetNo');
+    const serialNo = get('serialNo');
+    const name = get('name');
+    const messages = [];
+    if (!categoryTypeCode) messages.push('缺少區分別代碼');
+    if (!assetNo) messages.push('缺少財產編號');
+    if (!serialNo) messages.push('缺少流水號');
+    if (!name) messages.push('缺少中文名稱');
+    const originalValue = Number(get('originalValue').replace(/,/g, ''));
+    const netValue = Number(get('netValue').replace(/,/g, ''));
+    if (get('originalValue') && !Number.isFinite(originalValue)) messages.push('原值不是有效數字');
+    if (get('netValue') && !Number.isFinite(netValue)) messages.push('淨值不是有效數字');
+    if (Number.isFinite(originalValue) && Number.isFinite(netValue) && netValue > originalValue) messages.push('淨值不得大於原值');
+    if (messages.length) errors.push({ line, messages });
+    else accepted.push({ line, record: normalizeRows([row], sourceType)[0] });
+  });
+  const latestByIdentity = new Map();
+  const duplicates = [];
+  accepted.forEach(({ line, record }) => {
+    const key = `${record.categoryTypeCode}\u0000${record.assetNo}\u0000${record.serialNo}`;
+    const previous = latestByIdentity.get(key);
+    if (previous) duplicates.push({ line, previousLine: previous.line, identity: `${record.categoryTypeCode}－${record.assetNo}－${record.serialNo}` });
+    latestByIdentity.set(key, { line, record });
+  });
+  return { errors, duplicates, records: [...latestByIdentity.values()].map(({ record }) => record), total: rows.length };
+}
+
 function landAssetNumberParts(value) {
   const parts = String(value || '').split('-').filter(Boolean);
   if (parts.length >= 3) return { primary: parts.slice(-3, -1).join('-'), serial: parts.at(-1) };
@@ -438,10 +527,79 @@ function GeographicAssets() {
   return <section className={`page geographic-page ${viewMode === 'list' ? 'is-list-view' : ''}`}><div className="page-heading"><div><p className="eyebrow">GEOSPATIAL ASSET DIRECTORY</p><h1>地理圖資</h1><p>以 Mapbox 底圖與地籍範圍檢視花蓮航空站土地財產，並與財產編號、面積及帳面價值交叉核對。</p></div><button className="button button-primary" onClick={() => setViewMode((current) => current === 'map' ? 'list' : 'map')} type="button">{viewMode === 'map' ? '列表檢視' : '地圖檢視'}</button></div>{viewMode === 'map' ? <section className="geo-workbench"><aside className="geo-list-panel"><header><h2>土地清單</h2><strong>{filtered.length} 筆</strong></header><label className="geo-search"><span className="sr-only">搜尋土地</span><input onChange={(event) => setTerm(event.target.value)} placeholder="地段、地號、財產編號…" value={term} /></label><div className="geo-list-scroll">{filtered.length ? filtered.map((land) => <button aria-pressed={selected?.id === land.id} className={`geo-list-item ${selected?.id === land.id ? 'is-selected' : ''}`} key={land.id} onClick={() => selectLand(land)} type="button"><span aria-hidden="true" className="geo-list-map-icon"><svg aria-hidden="true" fill="none" viewBox="0 0 24 24"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.8"/><path d="M9 3v15m6-12v15" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8"/></svg></span><div><strong>{land.section} {land.landNumber}</strong><small>{land.id}</small></div><em>{land.area.toLocaleString()} m²</em></button>) : <p className="geo-no-result">沒有符合的土地資料。</p>}</div><footer><div><span>目前筆數</span><strong>{filtered.length} 筆</strong></div><div><span>土地總面積</span><strong>{totalArea.toLocaleString()} m²</strong></div><div><span>帳面價值</span><strong>NT$ {money(totalValue)}</strong></div></footer></aside><section aria-label="土地地籍範圍圖" className="geo-map-panel" ref={mapPanelRef}><header><div><span className="geo-live-dot" />Mapbox 地籍範圍圖層</div><div className="geo-map-actions"><span aria-label="選擇底圖" className="geo-basemap-toggle"><button aria-pressed={mapStyle === 'standard'} className={mapStyle === 'standard' ? 'is-active' : ''} onClick={() => setMapStyle('standard')} type="button">標準</button><button aria-pressed={mapStyle === 'satellite'} className={mapStyle === 'satellite' ? 'is-active' : ''} onClick={() => setMapStyle('satellite')} type="button">衛星</button></span><button aria-pressed={is3D} className={`geo-3d-toggle ${is3D ? 'is-active' : ''}`} onClick={() => setIs3D((enabled) => !enabled)} type="button">3D</button><button className="text-button" onClick={showFullExtent} type="button">回到全區</button><button aria-pressed={isMapFullscreen} className="text-button" onClick={toggleMapFullscreen} type="button">{isMapFullscreen ? '離開全螢幕' : '全螢幕'}</button></div></header><div className="geo-map-stage">{mapToken ? <div aria-label="花蓮航空站土地地籍範圍 Mapbox 地圖" className="geo-mapbox" ref={mapContainerRef} /> : <div className="geo-map-config"><strong>尚未設定 Mapbox 權杖</strong><p>請在專案根目錄的 <code>.env</code> 設定 <code>VITE_MAPBOX_TOKEN</code>，然後重新啟動開發伺服器。</p></div>}{mapFailure && <p className="geo-map-error" role="alert">{mapFailure}</p>}{selected && <article className="geo-map-detail"><p>{selected.section}{selected.landNumber}</p><h2>{selected.name}</h2><dl><div><dt>面積</dt><dd>{selected.area.toLocaleString()} m²</dd></div><div><dt>帳面價值</dt><dd>NT$ {money(selected.price)}</dd></div><div><dt>使用分區</dt><dd>{selected.zoning}</dd></div></dl><a href={selected.feature.properties?.cadastral_link} rel="noreferrer" target="_blank">開啟地籍資料 ↗</a></article>}</div><footer><span><i className="geo-legend-land" />土地範圍</span><span><i className="geo-legend-selected" />目前選取</span><span className="geo-building-note">建物圖徵：待後續匯入座標或範圍資料</span></footer></section></section> : <section className="geo-table-panel"><header><div><h2>土地列表</h2><p>共 {filtered.length} 筆土地財產</p></div><label className="geo-search"><span className="sr-only">搜尋土地</span><input onChange={(event) => setTerm(event.target.value)} placeholder="地段、地號、財產編號…" value={term} /></label></header><div className="geo-table-wrap"><table><thead><tr><th>段小段</th><th>地號</th><th>面積 (M²)</th><th>使用分區</th><th>使用地類別</th><th>公告土地現值</th><th>公告地價</th><th>財產編號</th><th>財產名稱</th><th>財產價值 (元)</th><th>關聯建號</th><th>操作</th></tr></thead><tbody>{filtered.map((land) => <tr key={land.id}><td>{land.section}<small>{land.sectionCode}</small></td><td>{land.landNumber}</td><td className="money">{land.area.toLocaleString()}</td><td>{land.zoning}</td><td>{land.landUseType}</td><td className="money">{land.announcedLandValue.toLocaleString()}</td><td className="money">{land.announcedLandPrice.toLocaleString()}</td><td className="mono">{land.id}</td><td>{land.name}</td><td className="money">{money(land.price)}</td><td>{land.relatedBuildingNumbers}</td><td><button className="row-action" onClick={() => openMapForLand(land)} type="button">查看地圖</button></td></tr>)}</tbody></table></div></section>}</section>;
 }
 
-function Import({ store, setStore }) {
-  const [file, setFile] = useState(null); const [sourceType, setSourceType] = useState('asset'); const [message, setMessage] = useState(''); const [busy, setBusy] = useState(false);
-  async function importFile(e) { e.preventDefault(); if (!file) return setMessage('請先選擇 Excel 檔案。'); setBusy(true); try { const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' }); const first = workbook.Sheets[workbook.SheetNames[0]]; const records = normalizeRows(readWorksheetRows(first), sourceType); if (!records.length) throw new Error('找不到「財產編號」欄位或有效資料列。'); const keys = new Set(records.map((r) => `${r.sourceType}:${r.assetNo}:${r.serialNo}`)); const retained = store.assets.filter((r) => !keys.has(`${r.sourceType}:${r.assetNo}:${r.serialNo}`)); const at = new Date().toLocaleString('zh-TW', { hour12: false }); setStore({ ...store, assets: [...retained, ...records], imports: [{ fileName: file.name, sourceType, count: records.length, at }, ...store.imports] }); setMessage(`已完成匯入 ${records.length.toLocaleString()} 筆資料。相同類型、財產編號與流水號的既有資料已更新。`); } catch (error) { setMessage(error.message || '匯入失敗，請確認檔案格式。'); } finally { setBusy(false); } }
-  return <section className="page"><div className="page-heading"><div><p className="eyebrow">IMPORT REGISTER</p><h1>匯入清冊</h1><p>上傳一份 Excel，系統會以資料類型、財產編號與流水號更新資料。</p></div></div><form className="import-form" onSubmit={importFile}><fieldset><legend>清冊類型</legend><div className="source-options">{Object.entries(sourceLabels).map(([value, label]) => <label key={value}><input type="radio" checked={sourceType === value} onChange={() => setSourceType(value)} /><span><strong>{label}</strong><small>{value === 'asset' ? '含原值、累折與淨值' : '通常不含折舊資料'}</small></span></label>)}</div></fieldset><label className="file-field">Excel 檔案<input type="file" accept=".xlsx,.xls,.xlsm" onChange={(e) => setFile(e.target.files?.[0] || null)} /><span>{file ? file.name : '選擇 .xlsx、.xls 或 .xlsm 檔案'}</span></label><button className="button button-primary" disabled={busy} type="submit">{busy ? '正在匯入…' : '開始匯入'}</button>{message && <p className={message.startsWith('已完成') ? 'form-success' : 'form-error'} role="status">{message}</p>}</form><section className="import-history"><h2>匯入紀錄</h2>{store.imports.length ? <ul>{store.imports.map((entry, i) => <li key={`${entry.at}-${i}`}><span className={`source-tag ${entry.sourceType}`}>{sourceLabels[entry.sourceType]}</span><strong>{entry.fileName}</strong><span>{entry.count.toLocaleString()} 筆</span><time>{entry.at}</time></li>)}</ul> : <p className="muted">尚無匯入紀錄。</p>}</section></section>;
+function Import({ store, onImported }) {
+  const [file, setFile] = useState(null); const [sourceType, setSourceType] = useState('asset'); const [message, setMessage] = useState(''); const [busy, setBusy] = useState(false); const [preview, setPreview] = useState(null); const [batchChanges, setBatchChanges] = useState(null);
+  async function preparePreview(e) { e.preventDefault(); if (!file) return setMessage('請先選擇 Excel 檔案。'); setBusy(true); setMessage(''); try { const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' }); const first = workbook.Sheets[workbook.SheetNames[0]]; if (!first) throw new Error('找不到可讀取的工作表。'); const result = inspectImportRows(readWorksheetRows(first), sourceType); if (!result.total) throw new Error('找不到有效的資料列。'); if (!result.errors.length && result.records.length) { const { data, error } = await supabase.functions.invoke('import-inventory', { body: { mode: 'preview', sourceType, fileName: file.name, records: result.records } }); if (error) { const detail = await error.context?.json().catch(() => null); throw new Error(detail?.error || error.message); } result.databaseSummary = data?.summary; } setPreview(result); } catch (error) { setPreview(null); setMessage(error.message || '無法讀取 Excel，請確認檔案格式。'); } finally { setBusy(false); } }
+  async function commitImport() { if (!preview?.records.length || !file) return; setBusy(true); setMessage(''); try { const { data, error } = await supabase.functions.invoke('import-inventory', { body: { sourceType, fileName: file.name, records: preview.records } }); if (error) { const detail = await error.context?.json().catch(() => null); throw new Error(detail?.error || error.message); } if (data?.error) throw new Error(data.error); await onImported(); setMessage(`已完成匯入 ${Number(data?.recordCount || preview.records.length).toLocaleString()} 筆資料，並已寫入雲端清冊。`); setPreview(null); } catch (error) { setMessage(error.message || '匯入失敗，請確認預覽報告。'); } finally { setBusy(false); } }
+  function resetPreview(nextFile) { setFile(nextFile); setPreview(null); setMessage(''); }
+  async function viewChanges(entry) { setBusy(true); try { const { data, error } = await supabase.functions.invoke('import-inventory', { body: { mode: 'changes', importId: entry.id } }); if (error) { const detail = await error.context?.json().catch(() => null); throw new Error(detail?.error || error.message); } setBatchChanges({ entry, rows: data?.changes || [] }); } catch (error) { setMessage(error.message || '無法讀取批次差異。'); } finally { setBusy(false); } }
+  return <section className="page"><div className="page-heading"><div><p className="eyebrow">IMPORT REGISTER</p><h1>匯入清冊</h1><p>先檢查 Excel，再確認寫入雲端清冊；主鍵為區分別代碼、財產編號與流水號。</p></div></div><form className="import-form" onSubmit={preparePreview}><fieldset><legend>清冊類型</legend><div className="source-options">{Object.entries(sourceLabels).map(([value, label]) => <label key={value}><input type="radio" checked={sourceType === value} onChange={() => { setSourceType(value); setPreview(null); }} /><span><strong>{label}</strong><small>{value === 'asset' ? '含原值、累折與淨值' : '通常不含折舊資料'}</small></span></label>)}</div></fieldset><label className="file-field">Excel 檔案<input type="file" accept=".xlsx,.xls,.xlsm" onChange={(e) => resetPreview(e.target.files?.[0] || null)} /><span>{file ? file.name : '選擇 .xlsx、.xls 或 .xlsm 檔案'}</span></label><button className="button button-primary" disabled={busy} type="submit">{busy ? '正在檢查…' : '檢查並產生預覽'}</button>{message && <p className={message.startsWith('已完成') ? 'form-success' : 'form-error'} role="status">{message}</p>}</form>{preview && <section className="import-preview" aria-live="polite"><header><div><p className="eyebrow">IMPORT PREVIEW</p><h2>匯入預覽</h2></div><strong>{preview.records.length.toLocaleString()} 筆可匯入</strong></header><div className="preview-summary"><p>Excel 資料列：<strong>{preview.total.toLocaleString()}</strong></p><p>錯誤：<strong className={preview.errors.length ? 'is-error' : ''}>{preview.errors.length.toLocaleString()}</strong></p><p>重複主鍵：<strong className={preview.duplicates.length ? 'is-warning' : ''}>{preview.duplicates.length.toLocaleString()}</strong></p></div>{preview.databaseSummary && <><h3>與現行清冊比較</h3><div className="preview-summary"><p>新增：<strong>{preview.databaseSummary.added.toLocaleString()}</strong></p><p>更新：<strong>{preview.databaseSummary.changed.toLocaleString()}</strong></p><p>未變更：<strong>{preview.databaseSummary.unchanged.toLocaleString()}</strong></p></div></>}{preview.errors.length ? <><h3>錯誤報告</h3><p className="helper">含錯誤的資料列不會匯入。請修正 Excel 後重新產生預覽。</p><ul className="import-issues">{preview.errors.slice(0, 20).map((issue) => <li key={issue.line}><strong>第 {issue.line} 列</strong><span>{issue.messages.join('、')}</span></li>)}</ul>{preview.errors.length > 20 && <p className="helper">另有 {preview.errors.length - 20} 項錯誤未列出。</p>}</> : <p className="form-success">必要欄位與金額檢查均通過。</p>}{preview.duplicates.length ? <><h3>重複主鍵</h3><p className="helper">將保留同一主鍵最後出現的資料，其他重複列不會寫入。</p><ul className="import-issues">{preview.duplicates.slice(0, 10).map((issue) => <li key={`${issue.previousLine}-${issue.line}`}><strong>第 {issue.line} 列</strong><span>與第 {issue.previousLine} 列重複：{issue.identity}</span></li>)}</ul>{preview.duplicates.length > 10 && <p className="helper">另有 {preview.duplicates.length - 10} 項重複未列出。</p>}</> : null}<div className="import-preview-actions"><button className="button button-secondary" onClick={() => setPreview(null)} type="button">返回修改</button><button className="button button-primary" disabled={busy || preview.errors.length > 0 || preview.records.length === 0} onClick={commitImport} type="button">{busy ? '正在寫入…' : `確認匯入 ${preview.records.length.toLocaleString()} 筆`}</button></div></section>}<section className="import-history"><h2>匯入紀錄</h2>{store.imports.length ? <ul>{store.imports.map((entry, i) => <li key={`${entry.at}-${i}`}><span className={`source-tag ${entry.sourceType}`}>{sourceLabels[entry.sourceType]}</span><strong>{entry.fileName}</strong><span>{entry.count.toLocaleString()} 筆</span><time>{entry.at}</time></li>)}</ul> : <p className="muted">尚無匯入紀錄。</p>}</section></section>;
+}
+
+function BatchHistory({ imports }) {
+  const [selected, setSelected] = useState(null);
+  const [changes, setChanges] = useState([]);
+  const [kind, setKind] = useState('all');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [pageSize, setPageSize] = useState(25);
+  const [page, setPage] = useState(1);
+  const [expandedKey, setActiveExpandedKey] = useState(null);
+  const collapseTimer = useRef(null);
+  const setExpandedKey = (nextKey) => {
+    window.clearTimeout(collapseTimer.current);
+    if (!nextKey && expandedKey) {
+      document.querySelector('.change-card')?.classList.add('is-closing');
+      collapseTimer.current = window.setTimeout(() => {
+        setActiveExpandedKey(null);
+        collapseTimer.current = null;
+      }, 260);
+      return;
+    }
+    setActiveExpandedKey(nextKey);
+  };
+  useEffect(() => () => window.clearTimeout(collapseTimer.current), []);
+
+  useEffect(() => {
+    if (!selected) return undefined;
+    let alive = true;
+    setLoading(true);
+    setError('');
+    (async () => {
+      try {
+        const all = [];
+        for (let from = 0; ; from += 1000) {
+          const { data, error: queryError } = await supabase.from('import_batch_changes').select('change_kind, category_type_code, asset_no, serial_no, asset_name, before_record, after_record').eq('import_id', selected.id).order('change_kind').range(from, from + 999);
+          if (queryError) throw queryError;
+          all.push(...(data || []));
+          if (!data || data.length < 1000) break;
+        }
+        if (alive) setChanges(all);
+      } catch (queryError) {
+        if (alive) setError(queryError.message);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [selected]);
+
+  const fieldLabels = { name: '中文名稱', old_no: '舊編號', acquired_at: '購置日期', unit_code: '保管單位代碼', unit_name: '保管單位', use_unit_name: '使用單位', location_code: '存置地點代碼', location_name: '存置地點', custodian_code: '保管人代碼', custodian_name: '保管人', user_code: '使用人代碼', user_name: '使用人', quantity: '數量', measure_unit: '計量單位', original_value: '原值', depreciation: '累折', net_value: '淨值', useful_life: '年限', category_name: '財產別名', category_type: '區分別', model: '型式', brand: '廠牌', notes: '備註', status: '使用現況' };
+  const annotated = changes.map((change) => {
+    if (change.change_kind !== 'changed') return change;
+    const differences = Object.keys(fieldLabels).filter((key) => String(change.before_record?.[key] ?? '') !== String(change.after_record?.[key] ?? '')).map((key) => ({ label: fieldLabels[key], before: change.before_record?.[key] ?? '—', after: change.after_record?.[key] ?? '—' }));
+    return { ...change, differences };
+  });
+  const filtered = kind === 'all' ? annotated : annotated.filter((change) => change.change_kind === kind);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageRows = filtered.length ? filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize) : [{ category_type_code: 'empty', asset_no: '—', serial_no: '', asset_name: '此篩選條件沒有符合的差異資料。請改選其他狀態查看。' }];
+  const selectBatch = (entry) => { setSelected(entry); setKind('all'); setPage(1); setExpandedKey(null); };
+  const selectKind = (value) => { setKind(value); setPage(1); setExpandedKey(null); };
+  const statusLabel = (value) => ({ added: '新增', changed: '更新', unchanged: '未變更' }[value] || '—');
+  const rowKey = (change, index) => `${change.category_type_code}-${change.asset_no}-${change.serial_no}-${index}`;
+
+  return <section className="page"><div className="page-heading"><div><p className="eyebrow">IMPORT BATCHES</p><h1>匯入批次</h1><p>檢視每次清冊匯入的差異與版本摘要。</p></div></div><section className="batch-layout"><div className="batch-list">{imports.length ? imports.map((entry) => <button className={`batch-item ${selected?.id === entry.id ? 'active' : ''}`} key={entry.id} onClick={() => selectBatch(entry)} type="button"><span className={`source-tag ${entry.sourceType}`}>{sourceLabels[entry.sourceType]}</span><strong>{entry.fileName}</strong><small>{entry.at} · {entry.count.toLocaleString()} 筆</small><em>新增 {entry.summary?.added ?? '—'}／更新 {entry.summary?.changed ?? '—'}</em></button>) : <p className="muted">尚無已完成的匯入批次。</p>}</div><section className="batch-detail">{selected ? <><header><div><p className="eyebrow">BATCH DETAIL</p><h2>{selected.fileName}</h2><p className="muted">{selected.at}</p></div></header><div className="preview-summary"><p>新增<strong>{selected.summary?.added ?? '—'}</strong></p><p>更新<strong>{selected.summary?.changed ?? '—'}</strong></p><p>未變更<strong>{selected.summary?.unchanged ?? '—'}</strong></p></div><div className="segmented batch-filter">{[['all', '全部'], ['added', '新增'], ['changed', '更新'], ['unchanged', '未變更']].map(([value, label]) => <label key={value}><input checked={kind === value} onChange={() => selectKind(value)} type="radio" /><span>{label}</span></label>)}</div>{loading ? <p className="muted">正在載入逐筆差異…</p> : error ? <p className="form-error">{error}</p> : changes.length ? <><div className="result-summary"><p className="result-count">查詢結果：<strong>{filtered.length.toLocaleString()}</strong> 筆</p><label className="page-size">每頁<select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); setExpandedKey(null); }}><option value="25">25 筆</option><option value="50">50 筆</option><option value="100">100 筆</option></select></label><p>第 {currentPage}／{totalPages} 頁</p></div><div className="asset-table-wrap"><table className="batch-change-table"><thead><tr><th>狀態</th><th>財產編號</th><th>摘要</th></tr></thead><tbody>{pageRows.map((change, index) => { const key = rowKey(change, index); const isExpanded = expandedKey === key; const count = change.differences?.length ?? 0; return <Fragment key={key}><tr><td>{statusLabel(change.change_kind)}</td><td className="mono"><strong>{change.asset_no}</strong><small>{change.serial_no}</small></td><td><strong>{change.asset_name}</strong>{change.change_kind === 'changed' && <div className="change-summary"><span>異動 {count} 項：{change.differences.map((difference) => difference.label).join('、')}</span><button aria-expanded={isExpanded} className="text-button change-toggle" onClick={() => setExpandedKey(isExpanded ? null : key)} type="button">{isExpanded ? '收合差異' : '查看差異'}</button></div>}</td></tr>{isExpanded && <tr className="change-card-row"><td colSpan="3"><section className="change-card"><header><div><p className="eyebrow">CHANGE DETAIL</p><h3>{change.asset_name}</h3></div><button className="text-button change-toggle" onClick={() => setExpandedKey(null)} type="button">收合</button></header><dl>{change.differences.map((difference) => <Fragment key={difference.label}><dt>{difference.label}</dt><dd><span>{String(difference.before)}</span><b>→</b><strong>{String(difference.after)}</strong></dd></Fragment>)}</dl></section></td></tr>}</Fragment>; })}</tbody></table></div>{totalPages > 1 && <nav className="pagination" aria-label="批次差異分頁"><button className="button button-secondary" disabled={currentPage === 1} onClick={() => { setPage(currentPage - 1); setExpandedKey(null); }} type="button">上一頁</button><span>第 {currentPage}／{totalPages} 頁</span><button className="button button-secondary" disabled={currentPage === totalPages} onClick={() => { setPage(currentPage + 1); setExpandedKey(null); }} type="button">下一頁</button></nav>}</> : <div className="empty-state"><h2>此批次沒有逐筆快照</h2><p>這是差異追蹤啟用前的批次，仍保有匯入紀錄與筆數。</p></div>}</> : <div className="empty-state"><h2>選擇一個匯入批次</h2><p>可查看該批次的摘要與逐筆差異。</p></div>}</section></section></section>;
 }
 
 function UserFilterCombo({ id, label, value, options, open, onChange, onOpenChange }) {
@@ -589,7 +747,7 @@ function Organization({ store, setStore }) {
   return <section className="page organization-page"><div className="page-heading"><div><p className="eyebrow">ORGANIZATION DIRECTORY</p><h1>組織管理</h1><p>結合花蓮航空站的單位階層與已建立使用者的成員編制。</p></div><button className="button button-primary" disabled={!tree.units.length} onClick={() => { setMasterError(''); setIsMasterOpen(true); }} type="button">編輯單位</button></div><section className="organization-intro"><p><strong>編制規則</strong> 同層單位一律依單位代碼排列；可在單位主檔設定顯示名稱與上層單位。消防班預設隸屬清冊中的航務組，其餘清冊單位預設為航空站直屬。</p></section>{tree.root && <section aria-label="花蓮航空站組織與成員編制" className="organization-chart"><div className="org-zoom-status"><span>滾輪縮放</span><strong>{Math.round(chartZoom * 100)}%</strong><button aria-label="還原組織圖比例" disabled={chartZoom === 1} onClick={() => setChartZoom(1)} type="button">還原</button></div><div className={`org-scroll-canvas ${isPanning ? 'is-panning' : ''}`} onPointerCancel={endPan} onPointerDown={beginPan} onPointerMove={pan} onPointerUp={endPan} onWheel={zoomChart} ref={chartRef}><div className="org-level-canvas" ref={chartSurfaceRef} style={chartLayout?.css}><svg aria-hidden="true" className="org-edge-layer" height={edgeLayer.height} viewBox={`0 0 ${edgeLayer.width} ${edgeLayer.height}`} width={edgeLayer.width}>{edgeLayer.paths.map((path, index) => <path d={path} key={`${path}-${index}`} />)}</svg>{chartLayout?.nodes.map((item) => <div className="org-level-node" key={item.node.id} style={{ gridColumn: `${item.start} / span ${item.span}`, gridRow: item.depth + 1 }}>{renderCard(item.node, (element) => { if (element) cardRefs.current.set(item.node.id, element); else cardRefs.current.delete(item.node.id); })}</div>)}</div></div><ul className="org-mobile-tree">{renderMobileBranch(tree.root)}</ul></section>}{tree.unassigned.length > 0 && <section className="org-unassigned"><header><h2>未編制使用者</h2><p>尚未設定所屬單位的使用者不會放入組織圖。</p></header><div className="org-members">{tree.unassigned.map((member) => <div className="org-member" key={member.id}><span aria-hidden="true">{(member.name || '?').slice(0, 1)}</span><div><strong>{member.name || '未命名使用者'}</strong><small>{member.title || '未設定職稱'} · {member.roles.map((role) => roleLabels[role]).join('、')}</small></div></div>)}</div></section>}{isMasterOpen && <UnitMasterDialog error={masterError} onClose={() => setIsMasterOpen(false)} onSave={saveUnitProfile} profiles={profiles} units={tree.units} />}</section>;
 }
 
-function Accounts({ store, setStore }) {
+function Accounts({ store, setStore, onUsersChanged }) {
   const emptyForm = { accountCode: '', custodianCode: '', name: '', unitCode: '', title: '', email: '', password: '', roles: ['custodian'], status: 'active' };
   const [form, setForm] = useState(emptyForm); const [editingId, setEditingId] = useState(null); const [isEditorOpen, setIsEditorOpen] = useState(false); const [term, setTerm] = useState(''); const [appliedTerm, setAppliedTerm] = useState(''); const [roleFilter, setRoleFilter] = useState(''); const [statusFilter, setStatusFilter] = useState(''); const [unitFilter, setUnitFilter] = useState(''); const [openFilterId, setOpenFilterId] = useState(null); const [openEditorCombo, setOpenEditorCombo] = useState(null); const [userPage, setUserPage] = useState(1); const [userPageSize, setUserPageSize] = useState(25); const [message, setMessage] = useState(''); const [compactUserFilters, setCompactUserFilters] = useState(false); const [compactUserFiltersOpen, setCompactUserFiltersOpen] = useState(false); const userFilterSentinelRef = useRef(null);
   const profiles = store.custodianProfiles || {};
@@ -635,17 +793,10 @@ function Accounts({ store, setStore }) {
   function openEdit(user) { const custodianCode = user.custodianCodes?.[0] || ''; setEditingId(user.id); setForm({ accountCode: accountCodeFor(user), custodianCode, name: user.name || profiles[custodianCode]?.displayName || directory.find((person) => person.code === custodianCode)?.displayName || '', unitCode: user.unitCode || user.unitCodes?.[0] || '', title: user.title || '', email: user.email || '', password: '', roles: user.roles || [], status: user.status || 'active' }); setMessage(''); setIsEditorOpen(true); }
   function setFromDirectory(code) { const person = directory.find((item) => item.code === code); setForm((current) => ({ ...current, custodianCode: code, name: profiles[code]?.displayName || person?.displayName || current.name, unitCode: person?.units[0]?.[0] || current.unitCode })); }
   function toggleRole(role) { setForm((current) => ({ ...current, roles: current.roles.includes(role) ? current.roles.filter((item) => item !== role) : [...current.roles, role] })); }
-  function saveUser(event) { event.preventDefault(); if (!form.accountCode || !form.name || !form.roles.length || (!editingId && !form.password)) return setMessage('請填寫帳號、姓名、權限與初始密碼。'); if (store.users.some((user) => user.id !== editingId && accountCodeFor(user).toLowerCase() === form.accountCode.toLowerCase())) return setMessage('此帳號已由其他使用者使用。'); const existing = store.users.find((user) => user.id === editingId); const user = { ...existing, id: editingId || crypto.randomUUID(), accountCode: form.accountCode.trim(), name: form.name, unitCode: form.unitCode, unitCodes: form.unitCode ? [form.unitCode] : [], title: form.title, email: form.email, roles: form.roles, status: form.status, custodianCodes: form.custodianCode ? [form.custodianCode] : [], ...(form.password ? { password: form.password } : {}) }; setStore((current) => ({ ...current, users: editingId ? current.users.map((item) => item.id === editingId ? user : item) : [...current.users, user], custodianProfiles: form.custodianCode ? { ...(current.custodianProfiles || {}), [form.custodianCode]: { displayName: form.name.trim() } } : current.custodianProfiles || {} })); setIsEditorOpen(false); setMessage(''); }
+  async function saveUser(event) { event.preventDefault(); if (!form.accountCode || !form.name || !form.roles.length || (!editingId && !form.password)) return setMessage('請填寫帳號、姓名、權限與初始密碼。'); try { const { data: { session } } = await supabase.auth.getSession(); const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/manage-users`, { method: 'POST', headers: { Authorization: `Bearer ${session.access_token}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: editingId ? 'update' : 'create', id: editingId, accountCode: form.accountCode, displayName: form.name, title: form.title, contactEmail: form.email, password: form.password || undefined, roles: form.roles, status: form.status, unitCodes: form.unitCode ? [form.unitCode] : [], custodianCodes: form.custodianCode ? [form.custodianCode] : [] }) }); const result = await response.json(); if (!response.ok) throw new Error(result.error); await onUsersChanged(); setIsEditorOpen(false); setMessage(''); } catch (error) { setMessage(error instanceof Error ? error.message : '儲存失敗。'); } }
   return <section className="page"><div className="page-heading"><div><p className="eyebrow">USER DIRECTORY</p><h1>使用者管理</h1><p>帳號可自由建立；可選擇配對清冊保管人，並校正本系統的顯示名稱。</p></div><button className="button button-primary" onClick={openCreate} type="button">新增使用者</button></div><div aria-hidden="true" className="filter-sentinel" ref={userFilterSentinelRef} />{compactUserFilters && <div className="compact-filter-bar compact-filter-bar-fixed"><button aria-expanded={compactUserFiltersOpen} className="compact-filter-trigger" onClick={() => setCompactUserFiltersOpen((open) => !open)} type="button">篩選條件{activeUserFilterCount ? <b>{activeUserFilterCount}</b> : null}</button><label className="compact-search"><span className="sr-only">全局關鍵字搜尋</span><input value={term} onChange={(event) => setTerm(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') runUserSearch(); }} placeholder="輸入後按 Enter 搜尋…" /></label><button className="compact-clear" disabled={!activeUserFilterCount} onClick={clearFilters} type="button">清除</button>{compactUserFiltersOpen && <div className="compact-filter-popover"><div className="filter-grid"><UserFilterCombo id="compact-user-unit" label="所屬單位" value={unitFilter} options={unitOptions} open={openFilterId === 'compact-user-unit'} onChange={setUnitFilter} onOpenChange={setOpenFilterId} /><UserFilterCombo id="compact-user-role" label="權限" value={roleFilter} options={roleOptions} open={openFilterId === 'compact-user-role'} onChange={setRoleFilter} onOpenChange={setOpenFilterId} /><UserFilterCombo id="compact-user-status" label="狀態" value={statusFilter} options={statusOptions} open={openFilterId === 'compact-user-status'} onChange={setStatusFilter} onOpenChange={setOpenFilterId} /></div></div>}</div>}<section className="search-panel user-management-panel" aria-label="使用者篩選"><div className="filter-panel-heading"><div><h2>篩選條件</h2><p>依所屬單位、權限與狀態篩選，可搜尋帳號、姓名、職稱或 Email。</p></div><button className="button button-secondary filter-reset" onClick={clearFilters} type="button">清除篩選</button></div><div className="filter-grid"><UserFilterCombo id="user-unit" label="所屬單位" value={unitFilter} options={unitOptions} open={openFilterId === 'user-unit'} onChange={setUnitFilter} onOpenChange={setOpenFilterId} /><UserFilterCombo id="user-role" label="權限" value={roleFilter} options={roleOptions} open={openFilterId === 'user-role'} onChange={setRoleFilter} onOpenChange={setOpenFilterId} /><UserFilterCombo id="user-status" label="狀態" value={statusFilter} options={statusOptions} open={openFilterId === 'user-status'} onChange={setStatusFilter} onOpenChange={setOpenFilterId} /></div><div className="advanced-search user-advanced-search"><label className="search-field">全局關鍵字搜尋<input value={term} onChange={(event) => setTerm(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') runUserSearch(); }} placeholder="輸入帳號、姓名、職稱或 Email" /></label><div className="advanced-search-actions"><button className={`button button-primary search-submit ${term !== appliedTerm ? 'pending' : ''}`} onClick={runUserSearch} type="button">搜尋</button></div></div></section><div className="result-summary user-result-summary"><p className="result-count">使用者：<strong>{filteredUsers.length.toLocaleString()}</strong> 位</p><p className="directory-note">清冊已辨識 {directory.length.toLocaleString()} 位保管人</p><label className="page-size">每頁顯示<select aria-label="每頁顯示使用者數" value={userPageSize} onChange={(event) => setUserPageSize(Number(event.target.value))}><option value="25">25 筆</option><option value="50">50 筆</option><option value="100">100 筆</option></select></label><p>第 {currentUserPage}／{totalUserPages} 頁</p></div>{filteredUsers.length ? <><div className="asset-table-wrap user-table-wrap"><table className="user-table"><thead><tr><th>狀態</th><th>帳號</th><th>姓名</th><th>所屬單位</th><th>職稱</th><th>權限</th><th>Email</th><th>管理</th></tr></thead><tbody>{pageUsers.map((user) => <tr key={user.id}><td><span className={`user-status ${user.status || 'active'}`}><HighlightText value={({ active: '啟用', pending: '待啟用', inactive: '停用' })[user.status || 'active']} terms={userHighlightTerms('status')} /></span></td><td className="mono"><HighlightText value={accountCodeFor(user)} terms={userHighlightTerms('global')} /></td><td><HighlightText value={user.name || '—'} terms={userHighlightTerms('global')} /></td><td><HighlightText value={unitLabel(user.unitCode || user.unitCodes?.[0])} terms={userHighlightTerms('unit')} /></td><td><HighlightText value={user.title || '—'} terms={userHighlightTerms('global')} /></td><td><div className="role-tags">{user.roles.map((role) => <span className="role-tag" key={role}><HighlightText value={roleLabels[role]} terms={userHighlightTerms('role')} /></span>)}</div></td><td><HighlightText value={user.email || '—'} terms={userHighlightTerms('global')} /></td><td><button aria-haspopup="dialog" className="row-action" onClick={() => openEdit(user)} type="button">編輯</button></td></tr>)}</tbody></table></div>{totalUserPages > 1 && <nav className="pagination" aria-label="使用者分頁"><button className="button button-secondary" disabled={currentUserPage === 1} onClick={() => setUserPage(currentUserPage - 1)} type="button">上一頁</button><span>第 {currentUserPage}／{totalUserPages} 頁</span><button className="button button-secondary" disabled={currentUserPage === totalUserPages} onClick={() => setUserPage(currentUserPage + 1)} type="button">下一頁</button></nav>}</> : <div className="empty-state"><h2>找不到符合的使用者</h2><p>請調整篩選條件或搜尋文字。</p></div>}{isEditorOpen && <dialog open className="detail-dialog user-editor" onClick={(event) => { if (event.target === event.currentTarget) setIsEditorOpen(false); }}><div><header><div><p className="eyebrow">{editingId ? 'EDIT USER' : 'CREATE USER'}</p><h2>{editingId ? '編輯使用者' : '新增使用者'}</h2></div><button className="close-button" onClick={() => setIsEditorOpen(false)} aria-label="關閉">×</button></header><form className="account-form user-account-form" onSubmit={saveUser}><div className="user-form-grid user-editor-grid"><label>帳號<input value={form.accountCode} readOnly={Boolean(editingId)} onChange={(event) => setForm({ ...form, accountCode: event.target.value })} /></label><label>{editingId ? '修改密碼' : '初始密碼'}<input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label><label>姓名<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label><FormCombo id="editor-custodian" label="配對保管人（選填）" value={form.custodianCode} options={accountOptions} open={openEditorCombo === 'editor-custodian'} onChange={setFromDirectory} onOpenChange={setOpenEditorCombo} /><FormCombo id="editor-unit" label="所屬單位" value={form.unitCode} options={editorUnitOptions} open={openEditorCombo === 'editor-unit'} onChange={(value) => setForm({ ...form, unitCode: value })} onOpenChange={setOpenEditorCombo} /><label>職稱<input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /></label><label>Email（選填）<input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label><FormCombo id="editor-status" label="狀態" value={form.status} options={editorStatusOptions} open={openEditorCombo === 'editor-status'} onChange={(value) => setForm({ ...form, status: value })} onOpenChange={setOpenEditorCombo} /></div><fieldset><legend>權限</legend><div className="role-checks">{Object.entries(roleLabels).map(([role, label]) => <label key={role}><input type="checkbox" checked={form.roles.includes(role)} onChange={() => toggleRole(role)} /><span>{label}</span></label>)}</div></fieldset><div className="role-guidance" aria-label="權限說明">{Object.entries(roleDescriptions).map(([role, description]) => <p key={role}><strong>{roleLabels[role]}</strong><span>{description}</span></p>)}</div>{message && <p className="form-error" role="alert">{message}</p>}<footer className="user-editor-actions"><button className="button button-secondary" onClick={() => setIsEditorOpen(false)} type="button">取消</button><button className="button button-primary" type="submit">{editingId ? '儲存變更' : '新增使用者'}</button></footer></form></div></dialog>}</section>;
 }
 
-function LegacyAccounts({ store, setStore }) {
-  const [form, setForm] = useState({ name: '', email: '', password: '', custodianCodes: '', unitCodes: '', roles: ['custodian'] }); const [message, setMessage] = useState('');
-  function toggleRole(role) { setForm((f) => ({ ...f, roles: f.roles.includes(role) ? f.roles.filter((r) => r !== role) : [...f.roles, role] })); }
-  function submit(e) { e.preventDefault(); if (!form.name || !form.email || !form.password || !form.roles.length) return setMessage('請填寫姓名、帳號、初始密碼與至少一個角色。'); if (store.users.some((u) => u.email.toLowerCase() === form.email.toLowerCase())) return setMessage('此帳號已存在。'); const user = { id: crypto.randomUUID(), ...form, custodianCodes: form.custodianCodes.split(',').map((x) => x.trim()).filter(Boolean), unitCodes: form.unitCodes.split(',').map((x) => x.trim()).filter(Boolean) }; setStore({ ...store, users: [...store.users, user] }); setForm({ name: '', email: '', password: '', custodianCodes: '', unitCodes: '', roles: ['custodian'] }); setMessage('帳號已建立。保管人可在登入後自行修改密碼。'); }
-  return <section className="page"><div className="page-heading"><div><p className="eyebrow">ACCOUNT ACCESS</p><h1>帳號與權限</h1><p>同一帳號可同時擁有保管人、單位主管與系統管理員角色。</p></div></div><div className="account-grid"><form className="account-form" onSubmit={submit}><h2>建立帳號</h2><label>姓名<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label><label>登入帳號<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label><label>初始密碼<input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label><fieldset><legend>角色</legend><div className="role-checks">{Object.entries(roleLabels).map(([role, label]) => <label key={role}><input type="checkbox" checked={form.roles.includes(role)} onChange={() => toggleRole(role)} /><span>{label}</span></label>)}</div></fieldset><label>保管人代碼<span className="helper">多個代碼以逗號分隔</span><input value={form.custodianCodes} onChange={(e) => setForm({ ...form, custodianCodes: e.target.value })} placeholder="例如：OP23, MS22" /></label><label>主管單位代碼<span className="helper">多個代碼以逗號分隔</span><input value={form.unitCodes} onChange={(e) => setForm({ ...form, unitCodes: e.target.value })} placeholder="例如：B04" /></label><button className="button button-primary" type="submit">建立帳號</button>{message && <p className={message.startsWith('帳號已') ? 'form-success' : 'form-error'}>{message}</p>}</form><section className="user-list"><h2>現有帳號</h2>{store.users.map((account) => <article key={account.id}><div><strong>{account.name}</strong><span>{account.email}</span></div><p>{account.roles.map((role) => <span className="role-tag" key={role}><HighlightText value={roleLabels[role]} terms={userHighlightTerms('role')} /></span>)}</p><small>{account.custodianCodes?.length ? `保管人：${account.custodianCodes.join('、')}` : ''}{account.unitCodes?.length ? ` 單位：${account.unitCodes.join('、')}` : ''}</small></article>)}</section></div></section>;
-}
-
-function Password({ user, setStore }) { const [oldPassword, setOld] = useState(''); const [nextPassword, setNext] = useState(''); const [message, setMessage] = useState(''); function submit(e) { e.preventDefault(); if (oldPassword !== user.password) return setMessage('目前密碼不正確。'); if (nextPassword.length < 8) return setMessage('新密碼至少需要 8 個字元。'); setStore((store) => ({ ...store, users: store.users.map((u) => u.id === user.id ? { ...u, password: nextPassword } : u) })); user.password = nextPassword; setOld(''); setNext(''); setMessage('密碼已更新。'); } return <section className="page narrow"><div className="page-heading"><div><p className="eyebrow">PASSWORD</p><h1>修改密碼</h1><p>新密碼至少 8 個字元。帳號與角色權限仍由系統管理員管理。</p></div></div><form className="account-form" onSubmit={submit}><label>目前密碼<input type="password" value={oldPassword} onChange={(e) => setOld(e.target.value)} /></label><label>新密碼<input type="password" value={nextPassword} onChange={(e) => setNext(e.target.value)} /></label><button className="button button-primary" type="submit">更新密碼</button>{message && <p className={message === '密碼已更新。' ? 'form-success' : 'form-error'}>{message}</p>}</form></section>; }
+function Password() { const [oldPassword, setOld] = useState(''); const [nextPassword, setNext] = useState(''); const [message, setMessage] = useState(''); async function submit(e) { e.preventDefault(); if (nextPassword.length < 12) return setMessage('新密碼至少需要 12 個字元。'); const { error } = await supabase.auth.updateUser({ password: nextPassword, current_password: oldPassword }); if (error) return setMessage('目前密碼不正確或無法更新。'); setOld(''); setNext(''); setMessage('密碼已更新。'); } return <section className="page narrow"><div className="page-heading"><div><p className="eyebrow">PASSWORD</p><h1>修改密碼</h1><p>新密碼至少需要 12 個字元。</p></div></div><form className="account-form" onSubmit={submit}><label>目前密碼<input type="password" value={oldPassword} onChange={(e) => setOld(e.target.value)} /></label><label>新密碼<input type="password" value={nextPassword} onChange={(e) => setNext(e.target.value)} /></label><button className="button button-primary" type="submit">更新密碼</button>{message && <p className={message === '密碼已更新。' ? 'form-success' : 'form-error'}>{message}</p>}</form></section>; }
 
 createRoot(document.getElementById('root')).render(<App />);
