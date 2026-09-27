@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import { authEmailFor, supabase } from './supabase';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import './styles.css';
+import './batch-accordion.css';
 
 // The authoritative cadastral source stays outside version control. `import.meta.glob`
 // keeps a fresh checkout buildable when that local source has not been provisioned.
@@ -234,14 +235,14 @@ const normalized = (value) => String(value || '').trim().toLocaleLowerCase('zh-T
 const searchFieldAliases = {
   '保管單位': 'unitName', '保管人': 'custodianName', '存置地點': 'locationName', '財產名稱': 'name', '財產別名': 'categoryName', '使用現況': 'status',
   '財產編號': 'assetNo', '流水號': 'serialNo', '淨值': 'netValue', '原值': 'originalValue', '累折': 'depreciation', '購置日期': 'acquiredAt',
-  '廠牌': 'brand', '型式': 'model', '使用單位': 'useUnitName', '使用人': 'userName', '計量單位': 'measureUnit', '財產區分別': 'categoryType', '年限': 'usefulLife', '數量': 'quantity', '備註': 'notes',
+  '廠牌': 'brand', '型式': 'model', '使用單位': 'useUnitName', '使用人': 'userName', '計量單位': 'measureUnit', '財產區分別': 'categoryType', '財產大類': 'assetMajorClass', '已使用': 'usedDuration', '年限': 'usefulLife', '數量': 'quantity', '備註': 'notes',
 };
 const searchRuleGroups = [
   { title: '邏輯', rules: [['任一符合', ' | '], ['排除文字', ' -'], ['精確片語', '""']] },
   { title: '萬用字元', rules: [['任意文字', '*'], ['單一字元', '?']] },
   { title: '指定欄位', rules: [['保管單位', '保管單位:'], ['保管人', '保管人:'], ['存置地點', '存置地點:'], ['財產名稱', '財產名稱:'], ['財產別名', '財產別名:'], ['使用現況', '使用現況:']] },
-  { title: '其他欄位', rules: [['廠牌', '廠牌:'], ['型式', '型式:'], ['使用單位', '使用單位:'], ['使用人', '使用人:'], ['計量單位', '計量單位:'], ['財產區分別', '財產區分別:'], ['年限', '年限:'], ['數量', '數量:'], ['備註', '備註:']] },
-  { title: '比較', rules: [['淨值大於', '淨值:>50000'], ['購置日期之後', '購置日期:>=110/01/01']] },
+  { title: '其他欄位', rules: [['廠牌', '廠牌:'], ['型式', '型式:'], ['使用單位', '使用單位:'], ['使用人', '使用人:'], ['計量單位', '計量單位:'], ['財產區分別', '財產區分別:'], ['財產大類', '財產大類:'], ['備註', '備註:']] },
+  { title: '比較', rules: [['已使用恰好 5 年', '已使用:=5年'], ['已使用至少 5 年', '已使用:>=5年'], ['年限至少 10 年', '年限:>=10'], ['數量大於', '數量:>1'], ['原值大於', '原值:>50000'], ['累折大於', '累折:>10000'], ['淨值大於', '淨值:>50000'], ['購置日期之後', '購置日期:>=110/01/01']] },
 ];
 
 function tokenizeSearch(term) {
@@ -254,6 +255,20 @@ function dateNumber(value) {
 function numericValue(value) {
   const number = Number(String(value ?? '').replace(/,/g, ''));
   return Number.isFinite(number) ? number : NaN;
+}
+function durationMonths(value) {
+  const match = String(value ?? '').trim().match(/^(\d+)\s*年(?:\s*(\d+)\s*月)?$/);
+  return match ? Number(match[1]) * 12 + Number(match[2] || 0) : NaN;
+}
+function searchableValues(asset) {
+  return [
+    asset.assetNo, asset.serialNo, asset.name, asset.oldNo, asset.acquiredAt,
+    asset.unitCode, asset.unitName, asset.useUnitName, asset.locationCode, asset.locationName,
+    asset.custodianCode, asset.custodianName, asset.rawCustodianName, asset.userCode, asset.userName,
+    asset.quantity, asset.measureUnit, asset.originalValue, asset.depreciation, asset.netValue, asset.usefulLife,
+    asset.categoryName, asset.categoryTypeCode, asset.categoryType, asset.model, asset.brand, asset.notes, asset.status,
+    asset.sourceType, asset.assetMajorClass, asset.usedDuration,
+  ];
 }
 function textMatches(value, needle) {
   const query = normalized(String(needle).replace(/^"|"$/g, ''));
@@ -270,13 +285,13 @@ function tokenMatches(asset, rawToken) {
   if (comparison && searchFieldAliases[comparison[1]]) {
     const [, label, operator, expected] = comparison;
     const field = searchFieldAliases[label];
-    const actual = field === 'acquiredAt' ? dateNumber(asset[field]) : numericValue(asset[field]);
-    const target = field === 'acquiredAt' ? dateNumber(expected) : numericValue(expected);
+    const actual = field === 'acquiredAt' ? dateNumber(asset[field]) : field === 'usedDuration' ? durationMonths(asset[field]) : numericValue(asset[field]);
+    const target = field === 'acquiredAt' ? dateNumber(expected) : field === 'usedDuration' ? durationMonths(expected) : numericValue(expected);
     matched = Number.isFinite(actual) && Number.isFinite(target) && ({ '>': actual > target, '>=': actual >= target, '<': actual < target, '<=': actual <= target, '=': actual === target })[operator];
   } else if (fieldSearch && searchFieldAliases[fieldSearch[1]]) {
     matched = textMatches(asset[searchFieldAliases[fieldSearch[1]]], fieldSearch[2]);
   } else {
-    matched = Object.values(asset).some((value) => textMatches(value, token));
+    matched = searchableValues(asset).some((value) => textMatches(value, token));
   }
   return negated ? !matched : matched;
 }
@@ -289,7 +304,7 @@ function matchesAdvancedSearch(asset, term) {
 }
 function HighlightText({ value, terms }) {
   const text = String(value || '');
-  const needles = [...new Set(terms.map((term) => String(term).replace(/^"|"$/g, '').replace(/[?*]/g, '').trim()).filter((term) => term.length > 1))].sort((a, b) => b.length - a.length);
+  const needles = [...new Set(terms.map((term) => String(term).replace(/^"|"$/g, '').replace(/[?*]/g, '').trim()).filter(Boolean))].sort((a, b) => b.length - a.length);
   if (!text || !needles.length) return text || '—';
   const pattern = new RegExp(`(${needles.map((term) => term.replace(/[.*+^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'giu');
   return text.split(pattern).map((part, index) => normalized(part) && needles.some((term) => normalized(part) === normalized(term)) ? <mark key={index}>{part}</mark> : part);
@@ -310,7 +325,9 @@ function Query({ assets, imports }) {
   const [currentPage, setCurrentPage] = useState(1); const [pageSize, setPageSize] = useState(defaultPageSize); const [expandedId, setExpandedId] = useState(null);
   const [compactFilters, setCompactFilters] = useState(false); const [compactFilterExpanded, setCompactFilterExpanded] = useState(false); const [openFilterId, setOpenFilterId] = useState(null); const [ruleMenuOpen, setRuleMenuOpen] = useState(false); const filterSentinelRef = useRef(null); const filterPanelRef = useRef(null); const searchInputRef = useRef(null);
   const matches = (asset, omit = null) => filterFields.every(([key]) => key === omit || !filters[key] || normalized(asset[key]).includes(normalized(filters[key])));
-  const sourceRows = useMemo(() => assets.filter((asset) => source === 'all' || asset.sourceType === source), [assets, source]);
+  const sourceRows = useMemo(() => assets
+    .filter((asset) => source === 'all' || asset.sourceType === source)
+    .map((asset) => ({ ...asset, assetMajorClass: assetMajorClass(asset.assetNo), usedDuration: usedDuration(asset.acquiredAt) })), [assets, source]);
   const options = useMemo(() => Object.fromEntries(filterFields.map(([key]) => [key, [...new Set(sourceRows.filter((asset) => matches(asset, key)).map((asset) => String(asset[key] || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hant'))])), [sourceRows, filters]);
   const rows = useMemo(() => sourceRows
     .filter((asset) => matches(asset) && matchesAdvancedSearch(asset, appliedTerm))
@@ -544,21 +561,7 @@ function BatchHistory({ imports }) {
   const [error, setError] = useState('');
   const [pageSize, setPageSize] = useState(25);
   const [page, setPage] = useState(1);
-  const [expandedKey, setActiveExpandedKey] = useState(null);
-  const collapseTimer = useRef(null);
-  const setExpandedKey = (nextKey) => {
-    window.clearTimeout(collapseTimer.current);
-    if (!nextKey && expandedKey) {
-      document.querySelector('.change-card')?.classList.add('is-closing');
-      collapseTimer.current = window.setTimeout(() => {
-        setActiveExpandedKey(null);
-        collapseTimer.current = null;
-      }, 260);
-      return;
-    }
-    setActiveExpandedKey(nextKey);
-  };
-  useEffect(() => () => window.clearTimeout(collapseTimer.current), []);
+  const [expandedKey, setExpandedKey] = useState(null);
 
   useEffect(() => {
     if (!selected) return undefined;
@@ -593,13 +596,13 @@ function BatchHistory({ imports }) {
   const filtered = kind === 'all' ? annotated : annotated.filter((change) => change.change_kind === kind);
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
-  const pageRows = filtered.length ? filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize) : [{ category_type_code: 'empty', asset_no: '—', serial_no: '', asset_name: '此篩選條件沒有符合的差異資料。請改選其他狀態查看。' }];
+  const pageRows = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const selectBatch = (entry) => { setSelected(entry); setKind('all'); setPage(1); setExpandedKey(null); };
   const selectKind = (value) => { setKind(value); setPage(1); setExpandedKey(null); };
   const statusLabel = (value) => ({ added: '新增', changed: '更新', unchanged: '未變更' }[value] || '—');
   const rowKey = (change, index) => `${change.category_type_code}-${change.asset_no}-${change.serial_no}-${index}`;
 
-  return <section className="page"><div className="page-heading"><div><p className="eyebrow">IMPORT BATCHES</p><h1>匯入批次</h1><p>檢視每次清冊匯入的差異與版本摘要。</p></div></div><section className="batch-layout"><div className="batch-list">{imports.length ? imports.map((entry) => <button className={`batch-item ${selected?.id === entry.id ? 'active' : ''}`} key={entry.id} onClick={() => selectBatch(entry)} type="button"><span className={`source-tag ${entry.sourceType}`}>{sourceLabels[entry.sourceType]}</span><strong>{entry.fileName}</strong><small>{entry.at} · {entry.count.toLocaleString()} 筆</small><em>新增 {entry.summary?.added ?? '—'}／更新 {entry.summary?.changed ?? '—'}</em></button>) : <p className="muted">尚無已完成的匯入批次。</p>}</div><section className="batch-detail">{selected ? <><header><div><p className="eyebrow">BATCH DETAIL</p><h2>{selected.fileName}</h2><p className="muted">{selected.at}</p></div></header><div className="preview-summary"><p>新增<strong>{selected.summary?.added ?? '—'}</strong></p><p>更新<strong>{selected.summary?.changed ?? '—'}</strong></p><p>未變更<strong>{selected.summary?.unchanged ?? '—'}</strong></p></div><div className="segmented batch-filter">{[['all', '全部'], ['added', '新增'], ['changed', '更新'], ['unchanged', '未變更']].map(([value, label]) => <label key={value}><input checked={kind === value} onChange={() => selectKind(value)} type="radio" /><span>{label}</span></label>)}</div>{loading ? <p className="muted">正在載入逐筆差異…</p> : error ? <p className="form-error">{error}</p> : changes.length ? <><div className="result-summary"><p className="result-count">查詢結果：<strong>{filtered.length.toLocaleString()}</strong> 筆</p><label className="page-size">每頁<select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); setExpandedKey(null); }}><option value="25">25 筆</option><option value="50">50 筆</option><option value="100">100 筆</option></select></label><p>第 {currentPage}／{totalPages} 頁</p></div><div className="asset-table-wrap"><table className="batch-change-table"><thead><tr><th>狀態</th><th>財產編號</th><th>摘要</th></tr></thead><tbody>{pageRows.map((change, index) => { const key = rowKey(change, index); const isExpanded = expandedKey === key; const count = change.differences?.length ?? 0; return <Fragment key={key}><tr><td>{statusLabel(change.change_kind)}</td><td className="mono"><strong>{change.asset_no}</strong><small>{change.serial_no}</small></td><td><strong>{change.asset_name}</strong>{change.change_kind === 'changed' && <div className="change-summary"><span>異動 {count} 項：{change.differences.map((difference) => difference.label).join('、')}</span><button aria-expanded={isExpanded} className="text-button change-toggle" onClick={() => setExpandedKey(isExpanded ? null : key)} type="button">{isExpanded ? '收合差異' : '查看差異'}</button></div>}</td></tr>{isExpanded && <tr className="change-card-row"><td colSpan="3"><section className="change-card"><header><div><p className="eyebrow">CHANGE DETAIL</p><h3>{change.asset_name}</h3></div><button className="text-button change-toggle" onClick={() => setExpandedKey(null)} type="button">收合</button></header><dl>{change.differences.map((difference) => <Fragment key={difference.label}><dt>{difference.label}</dt><dd><span>{String(difference.before)}</span><b>→</b><strong>{String(difference.after)}</strong></dd></Fragment>)}</dl></section></td></tr>}</Fragment>; })}</tbody></table></div>{totalPages > 1 && <nav className="pagination" aria-label="批次差異分頁"><button className="button button-secondary" disabled={currentPage === 1} onClick={() => { setPage(currentPage - 1); setExpandedKey(null); }} type="button">上一頁</button><span>第 {currentPage}／{totalPages} 頁</span><button className="button button-secondary" disabled={currentPage === totalPages} onClick={() => { setPage(currentPage + 1); setExpandedKey(null); }} type="button">下一頁</button></nav>}</> : <div className="empty-state"><h2>此批次沒有逐筆快照</h2><p>這是差異追蹤啟用前的批次，仍保有匯入紀錄與筆數。</p></div>}</> : <div className="empty-state"><h2>選擇一個匯入批次</h2><p>可查看該批次的摘要與逐筆差異。</p></div>}</section></section></section>;
+  return <section className="page"><div className="page-heading"><div><p className="eyebrow">IMPORT BATCHES</p><h1>匯入批次</h1><p>檢視每次清冊匯入的差異與版本摘要。</p></div></div><section className="batch-layout"><div className="batch-list">{imports.length ? imports.map((entry) => <button className={`batch-item ${selected?.id === entry.id ? 'active' : ''}`} key={entry.id} onClick={() => selectBatch(entry)} type="button"><span className={`source-tag ${entry.sourceType}`}>{sourceLabels[entry.sourceType]}</span><strong>{entry.fileName}</strong><small>{entry.at} · {entry.count.toLocaleString()} 筆</small><em>新增 {entry.summary?.added ?? '—'}／更新 {entry.summary?.changed ?? '—'}／未變更 {entry.summary?.unchanged ?? '—'}</em></button>) : <p className="muted">尚無已完成的匯入批次。</p>}</div><section className="batch-detail">{selected ? <><header><div><p className="eyebrow">BATCH DETAIL</p><h2>{selected.fileName}</h2><p className="muted">{selected.at}</p></div></header><div className="preview-summary"><p>新增<strong>{selected.summary?.added ?? '—'}</strong></p><p>更新<strong>{selected.summary?.changed ?? '—'}</strong></p><p>未變更<strong>{selected.summary?.unchanged ?? '—'}</strong></p></div><div className="segmented batch-filter">{[['all', '全部'], ['added', '新增'], ['changed', '更新'], ['unchanged', '未變更']].map(([value, label]) => <label key={value}><input checked={kind === value} onChange={() => selectKind(value)} type="radio" /><span>{label}</span></label>)}</div>{loading ? <p className="muted">正在載入逐筆差異…</p> : error ? <p className="form-error">{error}</p> : changes.length ? <><div className="result-summary"><p className="result-count">查詢結果：<strong>{filtered.length.toLocaleString()}</strong> 筆</p><label className="page-size">每頁<select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); setExpandedKey(null); }}><option value="25">25 筆</option><option value="50">50 筆</option><option value="100">100 筆</option></select></label><p>第 {currentPage}／{totalPages} 頁</p></div><div className="asset-table-wrap"><table className="batch-change-table"><thead><tr><th>狀態</th><th>財產編號</th><th>摘要</th></tr></thead><tbody>{pageRows.length ? pageRows.map((change, index) => { const key = rowKey(change, index); const isExpanded = expandedKey === key; const count = change.differences?.length ?? 0; return <Fragment key={key}><tr><td>{statusLabel(change.change_kind)}</td><td className="mono"><strong>{change.asset_no}</strong><small>{change.serial_no}</small></td><td><strong>{change.asset_name}</strong>{change.change_kind === 'changed' && <div className="change-summary"><span>異動 {count} 項：{change.differences.map((difference) => difference.label).join('、')}</span><button aria-controls={`change-detail-${key}`} aria-expanded={isExpanded} className="text-button change-toggle" onClick={() => setExpandedKey(isExpanded ? null : key)} type="button">{isExpanded ? '收合差異' : '查看差異'}</button></div>}</td></tr>{change.change_kind === 'changed' && <tr className="asset-detail-row change-detail-row"><td colSpan="3"><div className={'asset-detail ' + (isExpanded ? 'open' : '')} id={'change-detail-' + key}><div><dl>{change.differences.map((difference) => <div className="detail-pair detail-wide" key={difference.label}><span>{difference.label}</span><strong className="change-values"><s>{String(difference.before)}</s><b>→</b><em>{String(difference.after)}</em></strong></div>)}</dl></div></div></td></tr>}</Fragment>; } ) : <tr className="batch-empty-row"><td colSpan="3"><div className="batch-empty-state"><strong>此篩選條件沒有符合的差異資料</strong><span>請改選其他狀態查看。</span></div></td></tr>}</tbody></table></div>{totalPages > 1 && <nav className="pagination" aria-label="批次差異分頁"><button className="button button-secondary" disabled={currentPage === 1} onClick={() => { setPage(currentPage - 1); setExpandedKey(null); }} type="button">上一頁</button><span>第 {currentPage}／{totalPages} 頁</span><button className="button button-secondary" disabled={currentPage === totalPages} onClick={() => { setPage(currentPage + 1); setExpandedKey(null); }} type="button">下一頁</button></nav>}</> : <div className="empty-state"><h2>此批次沒有逐筆快照</h2><p>這是差異追蹤啟用前的批次，仍保有匯入紀錄與筆數。</p></div>}</> : <div className="empty-state"><h2>選擇一個匯入批次</h2><p>可查看該批次的摘要與逐筆差異。</p></div>}</section></section></section>;
 }
 
 function UserFilterCombo({ id, label, value, options, open, onChange, onOpenChange }) {
