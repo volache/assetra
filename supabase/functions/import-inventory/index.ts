@@ -77,10 +77,10 @@ const identityOf = (record: Record<string, unknown>) => `${record.category_type_
 const compareFields = ['name', 'old_no', 'acquired_at', 'unit_code', 'unit_name', 'use_unit_name', 'location_code', 'location_name', 'custodian_code', 'custodian_name', 'user_code', 'user_name', 'quantity', 'measure_unit', 'original_value', 'depreciation', 'net_value', 'useful_life', 'category_name', 'category_type', 'model', 'brand', 'notes', 'status'];
 const sameRecord = (left: Record<string, unknown>, right: Record<string, unknown>) => compareFields.every((field) => String(left[field] ?? '') === String(right[field] ?? ''));
 
-async function loadCurrentRecords(client: ReturnType<typeof createClient>) {
+async function loadCurrentRecords(client: ReturnType<typeof createClient>, sourceType: 'asset' | 'item') {
   const records: Record<string, unknown>[] = [];
   for (let from = 0; ; from += 1000) {
-    const { data, error } = await client.from('asset_records').select('*').eq('is_current', true).range(from, from + 999);
+    const { data, error } = await client.from('asset_records').select('*').eq('is_current', true).eq('source_type', sourceType).range(from, from + 999);
     if (error) throw error;
     records.push(...(data || []));
     if (!data || data.length < 1000) return records;
@@ -108,6 +108,12 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
+    if (body.mode === 'delete') {
+      if (typeof body.importId !== 'string' || !body.importId) throw new Error("請指定要刪除的匯入批次。");
+      const { data, error } = await admin.rpc('delete_inventory_import', { p_import_id: body.importId });
+      if (error) throw error;
+      return new Response(JSON.stringify({ deleted: data }), { headers: corsHeaders });
+    }
     if (body.mode === 'changes') {
       const { data, error } = await admin.from('import_batch_changes').select('change_kind, category_type_code, asset_no, serial_no, asset_name, before_record, after_record').eq('import_id', body.importId).order('change_kind').limit(200);
       if (error) throw error;
@@ -117,7 +123,7 @@ Deno.serve(async (req) => {
     if (!Array.isArray(body.records) || body.records.length === 0) throw new Error("清冊不可為空。");
     if (body.records.length > 10000) throw new Error("單次匯入最多 10,000 筆資料。");
     const records = body.records.map(normalizeRecord);
-    const current = await loadCurrentRecords(admin);
+    const current = await loadCurrentRecords(admin, body.sourceType);
     const currentByIdentity = new Map(current.map((record) => [identityOf(record), record]));
     const summary = { added: 0, changed: 0, unchanged: 0 };
     const samples = { added: [] as string[], changed: [] as string[] };
@@ -147,7 +153,17 @@ Deno.serve(async (req) => {
       const { error: changesError } = await admin.from('import_batch_changes').insert(changes.slice(start, start + 500));
       if (changesError) throw changesError;
     }
-    return new Response(JSON.stringify({ importId, recordCount: records.length, summary }), { headers: corsHeaders });
+    const { data: retention, error: retentionError } = await admin.rpc('prune_inventory_imports', {
+      p_source_type: body.sourceType,
+      p_keep: 10,
+    });
+    if (retentionError) console.error("Import retention cleanup failed:", retentionError);
+    return new Response(JSON.stringify({
+      importId,
+      recordCount: records.length,
+      summary,
+      retention: retentionError ? { warning: '新批次已完成，但舊批次尚未清理。下次成功匯入時會再次嘗試。' } : retention,
+    }), { headers: corsHeaders });
   } catch (error) {
     console.error("Inventory import failed:", error);
     const message = error instanceof Error
