@@ -1,4 +1,5 @@
 import React, { lazy, Suspense, useEffect, useMemo, useRef } from "react";
+import { roleLabels } from "../lib/labels";
 
 const Accounts = lazy(() =>
   import("../features/accounts/Accounts").then(({ Accounts }) => ({
@@ -28,6 +29,11 @@ const AssetQuery = lazy(() =>
     default: AssetQuery,
   })),
 );
+const CollaborationTasks = lazy(() =>
+  import("../features/collaboration/CollaborationTasks").then(
+    ({ CollaborationTasks }) => ({ default: CollaborationTasks }),
+  ),
+);
 const Organization = lazy(() =>
   import("../features/organization/Organization").then(({ Organization }) => ({
     default: Organization,
@@ -39,11 +45,6 @@ const Password = lazy(() =>
   })),
 );
 
-const roleLabels = {
-  custodian: "保管人",
-  chief: "單位主管",
-  admin: "系統管理員",
-};
 function allowedAssets(assets, user) {
   if (user.roles.includes("admin")) return assets;
   return assets.filter(
@@ -63,6 +64,9 @@ export function Portal({
   user,
   page,
   setPage,
+  taskFocus,
+  onTaskFocusHandled,
+  onOpenTask,
   onLogout,
   refreshUsers,
   refreshInventory,
@@ -88,6 +92,7 @@ export function Portal({
   const navigation = [
     { id: "home", label: "總覽" },
     { id: "query", label: "財物查詢" },
+    { id: "tasks", label: "協作待辦" },
     ...(canAdmin
       ? [
           { id: "import", label: "匯入清冊" },
@@ -159,8 +164,14 @@ export function Portal({
               />
             )}
             {page === "query" && (
-              <AssetQuery assets={visible} imports={store.imports} />
+              <AssetQuery
+                assets={visible}
+                focusTask={taskFocus}
+                imports={store.imports}
+                onTaskFocusHandled={onTaskFocusHandled}
+              />
             )}
+            {page === "tasks" && <CollaborationTasks onOpenTask={onOpenTask} />}
             {page === "import" && canAdmin && (
               <ImportInventory store={store} onImported={refreshInventory} />
             )}

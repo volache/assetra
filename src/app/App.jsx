@@ -9,6 +9,7 @@ export function App() {
   const [store, setStore] = useState(loadStore);
   const [session, setSession] = useState(null);
   const [page, setPage] = useState("home");
+  const [taskFocus, setTaskFocus] = useState(null);
   const [isLoadingSession, setIsLoadingSession] = useState(false);
   const [isEnteringPortal, setIsEnteringPortal] = useState(false);
   const [isLeavingPortal, setIsLeavingPortal] = useState(false);
@@ -162,6 +163,15 @@ export function App() {
       setIsLeavingPortal(false);
     }, 420);
   }
+  function openTaskInAssetQuery(task) {
+    if (!task?.asset?.identityId) return;
+    setTaskFocus({
+      identityId: task.asset.identityId,
+      collaborationId: task.id,
+      requestId: Date.now(),
+    });
+    setPage("query");
+  }
   if (!authReady)
     return (
       <main className="login-shell">
@@ -200,6 +210,9 @@ export function App() {
       user={session}
       page={page}
       setPage={setPage}
+      taskFocus={taskFocus}
+      onTaskFocusHandled={() => setTaskFocus(null)}
+      onOpenTask={openTaskInAssetQuery}
       onLogout={endSession}
       refreshUsers={refreshUsers}
       refreshInventory={refreshInventory}

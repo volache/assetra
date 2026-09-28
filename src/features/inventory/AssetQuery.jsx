@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { supabase } from "../../supabase";
 import { assetMajorClass, money, usedDuration } from "../../lib/formatters";
-import { CollaborationNotes } from "./CollaborationNotes";
+import { CollaborationDrawer } from "../collaboration/CollaborationDrawer";
+import { requestCollaboration } from "../collaboration/api";
 import { FilterCombo, HighlightText, SearchRuleMenu } from "./QueryControls";
 import {
   defaultPageSize,
@@ -11,7 +11,12 @@ import {
   searchFieldAliases,
   tokenizeSearch,
 } from "./search";
-export function AssetQuery({ assets, imports }) {
+export function AssetQuery({
+  assets,
+  focusTask,
+  imports,
+  onTaskFocusHandled,
+}) {
   const [term, setTerm] = useState("");
   const [appliedTerm, setAppliedTerm] = useState("");
   const [source, setSource] = useState("all");
@@ -21,6 +26,9 @@ export function AssetQuery({ assets, imports }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(defaultPageSize);
   const [expandedId, setExpandedId] = useState(null);
+  const [collaborationSummaries, setCollaborationSummaries] = useState({});
+  const [collaborationAsset, setCollaborationAsset] = useState(null);
+  const [collaborationFocusId, setCollaborationFocusId] = useState(null);
   const [compactFilters, setCompactFilters] = useState(false);
   const [compactFilterExpanded, setCompactFilterExpanded] = useState(false);
   const [openFilterId, setOpenFilterId] = useState(null);
@@ -111,6 +119,10 @@ export function AssetQuery({ assets, imports }) {
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const page = Math.min(currentPage, totalPages);
   const pageRows = rows.slice((page - 1) * pageSize, page * pageSize);
+  const pageIdentityKey = pageRows
+    .map((asset) => asset.identityId)
+    .filter(Boolean)
+    .join(",");
   const activeFilterCount =
     filterFields.filter(([key]) => filters[key]).length +
     Number(Boolean(appliedTerm)) +
@@ -119,6 +131,62 @@ export function AssetQuery({ assets, imports }) {
     setCurrentPage(1);
     setExpandedId(null);
   }, [appliedTerm, source, ...filterFields.map(([key]) => filters[key])]);
+  useEffect(() => {
+    if (!focusTask?.identityId) return;
+    const asset = assets.find((item) => item.identityId === focusTask.identityId);
+    if (!asset) {
+      onTaskFocusHandled?.();
+      return;
+    }
+    const orderedAssets = [...assets].sort(
+      (left, right) =>
+        String(left.assetNo || "").localeCompare(
+          String(right.assetNo || ""),
+          "zh-Hant",
+          { numeric: true, sensitivity: "base" },
+        ) ||
+        String(left.serialNo || "").localeCompare(
+          String(right.serialNo || ""),
+          "zh-Hant",
+          { numeric: true, sensitivity: "base" },
+        ),
+    );
+    const index = orderedAssets.findIndex((item) => item.id === asset.id);
+    setTerm("");
+    setAppliedTerm("");
+    setSource("all");
+    setFilters(Object.fromEntries(filterFields.map(([key]) => [key, ""])));
+    window.requestAnimationFrame(() => {
+      setCurrentPage(Math.floor(Math.max(0, index) / pageSize) + 1);
+      setExpandedId(asset.id);
+      setCollaborationFocusId(focusTask.collaborationId || null);
+      setCollaborationAsset(asset);
+      onTaskFocusHandled?.();
+    });
+  }, [assets, focusTask?.requestId, onTaskFocusHandled, pageSize]);
+  useEffect(() => {
+    const identityIds = pageIdentityKey ? pageIdentityKey.split(",") : [];
+    if (!identityIds.length) {
+      setCollaborationSummaries({});
+      return;
+    }
+    let cancelled = false;
+    requestCollaboration({ action: "summaries", identityIds })
+      .then((data) => {
+        if (cancelled) return;
+        setCollaborationSummaries(
+          Object.fromEntries(
+            (data.summaries || []).map((summary) => [summary.identityId, summary]),
+          ),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setCollaborationSummaries({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pageIdentityKey]);
   useEffect(() => {
     const updateCompactMode = () => {
       if (window.innerWidth < 960 || !filterSentinelRef.current)
@@ -361,7 +429,7 @@ export function AssetQuery({ assets, imports }) {
                   <th>廠牌／型式</th>
                   <th>保管人</th>
                   <th>存置地點</th>
-                  <th>明細</th>
+                  <th>操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -429,16 +497,36 @@ export function AssetQuery({ assets, imports }) {
                         />
                       </td>
                       <td>
-                        <button
+                        <div className="asset-row-actions">
+                          <button
                           className="row-action"
                           aria-expanded={expandedId === a.id}
                           aria-controls={`detail-${a.id}`}
                           onClick={() =>
                             setExpandedId((id) => (id === a.id ? null : a.id))
                           }
-                        >
-                          {expandedId === a.id ? "收合" : "展開"}
-                        </button>
+                          >
+                            {expandedId === a.id ? "收合" : "展開"}
+                          </button>
+                          {a.identityId && (() => {
+                          const summary = collaborationSummaries[a.identityId];
+                          const total =
+                            (summary?.openCount || 0) +
+                            (summary?.inProgressCount || 0);
+                            return (
+                              <button
+                              className={`row-action asset-collaboration-action ${total ? "has-open-items" : ""}`}
+                              onClick={() => {
+                                setCollaborationFocusId(null);
+                                setCollaborationAsset(a);
+                              }}
+                              type="button"
+                              >
+                                共同筆記{total ? ` ${total}` : ""}
+                              </button>
+                            );
+                          })()}
+                        </div>
                       </td>
                     </tr>
                     <tr className="asset-detail-row">
@@ -560,7 +648,6 @@ export function AssetQuery({ assets, imports }) {
                                 </div>
                               ))}
                             </dl>
-                            <CollaborationNotes identityId={a.identityId} />
                           </div>
                         </div>
                       </td>
@@ -604,6 +691,20 @@ export function AssetQuery({ assets, imports }) {
           </p>
         </div>
       )}
+      <CollaborationDrawer
+        asset={collaborationAsset}
+        focusCollaborationId={collaborationFocusId}
+        onChanged={() => {
+          const identityIds = pageIdentityKey ? pageIdentityKey.split(",") : [];
+          requestCollaboration({ action: "summaries", identityIds })
+            .then((data) => setCollaborationSummaries(Object.fromEntries((data.summaries || []).map((summary) => [summary.identityId, summary]))))
+            .catch(() => {});
+        }}
+        onClose={() => {
+          setCollaborationFocusId(null);
+          setCollaborationAsset(null);
+        }}
+      />
     </section>
   );
 }

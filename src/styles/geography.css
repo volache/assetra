@@ -1,0 +1,89 @@
+/* The map reads like a cadastral workspace: a restrained register beside a survey-style plan. */
+.geo-workbench { background: var(--color-paper-2); border-radius: var(--radius-lg); display: grid; grid-template-columns: minmax(17rem, .32fr) minmax(0, 1fr); min-height: 39rem; overflow: hidden; }
+.geo-list-panel { background: var(--color-paper); border-inline-end: 1px solid var(--color-rule); display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; min-height: 0; }
+.geo-list-panel > header { align-items: center; border-bottom: 1px solid var(--color-rule); display: flex; height: 4rem; justify-content: space-between; padding: var(--space-sm) var(--space-lg); }
+.geo-list-panel h2 { font-size: var(--text-xl); }
+.geo-list-panel > header > strong { background: var(--color-paper-2); border-radius: var(--radius-pill); color: var(--color-ink-2); font-family: var(--font-mono); font-size: var(--text-xs); padding: .25rem .5rem; }
+.geo-search { padding: .65rem var(--space-lg); }
+.geo-search input { font-size: var(--text-sm); min-height: 2.25rem; padding: .45rem .65rem; width: 100%; }
+.geo-list-scroll { min-height: 0; overflow-y: auto; scrollbar-color: var(--color-muted) transparent; scrollbar-width: thin; }
+.geo-list-item { align-items: center; background: transparent; border: 0; border-bottom: 1px solid var(--color-rule); color: var(--color-ink); display: grid; gap: .45rem; grid-template-columns: auto minmax(0, 1fr) auto; padding: .55rem var(--space-lg); text-align: start; transition: background-color var(--dur-fast) var(--ease-out); width: 100%; }
+.geo-list-item:hover { background: var(--color-paper-2); }
+.geo-list-item.is-selected { background: oklch(92% .06 88); }
+.geo-list-map-icon { color: var(--color-accent); display: grid; height: 1.15rem; place-items: center; width: 1.15rem; }
+.geo-list-map-icon svg { display: block; height: 100%; width: 100%; }
+.geo-list-item strong, .geo-list-item small { display: block; }
+.geo-list-item strong { font-size: var(--text-sm); }
+.geo-list-item small { color: var(--color-muted); font-size: var(--text-xs); margin-top: .12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.geo-list-item em { color: var(--color-muted); font-family: var(--font-mono); font-size: .68rem; font-style: normal; white-space: nowrap; }
+.geo-no-result { color: var(--color-muted); font-size: var(--text-sm); padding: var(--space-lg); }
+.geo-list-panel > footer { border-top: 1px solid var(--color-rule); display: grid; gap: .2rem; padding: .5rem var(--space-lg); }
+.geo-list-panel > footer > div { align-items: baseline; display: flex; font-size: var(--text-xs); justify-content: space-between; }
+.geo-list-panel > footer span { color: var(--color-muted); }
+.geo-list-panel > footer strong { font-family: var(--font-mono); font-weight: 600; }
+.geo-map-panel { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; }
+.geo-map-panel > header { align-items: center; display: flex; font-family: var(--font-mono); font-size: var(--text-xs); height: 2.5rem; justify-content: space-between; padding: 0 var(--space-lg); }
+.geo-map-panel > header .text-button { font-family: var(--font-body); padding: 0; }
+.geo-map-actions { align-items: center; display: flex; gap: var(--space-md); }
+.geo-basemap-toggle { background: var(--color-paper); border: 1px solid var(--color-rule); border-radius: var(--radius-pill); display: inline-flex; overflow: hidden; }
+.geo-basemap-toggle button, .geo-3d-toggle { background: transparent; border: 0; color: var(--color-ink-2); font: inherit; min-height: 1.65rem; padding: 0 .55rem; }
+.geo-basemap-toggle button + button { border-inline-start: 1px solid var(--color-rule); }
+.geo-basemap-toggle button.is-active, .geo-3d-toggle.is-active { background: var(--color-accent); color: white; }
+.geo-basemap-toggle button:focus-visible, .geo-3d-toggle:focus-visible { outline: 2px solid var(--color-accent-deep); outline-offset: -2px; }
+.geo-live-dot { background: oklch(59% .16 155); border-radius: 50%; display: inline-block; height: .55rem; margin-inline-end: .4rem; width: .55rem; }
+.geo-map-stage { min-height: 31rem; overflow: hidden; position: relative; }
+.geo-mapbox { height: 100%; min-height: 31rem; width: 100%; }
+.geo-mapbox .mapboxgl-ctrl-top-right { top: var(--space-sm); right: var(--space-sm); }
+.geo-mapbox .mapboxgl-ctrl-group { border: 1px solid var(--color-rule); border-radius: var(--radius-sm); box-shadow: 0 .45rem 1rem oklch(25% .018 25 / .16); overflow: hidden; }
+.geo-mapbox .mapboxgl-ctrl button { height: 2.25rem; width: 2.25rem; }
+.geo-map-config { align-content: center; background: linear-gradient(135deg, oklch(83% .065 145), oklch(75% .05 225)); display: grid; gap: var(--space-sm); height: 100%; min-height: 31rem; padding: var(--space-2xl); place-items: center; text-align: center; }
+.geo-map-config strong { font-family: var(--font-display); font-size: var(--text-xl); }
+.geo-map-config p { color: var(--color-ink-2); margin: 0; max-width: 38ch; }
+.geo-map-config code { background: oklch(100% 0 0 / .55); border-radius: var(--radius-sm); font-family: var(--font-mono); padding: .15rem .3rem; }
+.geo-map-error { background: oklch(96% .05 35 / .96); border: 1px solid var(--color-error); border-radius: var(--radius-sm); bottom: var(--space-lg); color: var(--color-error); font-size: var(--text-xs); left: var(--space-lg); margin: 0; max-width: 22rem; padding: var(--space-sm); position: absolute; }
+.geo-map-stage svg { display: block; height: 100%; width: 100%; }
+.geo-map-ground { fill: oklch(81% .075 145); }
+.geo-map-runway { fill: oklch(71% .035 250); opacity: .84; }
+.geo-map-road { fill: none; stroke: oklch(97% .01 80); stroke-linecap: round; stroke-width: 13; }
+.geo-map-road-minor { stroke-width: 7; }
+.geo-map-stage polygon { cursor: pointer; fill: oklch(61% .14 154 / .34); stroke: oklch(50% .15 155); stroke-width: 2; transition: fill var(--dur-fast) var(--ease-out), stroke-width var(--dur-fast) var(--ease-out); }
+.geo-map-stage polygon:hover { fill: oklch(61% .16 154 / .5); }
+.geo-map-stage polygon.is-selected { fill: oklch(62% .17 57 / .56); stroke: oklch(47% .16 42); stroke-width: 4; }
+.geo-map-stage polygon.is-filtered-out { fill-opacity: .1; opacity: .35; }
+.geo-map-detail { background: oklch(99% .01 75 / .94); border: 1px solid oklch(45% .025 38 / .22); border-radius: var(--radius-md); bottom: var(--space-lg); box-shadow: 0 .8rem 1.6rem oklch(25% .02 30 / .16); max-width: 18rem; padding: var(--space-md); position: absolute; right: var(--space-lg); }
+.geo-map-detail p { color: var(--color-muted); font-family: var(--font-mono); font-size: var(--text-xs); margin: 0; }
+.geo-map-detail h2 { font-size: var(--text-lg); margin-top: .15rem; }
+.geo-map-detail dl { gap: var(--space-xs) var(--space-md); grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: var(--space-sm); }
+.geo-map-detail dl > div:last-child { grid-column: 1 / -1; }
+.geo-map-detail dt, .geo-map-detail dd { border: 0; padding: 0; }
+.geo-map-detail dt { font-size: var(--text-xs); }
+.geo-map-detail dd { color: var(--color-ink); font-family: var(--font-mono); font-size: var(--text-xs); font-weight: 700; margin-top: .1rem; }
+.geo-map-detail a { color: var(--color-ink); display: inline-block; font-size: var(--text-xs); font-weight: 700; margin-top: var(--space-md); text-decoration: underline; text-underline-offset: .2em; }
+.geo-map-scale { align-items: end; bottom: var(--space-lg); color: var(--color-ink-2); display: flex; flex-direction: column; font-family: var(--font-mono); font-size: .65rem; gap: .18rem; left: var(--space-lg); position: absolute; }
+.geo-map-scale span { border-bottom: 3px solid currentColor; border-inline: 1px solid currentColor; display: block; height: .4rem; width: 5rem; }
+.geo-map-panel > footer { align-items: center; color: var(--color-muted); display: flex; flex-wrap: wrap; font-size: var(--text-xs); gap: var(--space-md); height: 2.5rem; padding: 0 var(--space-lg); }
+.geo-map-panel > footer span { align-items: center; display: inline-flex; gap: .35rem; }
+.geo-map-panel > footer i { border: 1px solid; display: inline-block; height: .8rem; width: .8rem; }
+.geo-legend-land { background: oklch(61% .14 154 / .34); border-color: oklch(50% .15 155); }
+.geo-legend-selected { background: oklch(62% .17 57 / .56); border-color: oklch(47% .16 42); }
+.geo-building-note { margin-inline-start: auto; }
+.geo-map-panel:fullscreen { background: var(--color-paper-2); grid-template-rows: 2.5rem minmax(0, 1fr) 2.5rem; height: 100dvh; width: 100dvw; }
+.geo-map-panel:fullscreen .geo-map-stage, .geo-map-panel:fullscreen .geo-mapbox { min-height: 0; }
+.geo-table-panel { background: transparent; border-radius: 0; display: grid; gap: var(--space-md); grid-template-rows: auto minmax(0, 1fr); min-height: 0; overflow: hidden; }
+.geo-table-panel > header { align-items: center; background: var(--color-paper-2); border: 0; border-radius: var(--radius-lg); display: flex; gap: var(--space-md); justify-content: space-between; padding: clamp(1rem, 3vw, 2rem); }
+.geo-table-panel h2 { font-size: var(--text-xl); }
+.geo-table-panel header p { color: var(--color-muted); font-size: var(--text-sm); margin: .15rem 0 0; }
+.geo-table-panel .geo-search { flex: 0 1 19rem; padding: 0; }
+.geo-table-wrap { background: var(--color-paper); border: 1px solid var(--color-rule); border-radius: var(--radius-md); min-height: 0; overflow: auto; scrollbar-color: var(--color-muted) transparent; scrollbar-width: thin; }
+.geo-table-wrap table { min-width: 104rem; }
+.geo-table-wrap th { position: sticky; top: 0; z-index: 1; }
+.geo-table-wrap th, .geo-table-wrap td { white-space: nowrap; }
+.geo-table-wrap td small { color: var(--color-muted); font-family: var(--font-mono); font-size: .65rem; }
+.geo-table-wrap td.mono { white-space: normal; }
+.geo-table-wrap td.mono strong { font-size: var(--text-sm); }
+.geo-filter-panel { margin-bottom: var(--space-md); }
+.geo-filter-panel .filter-field select { background: var(--color-paper); border: 1px solid var(--color-rule); border-radius: var(--radius-sm); color: var(--color-ink); display: block; font: inherit; margin-top: var(--space-xs); min-height: 2.8rem; padding: .55rem .7rem; width: 100%; }
+.geographic-page.is-list-view .geo-table-panel > .result-summary { justify-content: flex-start; }
+.geographic-page.is-list-view .geo-table-panel > .result-summary > p:nth-child(2), .geographic-page.is-list-view .geo-table-panel > .result-summary > p:nth-child(3) { background: transparent; border-radius: 0; color: var(--color-muted); display: block; font-family: var(--font-mono); font-size: var(--text-xs); margin: 0; padding: 0; }
+
+

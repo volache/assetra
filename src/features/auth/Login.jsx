@@ -4,18 +4,22 @@ export function Login({ isLoading, onLogin }) {
   const [accountCode, setAccountCode] = useState("admin");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const showLoading = isLoading || isSubmitting;
   async function submit(e) {
     e.preventDefault();
-    if (isLoading) return;
+    if (showLoading) return;
     setError("");
+    setIsSubmitting(true);
     try {
       await onLogin(accountCode, password);
     } catch {
       setError("帳號或密碼不正確，或帳號尚未啟用。");
+      setIsSubmitting(false);
     }
   }
   return (
-    <main className={`login-shell ${isLoading ? "is-loading" : ""}`}>
+    <main className={`login-shell ${showLoading ? "is-loading" : ""}`}>
       <section className="login-intro">
         <p className="eyebrow">ASSETRA</p>
         <h1>
@@ -62,7 +66,7 @@ export function Login({ isLoading, onLogin }) {
           )}
           <button
             className="button button-primary"
-            disabled={isLoading}
+            disabled={showLoading}
             type="submit"
           >
             登入
@@ -70,6 +74,11 @@ export function Login({ isLoading, onLogin }) {
         </form>
       </section>
       <div className="session-loader" aria-live="polite">
+        <div className="session-loader-pills" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </div>
         <strong>正在載入工作區</strong>
       </div>
     </main>

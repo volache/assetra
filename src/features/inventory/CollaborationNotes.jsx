@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { supabase } from "../../supabase";
 import { rocDateTime } from "../../lib/formatters";
+import { collaborationStatusLabel, requestCollaboration } from "../collaboration/api";
 
-export function CollaborationNotes({ identityId }) {
+export function CollaborationNotes({ identityId, autoLoad = false, focusCollaborationId, onChanged }) {
   const [collaborations, setCollaborations] = useState([]);
   const [actor, setActor] = useState(null);
   const [draft, setDraft] = useState("");
@@ -11,15 +11,7 @@ export function CollaborationNotes({ identityId }) {
   const [error, setError] = useState("");
   const [loaded, setLoaded] = useState(false);
   const invoke = async (body) => {
-    const { data, error: requestError } = await supabase.functions.invoke(
-      "manage-collaborations",
-      { body: { identityId, ...body } },
-    );
-    if (requestError) {
-      const detail = await requestError.context?.json().catch(() => null);
-      throw new Error(detail?.error || requestError.message);
-    }
-    if (data?.error) throw new Error(data.error);
+    const data = await requestCollaboration({ identityId, ...body });
     setCollaborations(data?.collaborations || []);
     setActor(data?.actor || null);
     setLoaded(true);
@@ -44,12 +36,41 @@ export function CollaborationNotes({ identityId }) {
     setError("");
     setLoaded(false);
   }, [identityId]);
+  useEffect(() => {
+    if (!autoLoad || !identityId) return;
+    let cancelled = false;
+    setBusy(true);
+    setError("");
+    requestCollaboration({ identityId, action: "list" })
+      .then((data) => {
+        if (cancelled) return;
+        setCollaborations(data?.collaborations || []);
+        setActor(data?.actor || null);
+        setLoaded(true);
+      })
+      .catch((requestError) => {
+        if (!cancelled)
+          setError(requestError.message || "無法載入共同筆記。");
+      })
+      .finally(() => {
+        if (!cancelled) setBusy(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [autoLoad, identityId]);
+  useEffect(() => {
+    if (!loaded || !focusCollaborationId) return;
+    const entry = document.getElementById(`collaboration-${focusCollaborationId}`);
+    entry?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [focusCollaborationId, loaded]);
   const submit = async (action, collaborationId, body) => {
     if (!identityId || busy) return;
     setBusy(true);
     setError("");
     try {
       await invoke({ action, collaborationId, body });
+      onChanged?.();
       if (action === "create") setDraft("");
       if (action === "comment")
         setReplyDrafts((current) => ({ ...current, [collaborationId]: "" }));
@@ -59,12 +80,6 @@ export function CollaborationNotes({ identityId }) {
       setBusy(false);
     }
   };
-  const labelFor = (status) =>
-    status === "resolved"
-      ? "已完成"
-      : status === "in_progress"
-        ? "處理中"
-        : "待處理";
   return (
     <section className="collaboration-notes">
       <header>
@@ -84,36 +99,19 @@ export function CollaborationNotes({ identityId }) {
           </button>
         )}
       </header>
+      {!loaded && autoLoad && (
+        <div className="collaboration-loading" aria-live="polite">
+          <div className="collaboration-loading-pills" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </div>
+          <strong>正在載入協作紀錄</strong>
+          <p>整理此財物的共同筆記與處理進度。</p>
+        </div>
+      )}
       {loaded && (
         <>
-          <form
-            className="collaboration-compose"
-            onSubmit={(event) => {
-              event.preventDefault();
-              submit("create", null, draft);
-            }}
-          >
-            <label>
-              新增共同筆記
-              <textarea
-                disabled={busy}
-                maxLength="2000"
-                onChange={(event) => setDraft(event.target.value)}
-                placeholder="例如：現場已確認標籤脫落，待補發。"
-                value={draft}
-              />
-            </label>
-            <div>
-              <small>{draft.length}/2,000</small>
-              <button
-                className="button button-primary"
-                disabled={busy || !draft.trim()}
-                type="submit"
-              >
-                新增筆記
-              </button>
-            </div>
-          </form>
           {error && (
             <p className="form-error" role="alert">
               {error}
@@ -127,31 +125,26 @@ export function CollaborationNotes({ identityId }) {
                 const closed = note.status === "resolved";
                 return (
                   <article
-                    className={`collaboration-entry ${closed ? "is-resolved" : ""}`}
+                    className={`collaboration-entry ${closed ? "is-resolved" : ""} ${focusCollaborationId === note.id ? "is-focused" : ""}`}
+                    id={`collaboration-${note.id}`}
                     key={note.id}
                   >
                     <header>
                       <div>
                         <span className="collaboration-status">
-                          {labelFor(note.status)}
+                          {collaborationStatusLabel(note.status)}
                         </span>
-                        <strong>{note.created_by_name}</strong>
-                        <time dateTime={note.created_at}>
-                          {rocDateTime(note.created_at)}
-                        </time>
+                        <span className="collaboration-author">
+                          提出者 {note.created_by_name}
+                        </span>
                       </div>
-                      {!closed && canResolve && (
-                        <button
-                          className="text-button"
-                          disabled={busy}
-                          onClick={() => submit("resolve", note.id)}
-                          type="button"
-                        >
-                          完成處理
-                        </button>
-                      )}
+                      <time dateTime={note.created_at}>
+                        {rocDateTime(note.created_at)}
+                      </time>
                     </header>
-                    <p className="collaboration-body">{note.body}</p>
+                    <div className="collaboration-issue">
+                      <p className="collaboration-body">{note.body}</p>
+                    </div>
                     {note.events
                       .filter((event) => event.event_type !== "created")
                       .map((event) => (
@@ -161,23 +154,39 @@ export function CollaborationNotes({ identityId }) {
                         >
                           {event.event_type === "commented" ? (
                             <>
-                              <strong>{event.actor_name}</strong>
-                              <time dateTime={event.created_at}>
-                                {rocDateTime(event.created_at)}
-                              </time>
+                              <div className="collaboration-event-meta">
+                                <strong>{event.actor_name}</strong>
+                                <time dateTime={event.created_at}>
+                                  {rocDateTime(event.created_at)}
+                                </time>
+                              </div>
                               <p>{event.payload?.body}</p>
                             </>
                           ) : (
                             <>
-                              <strong>{event.actor_name}</strong>
+                              <div className="collaboration-event-meta">
+                                <strong>{event.actor_name}</strong>
+                                <time dateTime={event.created_at}>
+                                  {rocDateTime(event.created_at)}
+                                </time>
+                              </div>
                               <span>完成處理</span>
-                              <time dateTime={event.created_at}>
-                                {rocDateTime(event.created_at)}
-                              </time>
                             </>
                           )}
                         </div>
                       ))}
+                    {!closed && canResolve && (
+                      <div className="collaboration-resolve">
+                        <button
+                          className="text-button"
+                          disabled={busy}
+                          onClick={() => submit("resolve", note.id)}
+                          type="button"
+                        >
+                          完成處理
+                        </button>
+                      </div>
+                    )}
                     {!closed && (
                       <form
                         className="collaboration-reply"
@@ -226,6 +235,34 @@ export function CollaborationNotes({ identityId }) {
               </div>
             )}
           </div>
+          <form
+            className="collaboration-compose"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submit("create", null, draft);
+            }}
+          >
+            <label>
+              新增共同筆記
+              <textarea
+                disabled={busy}
+                maxLength="2000"
+                onChange={(event) => setDraft(event.target.value)}
+                placeholder="例如：現場已確認標籤脫落，待補發。"
+                value={draft}
+              />
+            </label>
+            <div>
+              <small>{draft.length}/2,000</small>
+              <button
+                className="button button-primary"
+                disabled={busy || !draft.trim()}
+                type="submit"
+              >
+                新增筆記
+              </button>
+            </div>
+          </form>
         </>
       )}
     </section>

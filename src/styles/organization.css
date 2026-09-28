@@ -1,0 +1,67 @@
+/* React controls the dialog through its open state, so it owns the full viewport rather than joining document flow. */
+.detail-dialog[open] { align-items: center; background: var(--color-overlay); display: grid; height: 100dvh; inset: 0; justify-items: center; margin: 0; max-height: none; max-width: none; padding: var(--space-md); position: fixed; width: 100vw; z-index: 100; }
+.detail-dialog[open] > div { box-shadow: 0 1.5rem 4rem oklch(20% .025 30 / .28); width: min(100%, 42rem); }
+.detail-dialog.user-editor[open] > div { width: min(100%, 48rem); }
+
+/* Query-specific utility labels use the quieter metadata tone without changing form labels elsewhere. */
+.search-panel:not(.user-management-panel) .advanced-search .search-field,
+.search-panel:not(.user-management-panel) > fieldset > legend { color: oklch(.38 .018 25); font-size: 14px; }
+
+/* The organization view uses a dedicated canvas: each nested branch reserves the width of its leaves. */
+.organization-chart { overflow: visible; padding: clamp(1rem, 2vw, 1.5rem); }
+.org-root-header { display: flex; justify-content: center; position: relative; z-index: 2; }
+.org-root-header::after { background: var(--color-accent); content: ''; height: 1.25rem; left: 50%; position: absolute; top: 100%; width: 1px; }
+.org-root-header.is-collapsed::after { display: none; }
+.org-root-header .org-unit-card { width: 250px; }
+.org-scroll-canvas { cursor: grab; overflow: auto; overscroll-behavior: contain; padding-bottom: var(--space-sm); scrollbar-color: var(--color-accent) transparent; scrollbar-width: thin; }
+.org-scroll-canvas.is-panning { cursor: grabbing; user-select: none; }
+.org-scroll-canvas::-webkit-scrollbar { height: .7rem; }
+.org-scroll-canvas::-webkit-scrollbar-thumb { background: var(--color-accent); border: .2rem solid var(--color-paper-2); border-radius: var(--radius-pill); }
+.org-canvas { min-width: var(--org-row-width); position: relative; width: var(--org-row-width); }
+.org-branch-list { display: grid; gap: 1rem; grid-template-columns: var(--org-columns); list-style: none; margin: 0; min-width: var(--org-row-width); padding: 2.6rem 0 0; position: relative; width: var(--org-row-width); }
+.org-branch-list::before { background: var(--color-accent); content: ''; height: 1px; inset: 1.25rem var(--org-line-right) auto var(--org-line-left); position: absolute; }
+.org-branch-list::after { display: none; }
+.org-root-list::after, .org-branch-list.single-child::before { display: none; }
+.org-branch { display: grid; justify-items: center; min-width: 250px; position: relative; width: 100%; }
+.org-branch::before { background: var(--color-accent); content: ''; height: 1.35rem; inset: 1.25rem auto auto 50%; position: absolute; transform: translateY(-2.6rem); width: 1px; }
+.org-branch-card { display: flex; justify-content: center; position: relative; width: 100%; z-index: 1; }
+.org-branch:has(> .org-branch-list) > .org-branch-card::after { background: var(--color-accent); content: ''; height: 1.25rem; inset: 100% auto auto 50%; position: absolute; width: 1px; }
+.org-branch:has(> .org-branch-list.single-child) > .org-branch-card::after { height: 2.6rem; }
+.org-branch-list.single-child > .org-branch::before { display: none; }
+.org-branch > .org-branch-list { margin-top: 0; }
+.org-root-list > .org-branch::before { transform: translateY(-2.6rem); }
+
+@media (max-width: 52rem) {
+  .org-root-header::after { display: none; }
+  .org-root-header .org-unit-card { width: 100%; }
+  .org-scroll-canvas { overflow: visible; }
+  .org-canvas, .org-branch-list { min-width: 0; width: 100%; }
+  .org-branch-list { display: grid; gap: var(--space-md); grid-template-columns: 1fr; padding-top: var(--space-md); }
+  .org-branch-list::before { height: calc(100% - 1.3rem); inset: -.1rem auto auto .82rem; width: 1px; }
+  .org-branch-list::after { display: none; }
+  .org-branch { justify-items: stretch; min-width: 0; padding-inline-start: var(--space-lg); }
+  .org-branch::before { height: 1px; inset: 1.65rem auto auto .82rem; transform: none; width: var(--space-lg); }
+  .org-branch-card { justify-content: stretch; }
+  .org-branch .org-unit-card { min-width: 0; width: 100%; }
+}
+
+/* Unit-editor lists are popovers, not part of the modal's scrollable document flow. */
+.detail-dialog.unit-master-editor[open], .detail-dialog.unit-master-editor[open] > div { overflow: visible; }
+.unit-master-editor .editor-combo { position: relative; z-index: 1; }
+.unit-master-editor .editor-combo:focus-within { z-index: 130; }
+.unit-master-editor .combo-menu { max-height: min(18rem, calc(100dvh - 16rem)); overflow-y: auto; z-index: 140; }
+
+/* A level-based canvas keeps every depth on one shared baseline; the SVG owns all connectors. */
+.organization-chart { overflow: hidden; padding: clamp(1rem, 2vw, 1.5rem); }
+.org-level-canvas { display: grid; gap: var(--org-row-gap) var(--org-column-gap); grid-template-columns: var(--org-level-columns); grid-template-rows: repeat(var(--org-level-count), auto); justify-content: center; min-width: var(--org-level-width); padding: .5rem 0 1.25rem; position: relative; width: max(var(--org-level-width), 100%); }
+.org-level-node { display: flex; justify-content: center; min-width: 0; position: relative; z-index: 1; }
+.org-level-node .org-unit-card { min-width: 250px; width: 250px; zoom: var(--org-zoom, 1); }
+.org-edge-layer { height: 100%; inset: 0; overflow: visible; pointer-events: none; position: absolute; width: 100%; z-index: 0; }
+.org-edge-layer path { fill: none; stroke: var(--color-accent); stroke-width: 1; }
+.org-mobile-tree { display: none; }
+.org-zoom-status { align-items: center; color: var(--color-muted); display: flex; font-size: var(--text-xs); gap: var(--space-xs); justify-content: flex-end; margin-bottom: var(--space-xs); }
+.org-zoom-status strong { color: var(--color-ink); font-variant-numeric: tabular-nums; }
+.org-zoom-status button { background: transparent; border: 0; color: var(--color-ink-2); cursor: pointer; font: inherit; padding: 0 .25rem; text-decoration: underline; text-underline-offset: .15rem; }
+.org-zoom-status button:disabled { cursor: default; opacity: .45; text-decoration: none; }
+
+
