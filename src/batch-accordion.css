@@ -41,6 +41,63 @@
 .result-summary { justify-content: flex-start; }
 .result-summary:not(:has(.page-size)) > p:last-child:not(.result-count) { margin-inline-start: auto; }
 
+/* Keep batch-level actions distinct from the title and in a predictable corner. */
+.batch-detail { padding: var(--space-lg); position: relative; }
+.batch-detail > header { align-items: flex-start; display: flex; gap: var(--space-md); justify-content: space-between; }
+.batch-detail > header > .button { flex: 0 0 auto; margin: var(--space-md); }
+
+/* The source label identifies a record type; it should not read as a full-width heading. */
+.batch-list .batch-item > .source-tag {
+  align-items: center;
+  border: 1px solid currentColor;
+  display: inline-flex;
+  font-weight: 700;
+  gap: .35rem;
+  justify-self: start;
+  padding: .22rem .55rem;
+}
+.batch-list .batch-item > .source-tag::before {
+  background: currentColor;
+  border-radius: var(--radius-pill);
+  content: '';
+  height: .42rem;
+  width: .42rem;
+}
+
+.batch-detail > .helper,
+.batch-detail > .result-summary { margin-block: calc(var(--space-sm) * -1); }
+.batch-detail > .helper {
+  background: var(--color-paper);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-pill);
+  inset-block-start: calc(var(--space-lg) + var(--space-md));
+  inset-inline-end: calc(var(--space-lg) + var(--space-md));
+  line-height: 1.35;
+  margin: 0;
+  max-width: 19rem;
+  padding: .35rem .6rem;
+  position: absolute;
+  text-align: end;
+}
+.batch-detail > .result-summary .result-count { margin: 0 auto 0 0; }
+
+.batch-delete-dialog { width: min(100%, 31rem); }
+.batch-delete-dialog > div { border-inline-start: .3rem solid var(--color-accent); }
+.batch-delete-dialog header { margin-bottom: var(--space-md); }
+.batch-delete-dialog p { color: var(--color-ink-2); margin: 0; }
+.batch-delete-dialog .batch-delete-warning { color: var(--color-accent-deep); font-size: var(--text-sm); margin-top: var(--space-md); }
+.batch-delete-actions { display: flex; flex-wrap: wrap-reverse; gap: var(--space-sm); justify-content: flex-end; margin-top: var(--space-xl); }
+.button-danger { background: var(--color-error); color: var(--color-paper); font-weight: 700; }
+@media (hover:hover) { .button-danger:hover { background: color-mix(in oklch, var(--color-error), var(--color-ink) 16%); } }
+
 @media (min-width: 40rem) {
   .batch-layout { grid-template-columns: minmax(17rem, .55fr) minmax(0, 1.45fr); }
+}
+
+@media (max-width: 39.999rem) {
+  .batch-detail > header { align-items: flex-start; flex-direction: column; }
+  .batch-detail > header > .button { margin: 0; }
+  .batch-detail > .helper { margin: 0; max-width: none; position: static; text-align: start; }
+  .batch-delete-actions { justify-content: stretch; }
+  .batch-delete-actions .button { flex: 1 1 12rem; }
 }

@@ -142,8 +142,14 @@ Deno.serve(async (req) => {
       p_records: records,
     });
     if (error) throw error;
+    if (typeof importId !== 'string' || !importId) throw new Error('匯入已完成，但未取得批次識別碼。');
     const { error: summaryError } = await admin.from('imports').update({ summary }).eq('id', importId);
     if (summaryError) throw summaryError;
+    const { data: reconciliation, error: reconciliationError } = await admin.rpc('reconcile_inventory_identities', {
+      p_import_id: importId,
+      p_source_type: body.sourceType,
+    });
+    if (reconciliationError) throw reconciliationError;
     const changes = records.map((record) => {
       const before = currentByIdentity.get(identityOf(record));
       const change_kind = !before ? 'added' : sameRecord(record, before) ? 'unchanged' : 'changed';
@@ -162,6 +168,7 @@ Deno.serve(async (req) => {
       importId,
       recordCount: records.length,
       summary,
+      reconciliation,
       retention: retentionError ? { warning: '新批次已完成，但舊批次尚未清理。下次成功匯入時會再次嘗試。' } : retention,
     }), { headers: corsHeaders });
   } catch (error) {

@@ -1,0 +1,9 @@
+create index asset_identities_first_seen_import_idx on public.asset_identities (first_seen_import_id);
+create index asset_identities_last_seen_import_idx on public.asset_identities (last_seen_import_id);
+create index asset_identities_missing_since_import_idx on public.asset_identities (missing_since_import_id);
+create index asset_collaborations_created_by_idx on public.asset_collaborations (created_by);
+create index asset_collaborations_updated_by_idx on public.asset_collaborations (updated_by);
+create index asset_collaborations_resolved_by_idx on public.asset_collaborations (resolved_by);
+create index asset_collaboration_events_actor_idx on public.asset_collaboration_events (actor_id);
+create index asset_identity_exceptions_detected_import_idx on public.asset_identity_exceptions (detected_in_import_id);
+create index asset_identity_exceptions_resolved_by_idx on public.asset_identity_exceptions (resolved_by);
