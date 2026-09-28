@@ -6,7 +6,16 @@ export async function requestCollaboration(body) {
     { body },
   );
   if (error) {
-    const detail = await error.context?.json().catch(() => null);
+    // Edge Function errors do not always carry a Fetch Response.  For example,
+    // a network failure can provide a plain context object instead.
+    let detail = null;
+    if (typeof error.context?.json === "function") {
+      try {
+        detail = await error.context.json();
+      } catch {
+        // Keep the original Supabase error when its response body is unreadable.
+      }
+    }
     throw new Error(detail?.error || error.message);
   }
   if (data?.error) throw new Error(data.error);

@@ -7,16 +7,11 @@ import React, {
 } from "react";
 import mapboxgl from "mapbox-gl";
 import { money } from "../../lib/formatters";
+import { supabase } from "../../supabase";
+import { FilterCombo } from "../inventory/QueryControls";
 import { normalized } from "../inventory/search";
 
-const landPropertyFiles = import.meta.glob(
-  "../../../data/private/geospatial/land-properties.geojson",
-  { eager: true, import: "default", query: "?raw" },
-);
-const landPropertiesText =
-  Object.values(landPropertyFiles)[0] ||
-  '{"type":"FeatureCollection","features":[]}';
-const landProperties = JSON.parse(landPropertiesText);
+const emptyFeatureCollection = { type: "FeatureCollection", features: [] };
 
 function landAssetNumberParts(value) {
   const parts = String(value || "")
@@ -517,6 +512,9 @@ function GeoListView({
 }
 
 export function GeographicAssets() {
+  const [landProperties, setLandProperties] = useState(emptyFeatureCollection);
+  const [isLoadingLandProperties, setIsLoadingLandProperties] = useState(true);
+  const [landPropertiesError, setLandPropertiesError] = useState("");
   const lands = useMemo(
     () =>
       landProperties.features.map((feature, index) => {
@@ -546,7 +544,7 @@ export function GeographicAssets() {
           zoningLabel: basic.zoning || "未分類",
         };
       }),
-    [],
+    [landProperties],
   );
   const [term, setTerm] = useState("");
   const [appliedTerm, setAppliedTerm] = useState("");
@@ -571,6 +569,47 @@ export function GeographicAssets() {
   const mapPanelRef = useRef(null);
   const mapRef = useRef(null);
   const mapToken = import.meta.env.VITE_MAPBOX_TOKEN;
+  useEffect(() => {
+    let isCurrent = true;
+
+    async function loadLandProperties() {
+      if (!supabase) {
+        if (isCurrent) {
+          setLandPropertiesError("尚未設定 Supabase 連線，無法讀取地籍資料。");
+          setIsLoadingLandProperties(false);
+        }
+        return;
+      }
+
+      setIsLoadingLandProperties(true);
+      setLandPropertiesError("");
+      const { data, error } = await supabase
+        .from("land_parcel_features")
+        .select("feature")
+        .order("parcel_key");
+
+      if (!isCurrent) return;
+      if (error) {
+        setLandPropertiesError("地籍資料讀取失敗，請重新整理後再試。");
+        setLandProperties(emptyFeatureCollection);
+      } else {
+        setLandProperties({
+          type: "FeatureCollection",
+          features: (data || []).map((row) => row.feature).filter(Boolean),
+        });
+      }
+      setIsLoadingLandProperties(false);
+    }
+
+    loadLandProperties();
+    return () => {
+      isCurrent = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (lands.length && !lands.some((land) => land.id === selectedId))
+      setSelectedId(lands[0].id);
+  }, [lands, selectedId]);
   const filtered = useMemo(
     () =>
       lands.filter(
@@ -598,6 +637,7 @@ export function GeographicAssets() {
     );
     const xs = coordinates.map(([x]) => x);
     const ys = coordinates.map(([, y]) => y);
+    if (!coordinates.length) return null;
     return [
       [Math.min(...xs), Math.min(...ys)],
       [Math.max(...xs), Math.max(...ys)],
@@ -632,6 +672,7 @@ export function GeographicAssets() {
   useEffect(() => {
     if (
       viewMode !== "map" ||
+      !lands.length ||
       !mapToken ||
       !mapContainerRef.current ||
       mapRef.current
@@ -699,7 +740,7 @@ export function GeographicAssets() {
       map.remove();
       mapRef.current = null;
     };
-  }, [fullBounds, is3D, mapData, mapStyleUrl, mapToken, viewMode]);
+  }, [fullBounds, is3D, lands.length, mapData, mapStyleUrl, mapToken, viewMode]);
   useEffect(() => {
     const map = mapRef.current;
     if (!map?.isStyleLoaded() || !map.getLayer("land-fill")) return;
@@ -751,7 +792,7 @@ export function GeographicAssets() {
   }
   function showFullExtent() {
     setSelectedId(lands[0]?.id || "");
-    if (mapRef.current?.isStyleLoaded())
+    if (fullBounds && mapRef.current?.isStyleLoaded())
       mapRef.current.fitBounds(fullBounds, { padding: 64 });
   }
   function toggleMapFullscreen() {
@@ -1076,7 +1117,13 @@ export function GeographicAssets() {
               />
             </label>
             <div className="geo-list-scroll">
-              {filtered.length ? (
+              {isLoadingLandProperties ? (
+                <p className="geo-no-result">正在讀取地籍資料…</p>
+              ) : landPropertiesError ? (
+                <p className="geo-no-result" role="alert">
+                  {landPropertiesError}
+                </p>
+              ) : filtered.length ? (
                 filtered.map((land) => (
                   <button
                     aria-pressed={selected?.id === land.id}
@@ -1199,9 +1246,9 @@ export function GeographicAssets() {
                   </p>
                 </div>
               )}
-              {mapFailure && (
+              {(mapFailure || landPropertiesError) && (
                 <p className="geo-map-error" role="alert">
-                  {mapFailure}
+                  {mapFailure || landPropertiesError}
                 </p>
               )}
               {selected && (

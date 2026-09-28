@@ -1,13 +1,24 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "http://localhost:5173",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Content-Type": "application/json",
-};
+const allowedOrigins = new Set([
+  "http://localhost:5173",
+  "http://localhost:5174",
+]);
+
+function corsHeaders(req: Request) {
+  const origin = req.headers.get("Origin") ?? "";
+  return {
+    "Access-Control-Allow-Origin": allowedOrigins.has(origin)
+      ? origin
+      : "http://localhost:5173",
+    "Access-Control-Allow-Headers":
+      "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Content-Type": "application/json",
+    Vary: "Origin",
+  };
+}
 
 const text = (value: unknown) => String(value ?? "").trim();
 const message = (error: unknown) =>
@@ -260,11 +271,11 @@ async function responseForIdentity(
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS")
-    return new Response("ok", { headers: corsHeaders });
+    return new Response("ok", { headers: corsHeaders(req) });
   if (req.method !== "POST")
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
-      headers: corsHeaders,
+      headers: corsHeaders(req),
     });
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -299,7 +310,7 @@ Deno.serve(async (req) => {
       const identityIds = requestedIds.filter((id) => allowedIds.has(id));
       return new Response(
         JSON.stringify({ summaries: await summariesForIdentities(admin, identityIds) }),
-        { headers: corsHeaders },
+        { headers: corsHeaders(req) },
       );
     }
     if (action === "list_tasks") {
@@ -312,7 +323,7 @@ Deno.serve(async (req) => {
           tasks: await taskListForViewer(admin, viewer, status),
           actor: { id: user.id, name: viewer.profile.display_name, isAdmin: viewer.isAdmin },
         }),
-        { headers: corsHeaders },
+        { headers: corsHeaders(req) },
       );
     }
     const identityId = text(body.identityId);
@@ -426,13 +437,13 @@ Deno.serve(async (req) => {
         collaborations: await responseForIdentity(admin, identityId),
         actor: { id: user.id, name: profile.display_name, isAdmin },
       }),
-      { headers: corsHeaders },
+      { headers: corsHeaders(req) },
     );
   } catch (error) {
     const status = message(error) === "Unauthorized" ? 401 : 400;
     return new Response(JSON.stringify({ error: message(error) }), {
       status,
-      headers: corsHeaders,
+      headers: corsHeaders(req),
     });
   }
 });
