@@ -128,7 +128,7 @@ async function accessibleAssets(
   const { data, error } = await admin
     .from("asset_records")
     .select(
-      "identity_id, asset_no, serial_no, name, source_type, custodian_code, unit_code",
+      "identity_id, asset_no, serial_no, name, source_type, custodian_code, unit_code, unit_name",
     )
     .eq("is_current", true);
   if (error) throw error;
@@ -142,8 +142,9 @@ async function summariesForIdentities(
   if (!identityIds.length) return [];
   const { data, error } = await admin
     .from("asset_collaborations")
-    .select("asset_identity_id, status, updated_at")
+    .select("asset_identity_id, kind, status, updated_at")
     .in("asset_identity_id", identityIds)
+    .neq("kind", "note")
     .in("status", ["open", "in_progress"])
     .order("updated_at", { ascending: false });
   if (error) throw error;
@@ -177,6 +178,7 @@ async function taskListForViewer(
   const { data: collaborations, error } = await admin
     .from("asset_collaborations")
     .select("id, asset_identity_id, kind, status, body, created_by, created_at, updated_at")
+    .neq("kind", "note")
     .in(
       "status",
       status === "all" ? ["open", "in_progress", "resolved"] : [status],
@@ -209,6 +211,7 @@ async function taskListForViewer(
         sourceType: asset.source_type,
         custodianCode: asset.custodian_code,
         unitCode: asset.unit_code,
+        unitName: asset.unit_name,
       },
     }];
   });
@@ -221,7 +224,7 @@ async function responseForIdentity(
   const { data: collaborations, error } = await admin
     .from("asset_collaborations")
     .select(
-      "id, kind, status, body, created_by, updated_by, created_at, updated_at, resolved_at, resolved_by",
+      "id, kind, status, body, details, created_by, updated_by, created_at, updated_at, resolved_at, resolved_by",
     )
     .eq("asset_identity_id", identityId)
     .order("created_at", { ascending: false });
@@ -336,16 +339,30 @@ Deno.serve(async (req) => {
 
     if (action === "create") {
       const bodyText = text(body.body);
+      const kind = text(body.kind || "note");
+      const noteCategory = text(body.noteCategory || "general");
+      const taskKinds = new Set([
+        "tag_missing",
+        "disposal_candidate",
+        "custodian_change",
+        "location_change",
+        "other",
+      ]);
       if (!bodyText) throw new Error("請輸入筆記內容。");
       if (bodyText.length > 2000)
         throw new Error("筆記內容不可超過 2,000 字。");
+      if (kind !== "note" && !taskKinds.has(kind))
+        throw new Error("不支援的處理事項類型。");
+      if (kind === "note" && !["general", "location_hint"].includes(noteCategory))
+        throw new Error("不支援的筆記類型。");
       const { data: collaboration, error } = await admin
         .from("asset_collaborations")
         .insert({
           asset_identity_id: identityId,
-          kind: "note",
-          status: "open",
+          kind,
+          status: kind === "note" ? null : "open",
           body: bodyText,
+          details: kind === "note" ? { noteCategory } : {},
           created_by: user.id,
           updated_by: user.id,
         })
@@ -369,17 +386,16 @@ Deno.serve(async (req) => {
         throw new Error("補充內容不可超過 2,000 字。");
       const { data: collaboration, error } = await admin
         .from("asset_collaborations")
-        .select("id, status")
+        .select("id, kind, status")
         .eq("id", collaborationId)
         .eq("asset_identity_id", identityId)
         .maybeSingle();
       if (error) throw error;
       if (!collaboration) throw new Error("找不到此協作紀錄。");
-      if (
+      if (collaboration.kind !== "note" && (
         collaboration.status === "resolved" ||
         collaboration.status === "cancelled"
-      )
-        throw new Error("已結案的筆記不能再補充內容。");
+      )) throw new Error("已結案的處理事項不能再補充內容。");
       const { error: eventError } = await admin
         .from("asset_collaboration_events")
         .insert({
@@ -399,12 +415,14 @@ Deno.serve(async (req) => {
       if (!collaborationId) throw new Error("缺少協作紀錄。");
       const { data: collaboration, error } = await admin
         .from("asset_collaborations")
-        .select("id, created_by, status")
+        .select("id, created_by, kind, status")
         .eq("id", collaborationId)
         .eq("asset_identity_id", identityId)
         .maybeSingle();
       if (error) throw error;
       if (!collaboration) throw new Error("找不到此協作紀錄。");
+      if (collaboration.kind === "note")
+        throw new Error("一般筆記不需要完成處理。");
       if (!isAdmin && collaboration.created_by !== user.id)
         throw new Error("只有建立者或系統管理員可以結案。");
       if (collaboration.status !== "resolved") {

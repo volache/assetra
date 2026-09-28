@@ -23,11 +23,23 @@ export async function requestCollaboration(body) {
 }
 
 export const collaborationKindLabels = {
-  note: "共同筆記",
-  tag_missing: "標籤遺失",
-  disposal_candidate: "待報廢",
-  transfer_request: "異動申請",
+  note: "一般筆記",
+  tag_missing: "標籤缺失",
+  disposal_candidate: "報廢評估",
+  custodian_change: "保管人異動",
+  location_change: "存置地點異動",
+  other: "其他",
+  transfer_request: "其他",
 };
+
+export const collaborationNoteCategoryLabels = {
+  general: "一般筆記",
+  location_hint: "實際位置",
+};
+
+export function collaborationKindIsTask(kind) {
+  return kind !== "note";
+}
 
 export function collaborationStatusLabel(status) {
   if (status === "resolved") return "已完成";

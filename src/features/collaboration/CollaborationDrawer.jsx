@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { CollaborationNotes } from "../inventory/CollaborationNotes";
+import { CollaborationNotebook } from "../inventory/CollaborationNotebook";
 
 export function CollaborationDrawer({ asset, focusCollaborationId, onClose, onChanged }) {
   const [isClosing, setIsClosing] = useState(false);
@@ -12,7 +12,7 @@ export function CollaborationDrawer({ asset, focusCollaborationId, onClose, onCh
       role="presentation"
     >
       <aside
-        aria-label="共同筆記"
+        aria-label="協作追蹤"
         aria-modal="true"
         className="collaboration-drawer"
         onAnimationEnd={(event) => {
@@ -22,8 +22,8 @@ export function CollaborationDrawer({ asset, focusCollaborationId, onClose, onCh
       >
         <header className="collaboration-drawer-header">
           <div>
-            <p className="eyebrow">共同筆記</p>
-            <h2>{asset.name || "財物共同筆記"}</h2>
+            <p className="eyebrow">協作追蹤</p>
+            <h2>{asset.name || "財物協作追蹤"}</h2>
             <p>{title || "此財物"}</p>
           </div>
           <button
@@ -37,7 +37,7 @@ export function CollaborationDrawer({ asset, focusCollaborationId, onClose, onCh
             關閉
           </button>
         </header>
-        <CollaborationNotes
+        <CollaborationNotebook
           autoLoad
           focusCollaborationId={focusCollaborationId}
           identityId={asset.identityId}

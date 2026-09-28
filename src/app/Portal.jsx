@@ -92,7 +92,7 @@ export function Portal({
   const navigation = [
     { id: "home", label: "總覽" },
     { id: "query", label: "財物查詢" },
-    { id: "tasks", label: "協作待辦" },
+    { id: "tasks", label: "協作追蹤" },
     ...(canAdmin
       ? [
           { id: "import", label: "匯入清冊" },

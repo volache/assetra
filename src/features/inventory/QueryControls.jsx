@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { HighlightText } from "../../components/HighlightText";
 import { normalized, searchRuleGroups } from "./search";
 
@@ -13,13 +13,22 @@ export function FilterCombo({
   onChange,
   onOpenChange,
 }) {
+  const rootRef = useRef(null);
   const suggestions = options
     .filter((option) => normalized(option).includes(normalized(value)))
     .slice(0, 100);
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOnOutsidePointer = (event) => {
+      if (!rootRef.current?.contains(event.target)) onOpenChange(null);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer, true);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
+  }, [open, onOpenChange]);
   return (
     <label className="filter-field">
       {label}
-      <span className="filter-combobox">
+      <span className="filter-combobox" ref={rootRef}>
         <input
           aria-autocomplete="list"
           aria-controls={`${id}-options`}

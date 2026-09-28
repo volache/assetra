@@ -3,7 +3,7 @@ create type public.app_role as enum ('custodian', 'chief', 'admin');
 create type public.account_status as enum ('active', 'inactive');
 create type public.source_type as enum ('asset', 'item');
 create type public.import_status as enum ('draft', 'ready', 'committed', 'failed');
-create type public.collaboration_kind as enum ('note', 'tag_missing', 'disposal_candidate', 'transfer_request');
+create type public.collaboration_kind as enum ('note', 'tag_missing', 'disposal_candidate', 'transfer_request', 'custodian_change', 'location_change', 'other');
 create type public.collaboration_status as enum ('open', 'in_progress', 'resolved', 'cancelled');
 create type public.reconciliation_status as enum ('open', 'resolved', 'dismissed');
 
@@ -68,12 +68,13 @@ create index import_batch_changes_import_kind_idx on public.import_batch_changes
 
 create table public.asset_collaborations (
   id uuid primary key default gen_random_uuid(), asset_identity_id uuid not null references public.asset_identities(id) on delete restrict,
-  kind public.collaboration_kind not null default 'note', status public.collaboration_status not null default 'open',
+  kind public.collaboration_kind not null default 'note', status public.collaboration_status,
   body text not null, details jsonb not null default '{}'::jsonb,
   created_by uuid not null references public.profiles(id), updated_by uuid not null references public.profiles(id),
   created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
   resolved_at timestamptz, resolved_by uuid references public.profiles(id)
 );
+alter table public.asset_collaborations add constraint asset_collaborations_note_or_task_status_check check ((kind = 'note' and status is null) or (kind <> 'note' and status is not null));
 create index asset_identities_first_seen_import_idx on public.asset_identities (first_seen_import_id);
 create index asset_identities_last_seen_import_idx on public.asset_identities (last_seen_import_id);
 create index asset_identities_missing_since_import_idx on public.asset_identities (missing_since_import_id);

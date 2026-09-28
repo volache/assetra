@@ -8,10 +8,28 @@ import React, {
 import mapboxgl from "mapbox-gl";
 import { money } from "../../lib/formatters";
 import { supabase } from "../../supabase";
+import { requestOwnershipDocument } from "../ownership/api";
 import { FilterCombo } from "../inventory/QueryControls";
 import { normalized } from "../inventory/search";
 
 const emptyFeatureCollection = { type: "FeatureCollection", features: [] };
+
+function OwnershipDeleteDialog({ document, onCancel, onConfirm }) {
+  if (!document) return null;
+  return (
+    <dialog aria-labelledby="ownership-delete-title" className="detail-dialog batch-delete-dialog ownership-delete-dialog" onCancel={(event) => { event.preventDefault(); onCancel(); }} open>
+      <div>
+        <header><h2 id="ownership-delete-title">刪除權狀文件？</h2></header>
+        <p>將刪除「{document.original_filename}」及其 R2 私有檔案。</p>
+        <p className="batch-delete-warning">此操作無法復原。</p>
+        <footer className="batch-delete-actions">
+          <button className="button button-secondary" onClick={onCancel} type="button">取消</button>
+          <button className="button button-danger" onClick={onConfirm} type="button">確認刪除</button>
+        </footer>
+      </div>
+    </dialog>
+  );
+}
 
 function landAssetNumberParts(value) {
   const parts = String(value || "")
@@ -20,6 +38,10 @@ function landAssetNumberParts(value) {
   if (parts.length >= 3)
     return { primary: parts.slice(-3, -1).join("-"), serial: parts.at(-1) };
   return { primary: String(value || "—"), serial: "" };
+}
+
+function parcelLabel(section, landNumber) {
+  return [section, landNumber].filter(Boolean).join(" ") || "—";
 }
 
 function GeoListViewContent({
@@ -34,6 +56,11 @@ function GeoListViewContent({
   geoFilterSentinelRef,
   onCompactFiltersOpenChange,
   onOpenMap,
+  onOpenOwnership,
+  onDeleteOwnership,
+  onReplaceOwnership,
+  onUploadOwnership,
+  onOwnershipUploadChange,
   onPageChange,
   onPageSizeChange,
   onSearch,
@@ -41,13 +68,19 @@ function GeoListViewContent({
   onViewMap,
   pageRows,
   pageSize,
+  ownershipDocumentsByLandId,
+  ownershipUploadInputRef,
+  isUploadingOwnershipDocuments,
   term,
   totalArea,
   totalPages,
   totalValue,
+  viewTransition,
 }) {
   return (
-    <section className="page geographic-page is-list-view">
+    <section
+      className={`page geographic-page is-list-view ${viewTransition ? "geo-view-transition" : ""}`}
+    >
       <div className="page-heading">
         <div>
           <p className="eyebrow">GEOSPATIAL ASSET DIRECTORY</p>
@@ -224,6 +257,15 @@ function GeoListViewContent({
                       >
                         查看地圖
                       </button>
+                      {ownershipDocumentsByLandId[land.documentLandParcelId]?.[0] ? (
+                        <>
+                          <button className="row-action" onClick={() => onOpenOwnership(ownershipDocumentsByLandId[land.documentLandParcelId][0])} type="button">查看權狀</button>
+                          <button className="row-action" disabled={isUploadingOwnershipDocuments} onClick={() => onReplaceOwnership(land, ownershipDocumentsByLandId[land.documentLandParcelId][0])} type="button">更新權狀</button>
+                          <button className="row-action" onClick={() => onDeleteOwnership(ownershipDocumentsByLandId[land.documentLandParcelId][0])} type="button">刪除權狀</button>
+                        </>
+                      ) : (
+                        <button className="row-action" disabled={isUploadingOwnershipDocuments} onClick={() => onUploadOwnership(land)} type="button">上傳權狀</button>
+                      )}
                     </td>
                   </tr>
                 );
@@ -231,6 +273,7 @@ function GeoListViewContent({
             </tbody>
           </table>
         </div>
+        <input accept="application/pdf,.pdf" className="sr-only" onChange={onOwnershipUploadChange} ref={ownershipUploadInputRef} type="file" />
         {totalPages > 1 && (
           <nav aria-label="土地列表分頁" className="pagination">
             <button
@@ -274,6 +317,11 @@ function GeoListView({
   onFilterChange,
   onOpenFilterChange,
   onOpenMap,
+  onOpenOwnership,
+  onDeleteOwnership,
+  onReplaceOwnership,
+  onUploadOwnership,
+  onOwnershipUploadChange,
   onPageChange,
   onPageSizeChange,
   onSearch,
@@ -282,11 +330,15 @@ function GeoListView({
   openFilterId,
   pageRows,
   pageSize,
+  ownershipDocumentsByLandId,
+  ownershipUploadInputRef,
+  isUploadingOwnershipDocuments,
   sections,
   term,
   totalArea,
   totalPages,
   totalValue,
+  viewTransition,
   zonings,
 }) {
   const filterFields = [
@@ -323,6 +375,11 @@ function GeoListView({
       geoFilterSentinelRef={geoFilterSentinelRef}
       onCompactFiltersOpenChange={onCompactFiltersOpenChange}
       onOpenMap={onOpenMap}
+      onOpenOwnership={onOpenOwnership}
+      onDeleteOwnership={onDeleteOwnership}
+      onReplaceOwnership={onReplaceOwnership}
+      onUploadOwnership={onUploadOwnership}
+      onOwnershipUploadChange={onOwnershipUploadChange}
       onPageChange={onPageChange}
       onPageSizeChange={onPageSizeChange}
       onSearch={onSearch}
@@ -330,10 +387,14 @@ function GeoListView({
       onViewMap={onViewMap}
       pageRows={pageRows}
       pageSize={pageSize}
+      ownershipDocumentsByLandId={ownershipDocumentsByLandId}
+      ownershipUploadInputRef={ownershipUploadInputRef}
+      isUploadingOwnershipDocuments={isUploadingOwnershipDocuments}
       term={term}
       totalArea={totalArea}
       totalPages={totalPages}
       totalValue={totalValue}
+      viewTransition={viewTransition}
     />
   );
   return (
@@ -529,6 +590,7 @@ export function GeographicAssets() {
           announcedLandValue: Number(basic.announced_land_value) || 0,
           area: Number(basic.area) || 0,
           feature,
+          documentLandParcelId: feature.properties?.land_parcel_id || null,
           id: number.serial
             ? `${number.primary}\n${number.serial}`
             : number.primary,
@@ -563,12 +625,29 @@ export function GeographicAssets() {
   const [mapFailure, setMapFailure] = useState("");
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const [viewMode, setViewMode] = useState("map");
+  const [hasChangedView, setHasChangedView] = useState(false);
   const [mapStyle, setMapStyle] = useState("standard");
   const [is3D, setIs3D] = useState(false);
+  const [ownershipDocuments, setOwnershipDocuments] = useState([]);
+  const [ownershipDocumentsByLandId, setOwnershipDocumentsByLandId] = useState({});
+  const [isLoadingOwnershipDocuments, setIsLoadingOwnershipDocuments] = useState(false);
+  const [ownershipDocumentsError, setOwnershipDocumentsError] = useState("");
+  const [openingDocumentId, setOpeningDocumentId] = useState("");
+  const [ownershipUploadSummary, setOwnershipUploadSummary] = useState("");
+  const [isUploadingOwnershipDocuments, setIsUploadingOwnershipDocuments] = useState(false);
+  const [ownershipReloadKey, setOwnershipReloadKey] = useState(0);
+  const [ownershipUploadTargetLand, setOwnershipUploadTargetLand] = useState(null);
+  const [ownershipDeleteTarget, setOwnershipDeleteTarget] = useState(null);
+  const ownershipUploadInputRef = useRef(null);
   const mapContainerRef = useRef(null);
   const mapPanelRef = useRef(null);
   const mapRef = useRef(null);
   const mapToken = import.meta.env.VITE_MAPBOX_TOKEN;
+  useEffect(() => {
+    if (!ownershipUploadSummary) return undefined;
+    const timer = window.setTimeout(() => setOwnershipUploadSummary(""), 3500);
+    return () => window.clearTimeout(timer);
+  }, [ownershipUploadSummary]);
   useEffect(() => {
     let isCurrent = true;
 
@@ -585,7 +664,7 @@ export function GeographicAssets() {
       setLandPropertiesError("");
       const { data, error } = await supabase
         .from("land_parcel_features")
-        .select("feature")
+        .select("id, feature")
         .order("parcel_key");
 
       if (!isCurrent) return;
@@ -595,7 +674,13 @@ export function GeographicAssets() {
       } else {
         setLandProperties({
           type: "FeatureCollection",
-          features: (data || []).map((row) => row.feature).filter(Boolean),
+          features: (data || []).flatMap((row) => {
+            if (!row.feature) return [];
+            return [{
+              ...row.feature,
+              properties: { ...row.feature.properties, land_parcel_id: row.id },
+            }];
+          }),
         });
       }
       setIsLoadingLandProperties(false);
@@ -629,6 +714,143 @@ export function GeographicAssets() {
     lands.find((land) => land.id === selectedId) ||
     filtered[0] ||
     lands[0];
+  useEffect(() => {
+    let isCurrent = true;
+    async function loadOwnershipDocuments() {
+      if (!selected?.documentLandParcelId || !supabase) {
+        if (isCurrent) {
+          setOwnershipDocuments([]);
+          setOwnershipDocumentsError("");
+          setIsLoadingOwnershipDocuments(false);
+        }
+        return;
+      }
+      setIsLoadingOwnershipDocuments(true);
+      setOwnershipDocumentsError("");
+      // A selected parcel must never briefly show the previous parcel's
+      // private document names while its own lookup is still in flight.
+      setOwnershipDocuments([]);
+      try {
+        const data = await requestOwnershipDocument({
+          action: "list",
+          landParcelId: selected.documentLandParcelId,
+        });
+        if (isCurrent) setOwnershipDocuments(data.documents || []);
+      } catch (error) {
+        if (isCurrent) {
+          setOwnershipDocuments([]);
+          setOwnershipDocumentsError(error.message || "無法讀取權狀文件。");
+        }
+      } finally {
+        if (isCurrent) setIsLoadingOwnershipDocuments(false);
+      }
+    }
+    loadOwnershipDocuments();
+    return () => { isCurrent = false; };
+  }, [selected?.documentLandParcelId, ownershipReloadKey]);
+  useEffect(() => {
+    let isCurrent = true;
+    async function loadOwnershipDocumentSummaries() {
+      if (!lands.length || !supabase) return;
+      try {
+        const data = await requestOwnershipDocument({ action: "list_summary" });
+        const grouped = (data.documents || []).reduce((result, document) => {
+          if (!document.land_parcel_id) return result;
+          (result[document.land_parcel_id] ||= []).push(document);
+          return result;
+        }, {});
+        if (isCurrent) setOwnershipDocumentsByLandId(grouped);
+      } catch (error) {
+        if (isCurrent) setOwnershipDocumentsByLandId({});
+      }
+    }
+    loadOwnershipDocumentSummaries();
+    return () => { isCurrent = false; };
+  }, [lands, ownershipReloadKey]);
+
+  async function openOwnershipDocument(document) {
+    const target = window.open("about:blank", "_blank");
+    if (!target) {
+      setOwnershipDocumentsError("瀏覽器封鎖了新分頁，請允許此網站開啟分頁後再試。 ");
+      return;
+    }
+    target.opener = null;
+    setOpeningDocumentId(document.id);
+    try {
+      const data = await requestOwnershipDocument({
+        action: "create_download",
+        documentId: document.id,
+      });
+      target.location.replace(data.url);
+    } catch (error) {
+      target.close();
+      setOwnershipDocumentsError(error.message || "無法開啟權狀文件。");
+    } finally {
+      setOpeningDocumentId("");
+    }
+  }
+
+  async function uploadLandOwnershipDocuments(event) {
+    const files = [...(event.target.files || [])];
+    event.target.value = "";
+    if (!files.length) return;
+
+    const target = ownershipUploadTargetLand;
+    const file = files[0];
+    if (!target?.land?.documentLandParcelId || !file?.name.toLowerCase().endsWith(".pdf")) {
+      setOwnershipDocumentsError("請選擇 PDF 格式的權狀檔案。 ");
+      setOwnershipUploadTargetLand(null);
+      return;
+    }
+
+    setIsUploadingOwnershipDocuments(true);
+    setOwnershipDocumentsError("");
+    setOwnershipUploadSummary("");
+    try {
+      const upload = await requestOwnershipDocument({
+        action: "create_upload", documentType: "land", landParcelId: target.land.documentLandParcelId,
+        originalFilename: file.name, fileSize: file.size, replacesDocumentId: target.replacesDocumentId,
+      });
+      const response = await fetch(upload.uploadUrl, { method: "PUT", headers: { "Content-Type": "application/pdf" }, body: file });
+      if (!response.ok) throw new Error("R2 上傳未成功。請確認 bucket 已設定 CORS。 ");
+      await requestOwnershipDocument({ action: "complete_upload", documentId: upload.documentId });
+      setOwnershipUploadSummary(target.replacesDocumentId ? "權狀已更新。" : "權狀已上傳。 ");
+      setOwnershipReloadKey((value) => value + 1);
+    } catch (error) {
+      setOwnershipDocumentsError(error.message || "權狀上傳失敗。 ");
+    } finally {
+      setIsUploadingOwnershipDocuments(false);
+      setOwnershipUploadTargetLand(null);
+    }
+  }
+
+  function beginOwnershipUpload(land, replacesDocumentId = "") {
+    setOwnershipUploadTargetLand({ land, replacesDocumentId });
+    requestAnimationFrame(() => ownershipUploadInputRef.current?.click());
+  }
+
+  async function deleteOwnershipDocument(document) {
+    setOwnershipDocumentsError("");
+    try {
+      await requestOwnershipDocument({ action: "delete", documentId: document.id });
+      setOwnershipUploadSummary("權狀已刪除。 ");
+      setOwnershipReloadKey((value) => value + 1);
+    } catch (error) {
+      setOwnershipDocumentsError(error.message || "權狀刪除失敗。 ");
+    }
+  }
+
+  function requestOwnershipDeletion(document) {
+    setOwnershipDeleteTarget(document);
+  }
+
+  async function confirmOwnershipDeletion() {
+    const document = ownershipDeleteTarget;
+    if (!document) return;
+    setOwnershipDeleteTarget(null);
+    await deleteOwnershipDocument(document);
+  }
+
   const fullBounds = useMemo(() => {
     const coordinates = lands.flatMap((land) =>
       land.feature.geometry.type === "Polygon"
@@ -838,8 +1060,13 @@ export function GeographicAssets() {
   }, []);
   function openMapForLand(land) {
     setSelectedId(land.id);
+    setHasChangedView(true);
     setViewMode("map");
   }
+  const changeViewMode = (mode) => {
+    setHasChangedView(true);
+    setViewMode(mode);
+  };
   const totalArea = filtered.reduce((sum, land) => sum + land.area, 0);
   const totalValue = filtered.reduce((sum, land) => sum + land.price, 0);
   const geoTotalPages = Math.max(1, Math.ceil(filtered.length / geoPageSize));
@@ -872,6 +1099,7 @@ export function GeographicAssets() {
   const runLandSearch = () => setAppliedTerm(term.trim());
   if (viewMode === "list")
     return (
+      <>
       <GeoListView
         activeFilterCount={activeLandFilterCount}
         appliedTerm={appliedTerm}
@@ -887,21 +1115,32 @@ export function GeographicAssets() {
         onFilterChange={setLandFilter}
         onOpenFilterChange={setOpenGeoFilterId}
         onOpenMap={openMapForLand}
+        onOpenOwnership={openOwnershipDocument}
+        onDeleteOwnership={requestOwnershipDeletion}
+        onReplaceOwnership={(land, document) => beginOwnershipUpload(land, document.id)}
+        onUploadOwnership={(land) => beginOwnershipUpload(land)}
+        onOwnershipUploadChange={uploadLandOwnershipDocuments}
         onPageChange={setGeoPage}
         onPageSizeChange={setGeoPageSize}
         onSearch={runLandSearch}
         onTermChange={setTerm}
-        onViewMap={() => setViewMode("map")}
+        onViewMap={() => changeViewMode("map")}
         openFilterId={openGeoFilterId}
         pageRows={geoPageRows}
         pageSize={geoPageSize}
+        ownershipDocumentsByLandId={ownershipDocumentsByLandId}
+        ownershipUploadInputRef={ownershipUploadInputRef}
+        isUploadingOwnershipDocuments={isUploadingOwnershipDocuments}
         sections={sections}
         term={term}
         totalArea={totalArea}
         totalPages={geoTotalPages}
         totalValue={totalValue}
+        viewTransition={hasChangedView}
         zonings={zonings}
       />
+      <OwnershipDeleteDialog document={ownershipDeleteTarget} onCancel={() => setOwnershipDeleteTarget(null)} onConfirm={confirmOwnershipDeletion} />
+      </>
     );
   if (viewMode === "list")
     return (
@@ -1080,7 +1319,7 @@ export function GeographicAssets() {
     );
   return (
     <section
-      className={`page geographic-page ${viewMode === "list" ? "is-list-view" : ""}`}
+      className={`page geographic-page ${viewMode === "list" ? "is-list-view" : ""} ${hasChangedView ? "geo-view-transition" : ""}`}
     >
       <div className="page-heading">
         <div>
@@ -1093,9 +1332,7 @@ export function GeographicAssets() {
         </div>
         <button
           className="button button-primary"
-          onClick={() =>
-            setViewMode((current) => (current === "map" ? "list" : "map"))
-          }
+          onClick={() => changeViewMode(viewMode === "map" ? "list" : "map")}
           type="button"
         >
           {viewMode === "map" ? "列表檢視" : "地圖檢視"}
@@ -1206,12 +1443,17 @@ export function GeographicAssets() {
                   </button>
                 </span>
                 <button
+                  aria-label={is3D ? "停用 3D 視圖" : "啟用 3D 視圖"}
                   aria-pressed={is3D}
                   className={`geo-3d-toggle ${is3D ? "is-active" : ""}`}
                   onClick={() => setIs3D((enabled) => !enabled)}
+                  title={is3D ? "停用 3D 視圖" : "啟用 3D 視圖"}
                   type="button"
                 >
-                  3D
+                  <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+                    <path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.7" />
+                    <path d="m4 7.5 8 4.5 8-4.5M12 12v9" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.7" />
+                  </svg>
                 </button>
                 <button
                   className="text-button"
@@ -1254,8 +1496,7 @@ export function GeographicAssets() {
               {selected && (
                 <article className="geo-map-detail">
                   <p>
-                    {selected.section}
-                    {selected.landNumber}
+                    {parcelLabel(selected.section, selected.landNumber)}
                   </p>
                   <h2>{selected.name}</h2>
                   <dl>
@@ -1272,6 +1513,41 @@ export function GeographicAssets() {
                       <dd>{selected.zoning}</dd>
                     </div>
                   </dl>
+                  <section className="geo-ownership-documents" aria-live="polite">
+                    <h3>權狀文件</h3>
+                    {isLoadingOwnershipDocuments ? <p>讀取中…</p> : null}
+                    {!isLoadingOwnershipDocuments && ownershipDocuments.length === 0 ? (
+                      <p>尚未建立可供查閱的土地權狀。</p>
+                    ) : null}
+                    {ownershipDocuments.map((document) => (
+                      <button
+                        key={document.id}
+                        onClick={() => openOwnershipDocument(document)}
+                        type="button"
+                      >
+                        {openingDocumentId === document.id ? "開啟中…" : document.original_filename}
+                      </button>
+                    ))}
+                    <input
+                      accept="application/pdf,.pdf"
+                      className="sr-only"
+                      onChange={uploadLandOwnershipDocuments}
+                      ref={ownershipUploadInputRef}
+                      type="file"
+                    />
+                    {ownershipUploadSummary ? <p className="geo-document-success" role="status">{ownershipUploadSummary}</p> : null}
+                    {!isLoadingOwnershipDocuments && ownershipDocuments.length ? (
+                      <div className="geo-ownership-actions">
+                        <button className="geo-ownership-upload" disabled={isUploadingOwnershipDocuments} onClick={() => beginOwnershipUpload(selected, ownershipDocuments[0].id)} type="button">更新權狀</button>
+                        <button className="geo-ownership-delete" onClick={() => requestOwnershipDeletion(ownershipDocuments[0])} type="button">刪除權狀</button>
+                      </div>
+                    ) : !isLoadingOwnershipDocuments ? (
+                      <button className="geo-ownership-upload" disabled={isUploadingOwnershipDocuments} onClick={() => beginOwnershipUpload(selected)} type="button">
+                        {isUploadingOwnershipDocuments ? "權狀上傳中…" : "上傳權狀"}
+                      </button>
+                    ) : null}
+                    {ownershipDocumentsError ? <p className="geo-document-error" role="alert">{ownershipDocumentsError}</p> : null}
+                  </section>
                   <a
                     href={selected.feature.properties?.cadastral_link}
                     rel="noreferrer"
@@ -1296,6 +1572,7 @@ export function GeographicAssets() {
               </span>
             </footer>
           </section>
+          <OwnershipDeleteDialog document={ownershipDeleteTarget} onCancel={() => setOwnershipDeleteTarget(null)} onConfirm={confirmOwnershipDeletion} />
         </section>
       ) : (
         <section className="geo-table-panel">
@@ -1360,12 +1637,28 @@ export function GeographicAssets() {
                       >
                         查看地圖
                       </button>
+                      <button
+                        className="row-action"
+                        disabled={isUploadingOwnershipDocuments}
+                        onClick={() => beginOwnershipUpload(land)}
+                        type="button"
+                      >
+                        匯入權狀
+                      </button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <input
+            accept="application/pdf,.pdf"
+            className="sr-only"
+            multiple
+            onChange={uploadLandOwnershipDocuments}
+            ref={ownershipUploadInputRef}
+            type="file"
+          />
         </section>
       )}
     </section>

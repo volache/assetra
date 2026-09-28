@@ -23,7 +23,7 @@ export function CollaborationNotes({ identityId, autoLoad = false, focusCollabor
     try {
       await invoke({ action: "list" });
     } catch (requestError) {
-      setError(requestError.message || "無法載入共同筆記。");
+      setError(requestError.message || "無法載入協作追蹤。");
     } finally {
       setBusy(false);
     }
@@ -50,7 +50,7 @@ export function CollaborationNotes({ identityId, autoLoad = false, focusCollabor
       })
       .catch((requestError) => {
         if (!cancelled)
-          setError(requestError.message || "無法載入共同筆記。");
+          setError(requestError.message || "無法載入協作追蹤。");
       })
       .finally(() => {
         if (!cancelled) setBusy(false);
@@ -75,7 +75,7 @@ export function CollaborationNotes({ identityId, autoLoad = false, focusCollabor
       if (action === "comment")
         setReplyDrafts((current) => ({ ...current, [collaborationId]: "" }));
     } catch (requestError) {
-      setError(requestError.message || "無法儲存共同筆記。");
+      setError(requestError.message || "無法儲存協作追蹤。");
     } finally {
       setBusy(false);
     }
@@ -85,7 +85,7 @@ export function CollaborationNotes({ identityId, autoLoad = false, focusCollabor
       <header>
         <div>
           <p className="eyebrow">SHARED NOTES</p>
-          <h3>共同筆記</h3>
+          <h3>協作追蹤</h3>
           <p>記錄不會覆寫舊系統清冊，並會隨此財物的穩定識別鍵延續。</p>
         </div>
         {!loaded && (
@@ -107,7 +107,7 @@ export function CollaborationNotes({ identityId, autoLoad = false, focusCollabor
             <span />
           </div>
           <strong>正在載入協作紀錄</strong>
-          <p>整理此財物的共同筆記與處理進度。</p>
+          <p>整理此財物的協作紀錄與處理進度。</p>
         </div>
       )}
       {loaded && (
@@ -230,7 +230,7 @@ export function CollaborationNotes({ identityId, autoLoad = false, focusCollabor
               })
             ) : (
               <div className="collaboration-empty">
-                <strong>還沒有共同筆記</strong>
+                <strong>還沒有協作追蹤</strong>
                 <p>先留下第一筆現場查核或處理事項，供同仁接續追蹤。</p>
               </div>
             )}
@@ -243,7 +243,7 @@ export function CollaborationNotes({ identityId, autoLoad = false, focusCollabor
             }}
           >
             <label>
-              新增共同筆記
+              新增協作追蹤
               <textarea
                 disabled={busy}
                 maxLength="2000"
