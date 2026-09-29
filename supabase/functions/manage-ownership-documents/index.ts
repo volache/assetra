@@ -86,7 +86,7 @@ Deno.serve(async (req) => {
       if (!document) return reply(req, { error: "找不到可讀取的權狀文件。" }, 404);
       const accountId = Deno.env.get("R2_ACCOUNT_ID") ?? "";
       const endpoint = Deno.env.get("R2_ENDPOINT") || `https://${accountId}.r2.cloudflarestorage.com`;
-      const bucket = Deno.env.get("R2_BUCKET") ?? "";
+      const bucket = Deno.env.get("R2_OWNERSHIP_BUCKET") || Deno.env.get("R2_BUCKET") || "";
       const r2 = new AwsClient({
         accessKeyId: Deno.env.get("R2_ACCESS_KEY_ID") ?? "",
         secretAccessKey: Deno.env.get("R2_SECRET_ACCESS_KEY") ?? "",
@@ -130,7 +130,7 @@ Deno.serve(async (req) => {
       if (error) throw error;
       const accountId = Deno.env.get("R2_ACCOUNT_ID") ?? "";
       const endpoint = Deno.env.get("R2_ENDPOINT") || `https://${accountId}.r2.cloudflarestorage.com`;
-      const bucket = Deno.env.get("R2_BUCKET") ?? "";
+      const bucket = Deno.env.get("R2_OWNERSHIP_BUCKET") || Deno.env.get("R2_BUCKET") || "";
       const r2 = new AwsClient({ accessKeyId: Deno.env.get("R2_ACCESS_KEY_ID") ?? "", secretAccessKey: Deno.env.get("R2_SECRET_ACCESS_KEY") ?? "", service: "s3", region: "auto" });
       const signed = await r2.sign(new Request(objectUrl(endpoint, bucket, r2Key), { method: "PUT", headers: { "Content-Type": "application/pdf" } }), { aws: { signQuery: true } });
       return reply(req, { documentId: document.id, uploadUrl: signed.url });
@@ -143,7 +143,7 @@ Deno.serve(async (req) => {
       if (!document) return reply(req, { error: "找不到待完成的上傳。" }, 404);
       const accountId = Deno.env.get("R2_ACCOUNT_ID") ?? "";
       const endpoint = Deno.env.get("R2_ENDPOINT") || `https://${accountId}.r2.cloudflarestorage.com`;
-      const bucket = Deno.env.get("R2_BUCKET") ?? "";
+      const bucket = Deno.env.get("R2_OWNERSHIP_BUCKET") || Deno.env.get("R2_BUCKET") || "";
       const r2 = new AwsClient({ accessKeyId: Deno.env.get("R2_ACCESS_KEY_ID") ?? "", secretAccessKey: Deno.env.get("R2_SECRET_ACCESS_KEY") ?? "", service: "s3", region: "auto" });
       const object = await r2.fetch(objectUrl(endpoint, bucket, document.r2_key), { method: "HEAD" });
       if (!object.ok) return reply(req, { error: "R2 尚未收到文件，請重新上傳。" }, 409);
@@ -168,7 +168,7 @@ Deno.serve(async (req) => {
       if (!document) return reply(req, { error: "找不到可刪除的權狀文件。" }, 404);
       const accountId = Deno.env.get("R2_ACCOUNT_ID") ?? "";
       const endpoint = Deno.env.get("R2_ENDPOINT") || `https://${accountId}.r2.cloudflarestorage.com`;
-      const bucket = Deno.env.get("R2_BUCKET") ?? "";
+      const bucket = Deno.env.get("R2_OWNERSHIP_BUCKET") || Deno.env.get("R2_BUCKET") || "";
       const r2 = new AwsClient({ accessKeyId: Deno.env.get("R2_ACCESS_KEY_ID") ?? "", secretAccessKey: Deno.env.get("R2_SECRET_ACCESS_KEY") ?? "", service: "s3", region: "auto" });
       const deletion = await r2.fetch(objectUrl(endpoint, bucket, document.r2_key), { method: "DELETE" });
       if (!deletion.ok && deletion.status !== 404) throw new Error("R2 object deletion failed");

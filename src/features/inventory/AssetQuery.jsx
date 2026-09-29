@@ -522,7 +522,7 @@ export function AssetQuery({
                               }}
                               type="button"
                               >
-                                協作追蹤{total ? <span className="collaboration-count-badge">{total}</span> : null}
+                                協作{total ? <span className="collaboration-count-badge">{total}</span> : null}
                               </button>
                             );
                           })()}

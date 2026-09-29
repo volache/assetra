@@ -89,6 +89,16 @@ create table public.asset_collaboration_events (
 );
 create index asset_collaboration_events_collaboration_idx on public.asset_collaboration_events (collaboration_id, created_at);
 create index asset_collaboration_events_actor_idx on public.asset_collaboration_events (actor_id);
+create table public.asset_photos (
+  id uuid primary key default gen_random_uuid(), asset_identity_id uuid not null references public.asset_identities(id) on delete restrict,
+  object_key text not null unique, original_filename text not null,
+  content_type text not null check (content_type in ('image/jpeg', 'image/png', 'image/webp')),
+  file_size bigint not null check (file_size > 0 and file_size <= 10485760),
+  category text not null default 'general' check (category in ('general', 'location', 'identification', 'composition', 'tag', 'evidence')),
+  created_by uuid not null references public.profiles(id) on delete restrict, created_at timestamptz not null default now()
+);
+create index asset_photos_identity_created_idx on public.asset_photos (asset_identity_id, created_at desc);
+create index asset_photos_created_by_idx on public.asset_photos (created_by);
 create table public.asset_identity_exceptions (
   id uuid primary key default gen_random_uuid(), asset_identity_id uuid not null references public.asset_identities(id) on delete restrict,
   detected_in_import_id uuid references public.imports(id) on delete set null, status public.reconciliation_status not null default 'open',
@@ -113,6 +123,7 @@ alter table public.import_batch_changes enable row level security;
 alter table public.asset_identities enable row level security;
 alter table public.asset_collaborations enable row level security;
 alter table public.asset_collaboration_events enable row level security;
+alter table public.asset_photos enable row level security;
 alter table public.asset_identity_exceptions enable row level security;
 
 create policy "active users read permitted inventory" on public.asset_records for select to authenticated using (
@@ -134,6 +145,8 @@ create policy "users read collaboration for visible inventory" on public.asset_c
 create policy "users read collaboration events for visible inventory" on public.asset_collaboration_events for select to authenticated using (
   exists (select 1 from public.asset_collaborations c where c.id = asset_collaboration_events.collaboration_id)
 );
+revoke all on table public.asset_photos from anon, authenticated;
+grant select, insert, update, delete on table public.asset_photos to service_role;
 create policy "admins read reconciliation exceptions" on public.asset_identity_exceptions for select to authenticated using (
   exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.status = 'active')
   and exists (select 1 from public.user_roles r where r.user_id = (select auth.uid()) and r.role = 'admin')
