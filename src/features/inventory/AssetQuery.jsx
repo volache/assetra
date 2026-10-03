@@ -330,7 +330,9 @@ export function AssetQuery({
               value={term}
               onChange={(e) => { setTerm(e.target.value); setAiReport(null); setAiClarification(null); setAiAssetIds(null); }}
               onKeyDown={(e) => {
-                if (e.key === "Enter") runSearch();
+                if (e.key !== "Enter") return;
+                e.preventDefault();
+                if (e.ctrlKey || e.metaKey) runAiSearch(); else runSearch();
               }}
               placeholder="輸入後按 Enter 搜尋…"
             />
@@ -403,19 +405,22 @@ export function AssetQuery({
               value={term}
               onChange={(e) => { setTerm(e.target.value); setAiReport(null); setAiClarification(null); setAiAssetIds(null); }}
               onKeyDown={(e) => {
-                if (e.key === "Enter") runSearch();
+                if (e.key !== "Enter") return;
+                e.preventDefault();
+                if (e.ctrlKey || e.metaKey) runAiSearch(); else runSearch();
               }}
               placeholder="輸入關鍵字，或以自然語言描述需求"
             />
           </label>
           <div className="advanced-search-actions">
-            <button className="button button-secondary" disabled={aiBusy || !term.trim()} onClick={runAiSearch} type="button">{aiBusy && <CapsuleSpinner compact />}{aiBusy ? "AI 轉換中…" : "AI 查詢"}</button>
+            <button aria-keyshortcuts="Control+Enter" className="button button-secondary query-action" disabled={aiBusy || !term.trim()} onClick={runAiSearch} type="button">{aiBusy ? <><CapsuleSpinner compact /><span>轉換中…</span></> : <><span>智慧查詢</span><small>Ctrl + Enter</small></>}</button>
             <button
-              className={`button button-primary search-submit ${term !== appliedTerm ? "pending" : ""}`}
+              aria-keyshortcuts="Enter"
+              className={`button button-primary search-submit query-action ${term !== appliedTerm ? "pending" : ""}`}
               onClick={runSearch}
               type="button"
             >
-              搜尋
+              <span>搜尋</span><small>Enter</small>
             </button>
             <SearchRuleMenu
               onInsert={insertRule}

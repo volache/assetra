@@ -66,6 +66,19 @@ export const searchRuleGroups = [
     ],
   },
   {
+    title: "智慧查詢：包含比對",
+    rules: [
+      ["保管單位包含", "保管單位:~"],
+      ["保管人包含", "保管人:~"],
+      ["存置地點包含", "存置地點:~"],
+      ["財產名稱包含", "財產名稱:~"],
+      ["使用單位包含", "使用單位:~"],
+      ["使用人包含", "使用人:~"],
+      ["廠牌包含", "廠牌:~"],
+      ["型式包含", "型式:~"],
+    ],
+  },
+  {
     title: "其他欄位",
     rules: [
       ["廠牌", "廠牌:"],
@@ -149,7 +162,7 @@ function searchableValues(asset) {
   ];
 }
 function textMatches(value, needle) {
-  const query = normalized(String(needle).replace(/^"|"$/g, ""));
+  const query = normalized(String(needle).replace(/^~/, "").replace(/^"|"$/g, ""));
   if (!/[?*]/.test(query)) return normalized(value).includes(query);
   const expression = [...query]
     .map((character) =>
