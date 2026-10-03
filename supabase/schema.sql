@@ -21,7 +21,7 @@ create table public.profiles (
 create table public.user_roles (user_id uuid not null references public.profiles(id) on delete cascade, role public.app_role not null, primary key (user_id, role));
 create table public.user_custodians (user_id uuid not null references public.profiles(id) on delete cascade, custodian_code text not null, primary key (user_id, custodian_code));
 create table public.user_units (user_id uuid not null references public.profiles(id) on delete cascade, unit_code text not null, primary key (user_id, unit_code));
-create table public.audit_logs (id uuid primary key default gen_random_uuid(), actor_id uuid references public.profiles(id), target_user_id uuid references public.profiles(id), action text not null, details jsonb, created_at timestamptz not null default now());
+create table public.audit_logs (id uuid primary key default gen_random_uuid(), actor_id uuid references public.profiles(id), target_user_id uuid references public.profiles(id), action text not null, detail jsonb, created_at timestamptz not null default now());
 
 create table public.imports (
   id uuid primary key default gen_random_uuid(), source_type public.source_type not null, file_name text not null,

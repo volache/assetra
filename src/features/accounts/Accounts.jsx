@@ -4,6 +4,7 @@ import { accountCodeFor } from "../../lib/accounts";
 import { roleDescriptions, roleLabels } from "../../lib/labels";
 import { HighlightText } from "../../components/HighlightText";
 import { FormCombo, UserFilterCombo } from "../../components/Comboboxes";
+import { useFeedback } from "../../components/FeedbackCenter";
 import { normalized } from "../inventory/search";
 
 export function Accounts({ store, setStore, onUsersChanged }) {
@@ -31,6 +32,8 @@ export function Accounts({ store, setStore, onUsersChanged }) {
   const [userPage, setUserPage] = useState(1);
   const [userPageSize, setUserPageSize] = useState(25);
   const [message, setMessage] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const { run } = useFeedback();
   const [compactUserFilters, setCompactUserFilters] = useState(false);
   const [compactUserFiltersOpen, setCompactUserFiltersOpen] = useState(false);
   const userFilterSentinelRef = useRef(null);
@@ -89,7 +92,6 @@ export function Accounts({ store, setStore, onUsersChanged }) {
       { value: "", label: "全部狀態" },
       ...Object.entries({
         active: "啟用",
-        pending: "待啟用",
         inactive: "停用",
       }).map(([value, label]) => ({ value, label })),
     ],
@@ -291,41 +293,49 @@ export function Accounts({ store, setStore, onUsersChanged }) {
       (!editingId && !form.password)
     )
       return setMessage("請填寫帳號、姓名、權限與初始密碼。");
+    setIsSaving(true);
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/manage-users`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-            "Content-Type": "application/json",
+      await run(async () => {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/manage-users`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+              apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              action: editingId ? "update" : "create",
+              id: editingId,
+              accountCode: form.accountCode,
+              displayName: form.name,
+              title: form.title,
+              contactEmail: form.email,
+              password: form.password || undefined,
+              roles: form.roles,
+              status: form.status,
+              unitCodes: form.unitCode ? [form.unitCode] : [],
+              custodianCodes: form.custodianCode ? [form.custodianCode] : [],
+            }),
           },
-          body: JSON.stringify({
-            action: editingId ? "update" : "create",
-            id: editingId,
-            accountCode: form.accountCode,
-            displayName: form.name,
-            title: form.title,
-            contactEmail: form.email,
-            password: form.password || undefined,
-            roles: form.roles,
-            status: form.status,
-            unitCodes: form.unitCode ? [form.unitCode] : [],
-            custodianCodes: form.custodianCode ? [form.custodianCode] : [],
-          }),
-        },
-      );
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error);
-      await onUsersChanged();
+        );
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error);
+        await onUsersChanged();
+      }, {
+        loading: editingId ? "正在儲存使用者資料…" : "正在建立使用者…",
+        success: editingId ? "使用者資料已更新。" : "使用者已建立。",
+      });
       setIsEditorOpen(false);
       setMessage("");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "儲存失敗。");
+    } finally {
+      setIsSaving(false);
     }
   }
   return (
@@ -769,8 +779,8 @@ export function Accounts({ store, setStore, onUsersChanged }) {
                 >
                   取消
                 </button>
-                <button className="button button-primary" type="submit">
-                  {editingId ? "儲存變更" : "新增使用者"}
+                <button className="button button-primary" disabled={isSaving} type="submit">
+                  {isSaving ? "儲存中…" : editingId ? "儲存變更" : "新增使用者"}
                 </button>
               </footer>
             </form>

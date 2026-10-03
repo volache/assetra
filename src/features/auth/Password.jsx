@@ -1,22 +1,38 @@
 import React, { useState } from "react";
+import { useFeedback } from "../../components/FeedbackCenter";
 import { supabase } from "../../supabase";
 
 export function Password() {
   const [oldPassword, setOld] = useState("");
   const [nextPassword, setNext] = useState("");
   const [message, setMessage] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const { run } = useFeedback();
   async function submit(e) {
     e.preventDefault();
     if (nextPassword.length < 12)
       return setMessage("新密碼至少需要 12 個字元。");
-    const { error } = await supabase.auth.updateUser({
-      password: nextPassword,
-      current_password: oldPassword,
-    });
-    if (error) return setMessage("目前密碼不正確或無法更新。");
-    setOld("");
-    setNext("");
-    setMessage("密碼已更新。");
+    setIsSaving(true);
+    setMessage("");
+    try {
+      await run(async () => {
+        const { error } = await supabase.auth.updateUser({
+          password: nextPassword,
+          current_password: oldPassword,
+        });
+        if (error) throw error;
+      }, {
+        loading: "正在更新密碼…",
+        success: "密碼已更新。",
+        error: "目前密碼不正確或無法更新。",
+      });
+      setOld("");
+      setNext("");
+    } catch {
+      setMessage("目前密碼不正確或無法更新。");
+    } finally {
+      setIsSaving(false);
+    }
   }
   return (
     <section className="page narrow">
@@ -44,13 +60,13 @@ export function Password() {
             onChange={(e) => setNext(e.target.value)}
           />
         </label>
-        <button className="button button-primary" type="submit">
-          更新密碼
+        <button className="button button-primary" disabled={isSaving} type="submit">
+          {isSaving ? "更新中…" : "更新密碼"}
         </button>
         {message && (
           <p
             className={
-              message === "密碼已更新。" ? "form-success" : "form-error"
+              "form-error"
             }
           >
             {message}

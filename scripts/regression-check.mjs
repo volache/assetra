@@ -55,11 +55,22 @@ function checkFeatureContracts() {
   assert.match(read("src/features/organization/Organization.jsx"), /UnitMasterDialog/);
   assert.match(read("src/features/auth/Login.jsx"), /session-loader-pills/);
   assert.match(read("src/app/Portal.jsx"), /CollaborationTasks/);
+  assert.match(read("src/features/accounts/Accounts.jsx"), /manage-users/);
+  assert.match(read("src/features/accounts/Accounts.jsx"), /使用者資料已更新/);
+  assert.match(read("src/features/accounts/Accounts.jsx"), /儲存中/);
+  assert.match(read("src/features/auth/Password.jsx"), /正在更新密碼/);
+  assert.match(read("src/main.jsx"), /FeedbackProvider/);
+  assert.match(read("src/components/FeedbackCenter.jsx"), /正在與伺服器連線/);
   assert.match(read("src/features/inventory/AssetQuery.jsx"), /action: "summaries"/);
   assert.match(read("src/features/collaboration/CollaborationTasks.jsx"), /action: "list_tasks"/);
   assert.match(read("supabase/functions/manage-collaborations/index.ts"), /action === "summaries"/);
   assert.match(read("supabase/functions/manage-collaborations/index.ts"), /action === "list_tasks"/);
   assert.match(read("supabase/functions/manage-collaborations/index.ts"), /canAccessAsset/);
+  assert.match(read("supabase/functions/manage-users/index.ts"), /authorizeAdmin/);
+  assert.match(read("supabase/functions/manage-users/index.ts"), /auth\.admin\.createUser/);
+  assert.match(read("supabase/functions/manage-users/index.ts"), /auth\.admin\.updateUserById/);
+  assert.match(read("supabase/functions/manage-users/index.ts"), /127\.0\.0\.1:5173/);
+  assert.match(read("supabase/functions/manage-users/index.ts"), /detail: \{ accountCode/);
 }
 
 function checkInventoryBehavior() {
