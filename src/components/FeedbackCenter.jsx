@@ -33,6 +33,16 @@ export function FeedbackProvider({ children }) {
       type === "error" ? 7000 : 5000,
     );
   }, []);
+  const copyNotice = useCallback(async (id, message) => {
+    try {
+      await navigator.clipboard.writeText(String(message));
+      setNotices((current) => current.map((notice) => (
+        notice.id === id ? { ...notice, copied: true } : notice
+      )));
+    } catch {
+      // 即使瀏覽器拒絕剪貼簿權限，訊息本身仍可讓使用者手動選取複製。
+    }
+  }, []);
   const run = useCallback(async (operation, options = {}) => {
     try {
       const result = await operation();
@@ -55,9 +65,16 @@ export function FeedbackProvider({ children }) {
       {children}
       <div className="feedback-center" aria-live="polite" aria-relevant="additions">
         {notices.map((notice) => (
-          <p className={`feedback-toast is-${notice.type}`} key={notice.id} role={notice.type === "error" ? "alert" : "status"}>
-            {notice.message}
-          </p>
+          <button
+            className={`feedback-toast is-${notice.type}${notice.copied ? " is-copied" : ""}`}
+            key={notice.id}
+            type="button"
+            onClick={() => copyNotice(notice.id, notice.message)}
+            title="點擊複製提示訊息"
+            aria-label={`複製提示訊息：${notice.message}`}
+          >
+            <span className="feedback-toast-message">{notice.message}</span>
+          </button>
         ))}
       </div>
     </FeedbackContext.Provider>

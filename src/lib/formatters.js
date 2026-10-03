@@ -50,6 +50,14 @@ export function usedDuration(value) {
   return `${Math.floor(months / 12)} 年 ${months % 12} 月`;
 }
 
+export function serviceLifeExpired(acquiredAt, usefulLife) {
+  const years = Number(usefulLife);
+  const match = String(acquiredAt || "").match(/^(\d{2,3})\/(\d{1,2})\/(\d{1,2})$/);
+  if (!match || !Number.isFinite(years) || years < 0) return false;
+  const endsAt = new Date(Number(match[1]) + 1911 + years, Number(match[2]) - 1, Number(match[3]));
+  return !Number.isNaN(endsAt.getTime()) && endsAt <= new Date();
+}
+
 export function assetMajorClass(assetNo) {
   const number = String(assetNo || "").trim();
   if (number.startsWith("111")) return "土地改良物";

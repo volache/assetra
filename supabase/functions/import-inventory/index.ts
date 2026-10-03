@@ -87,13 +87,14 @@ async function loadCurrentRecords(client: ReturnType<typeof createClient>, sourc
   }
 }
 
-const aiIndexFields: Array<[string, string]> = [
-  ['保管單位', 'unit_name'], ['使用單位', 'use_unit_name'], ['保管人', 'custodian_name'], ['使用人', 'user_name'], ['存置地點', 'location_name'], ['財產名稱', 'name'], ['財產別名', 'category_name'], ['財產區分別', 'category_type'], ['使用現況', 'status'], ['廠牌', 'brand'], ['型式', 'model'], ['計量單位', 'measure_unit'],
+const aiIndexFields: Array<[string, string, string]> = [
+  ['保管單位', 'unit_name', 'unit'], ['使用單位', 'use_unit_name', 'unit'], ['保管人', 'custodian_name', 'person'], ['使用人', 'user_name', 'person'], ['存置地點', 'location_name', 'location'], ['財產名稱', 'name', 'asset'], ['財產別名', 'category_name', 'asset'], ['財產區分別', 'category_type', 'asset'], ['使用現況', 'status', 'status'], ['廠牌', 'brand', 'brand'], ['型式', 'model', 'brand'], ['計量單位', 'measure_unit', 'measure'],
 ];
 async function refreshAiQueryIndex(client: ReturnType<typeof createClient>) {
   const [assets, items] = await Promise.all([loadCurrentRecords(client, 'asset'), loadCurrentRecords(client, 'item')]);
   const values = new Map<string, { field_name: string; normalized_value: string; display_value: string; record_count: number; updated_at: string }>();
-  for (const record of [...assets, ...items]) for (const [fieldName, column] of aiIndexFields) {
+  const terms: Array<{ asset_record_id: string; asset_identity_id: string; entity_type: string; field_name: string; normalized_value: string; display_value: string }> = [];
+  for (const record of [...assets, ...items]) for (const [fieldName, column, entityType] of aiIndexFields) {
     const displayValue = asText(record[column]);
     if (!displayValue) continue;
     const normalizedValue = displayValue.toLocaleLowerCase('zh-TW');
@@ -101,6 +102,7 @@ async function refreshAiQueryIndex(client: ReturnType<typeof createClient>) {
     const existing = values.get(key);
     if (existing) existing.record_count += 1;
     else values.set(key, { field_name: fieldName, normalized_value: normalizedValue, display_value: displayValue, record_count: 1, updated_at: new Date().toISOString() });
+    terms.push({ asset_record_id: String(record.id), asset_identity_id: String(record.identity_id), entity_type: entityType, field_name: fieldName, normalized_value: normalizedValue, display_value: displayValue });
   }
   const { error: clearError } = await client.from('ai_query_index_values').delete().not('field_name', 'is', null);
   if (clearError) throw clearError;
@@ -109,7 +111,13 @@ async function refreshAiQueryIndex(client: ReturnType<typeof createClient>) {
     const { error } = await client.from('ai_query_index_values').insert(entries.slice(start, start + 500));
     if (error) throw error;
   }
-  return { values: entries.length };
+  const { error: termClearError } = await client.from('ai_search_terms').delete().not('field_name', 'is', null);
+  if (termClearError) throw termClearError;
+  for (let start = 0; start < terms.length; start += 500) {
+    const { error } = await client.from('ai_search_terms').insert(terms.slice(start, start + 500));
+    if (error) throw error;
+  }
+  return { values: entries.length, terms: terms.length };
 }
 
 Deno.serve(async (req) => {

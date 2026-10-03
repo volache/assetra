@@ -33,6 +33,8 @@ manage-users
 manage-collaborations
 manage-asset-photos
 manage-ownership-documents
+manage-ai-settings
+semantic-asset-query
 ```
 
 所有 Function 都需由平台提供的 `SUPABASE_URL`、`SUPABASE_ANON_KEY` 與 `SUPABASE_SERVICE_ROLE_KEY` 執行環境變數。R2 相關 Function 另需依其原始碼設定 bucket 與憑證。`service_role` 金鑰只能存在於 Function 的伺服器端環境，絕不可放進 `.env` 的 `VITE_` 變數或瀏覽器程式碼。
@@ -45,3 +47,5 @@ npm run build
 ```
 
 使用者管理 Function 只允許狀態為「啟用」或「停用」的系統管理員呼叫；它會驗證呼叫者的 Supabase 使用者身分與資料庫角色後，才以伺服器端權限管理帳號。
+
+AI 查詢使用「語意目錄 → Gemini 查詢計畫 → 查詢編譯器」流程。模型只輸出受限的意圖 JSON；編譯器依欄位能力、使用者可見的索引事實與既有清冊 RLS 執行查詢。人員、地點與財產名稱由索引解析；數值、多人 OR 與複合財產編號範圍由語意目錄定義，不讓模型直接產生 SQL 或自行宣稱筆數。

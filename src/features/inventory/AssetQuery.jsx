@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { assetMajorClass, money, usedDuration } from "../../lib/formatters";
+import { assetMajorClass, money, serviceLifeExpired, usedDuration } from "../../lib/formatters";
 import { CollaborationDrawer } from "../collaboration/CollaborationDrawer";
 import { requestCollaboration } from "../collaboration/api";
 import { FilterCombo, HighlightText, SearchRuleMenu } from "./QueryControls";
@@ -22,6 +22,7 @@ export function AssetQuery({
   const [term, setTerm] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
   const [aiReport, setAiReport] = useState(null);
+  const [aiAssetIds, setAiAssetIds] = useState(null);
   const { notify } = useFeedback();
   const [appliedTerm, setAppliedTerm] = useState("");
   const [source, setSource] = useState("all");
@@ -56,6 +57,7 @@ export function AssetQuery({
           ...asset,
           assetMajorClass: assetMajorClass(asset.assetNo),
           usedDuration: usedDuration(asset.acquiredAt),
+          serviceLifeExpired: serviceLifeExpired(asset.acquiredAt, asset.usefulLife),
         })),
     [assets, source],
   );
@@ -81,7 +83,9 @@ export function AssetQuery({
       sourceRows
         .filter(
           (asset) =>
-            matches(asset) && matchesAdvancedSearch(asset, appliedTerm),
+            matches(asset) &&
+            matchesAdvancedSearch(asset, appliedTerm) &&
+            (!aiAssetIds || aiAssetIds.has(asset.identityId)),
         )
         .sort(
           (left, right) =>
@@ -96,7 +100,7 @@ export function AssetQuery({
               { numeric: true, sensitivity: "base" },
             ),
         ),
-    [sourceRows, filters, appliedTerm],
+    [sourceRows, filters, appliedTerm, aiAssetIds],
   );
   const globalHighlightTerms = useMemo(
     () =>
@@ -160,6 +164,7 @@ export function AssetQuery({
     setTerm("");
     setAppliedTerm("");
     setAiReport(null);
+    setAiAssetIds(null);
     setSource("all");
     setFilters(Object.fromEntries(filterFields.map(([key]) => [key, ""])));
     window.requestAnimationFrame(() => {
@@ -229,11 +234,13 @@ export function AssetQuery({
     setTerm("");
     setAppliedTerm("");
     setAiReport(null);
+    setAiAssetIds(null);
     setSource("all");
   }
   function runSearch() {
     setAppliedTerm(term.trim());
     setAiReport(null);
+    setAiAssetIds(null);
     setRuleMenuOpen(false);
   }
   async function runAiSearch() {
@@ -242,10 +249,10 @@ export function AssetQuery({
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const question = term.trim();
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/natural-language-search`, { method: "POST", headers: { Authorization: `Bearer ${session.access_token}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ query: question }) });
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/semantic-asset-query`, { method: "POST", headers: { Authorization: `Bearer ${session.access_token}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ query: question }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error);
-      setTerm(result.query); setAppliedTerm(result.query); setAiReport({ question, query: result.query, summary: result.summary, retried: result.retried }); notify(result.retried ? "AI 已修正條件並套用。" : "已套用 AI 搜尋條件。");
+      setAiAssetIds(new Set(result.assetIdentityIds || [])); setAppliedTerm(""); setAiReport({ question: result.question || question, summary: result.summary, explanation: result.explanation, conditionGroups: result.conditionGroups || [], trace: result.trace || [] }); notify("AI 已依索引事實完成查詢。");
     } catch (error) { notify(error instanceof Error ? error.message : "自然語言查詢失敗。", "error"); } finally { setAiBusy(false); }
   }
   function showFullFilters() {
@@ -296,7 +303,7 @@ export function AssetQuery({
             <span className="sr-only">全局關鍵字搜尋</span>
             <input
               value={term}
-              onChange={(e) => { setTerm(e.target.value); setAiReport(null); }}
+              onChange={(e) => { setTerm(e.target.value); setAiReport(null); setAiAssetIds(null); }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") runSearch();
               }}
@@ -369,7 +376,7 @@ export function AssetQuery({
             <input
               ref={searchInputRef}
               value={term}
-              onChange={(e) => setTerm(e.target.value)}
+              onChange={(e) => { setTerm(e.target.value); setAiReport(null); setAiAssetIds(null); }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") runSearch();
               }}
@@ -391,7 +398,7 @@ export function AssetQuery({
               open={ruleMenuOpen}
             />
           </div>
-          {aiReport && <aside aria-live="polite" className="ai-search-report"><strong>AI 查詢報告</strong><span>提問：{aiReport.question}</span><span>套用條件：<span className="ai-condition-chips">{tokenizeSearch(aiReport.query).map((condition, index) => condition === "|" ? <span className="ai-condition-or" key={`${condition}-${index}`}>或</span> : <span className="ai-condition-chip" key={`${condition}-${index}`}>{condition}</span>)}</span></span><span>{aiReport.summary} 共找到 {rows.length.toLocaleString()} 筆資料。{aiReport.retried ? " 系統已驗證並修正 AI 的第一次回應。" : ""}</span></aside>}
+          {aiReport && <aside aria-live="polite" className="ai-search-report"><strong>AI 查詢報告</strong><span>提問：{aiReport.question}</span><span>{aiReport.summary}</span>{aiReport.conditionGroups.length ? <span className="ai-report-conditions">查詢條件：<span className="ai-condition-chips">{aiReport.conditionGroups.map((group, groupIndex) => <React.Fragment key={`group-${groupIndex}`}>{groupIndex > 0 && <i className="ai-condition-or">或</i>}{group.map((rule) => <code className="ai-condition-chip" key={`${groupIndex}-${rule}`}>{rule}</code>)}</React.Fragment>)}</span></span> : <span>{aiReport.explanation}</span>}<span>共找到 {rows.length.toLocaleString()} 筆資料。{aiReport.trace.length ? ` 已執行：${aiReport.trace.join("、")}。` : ""}</span></aside>}
         </div>
         <fieldset>
           <legend>資料類型</legend>

@@ -74,6 +74,29 @@ function checkFeatureContracts() {
   assert.match(read("supabase/functions/manage-users/index.ts"), /auth\.admin\.updateUserById/);
   assert.match(read("supabase/functions/manage-users/index.ts"), /127\.0\.0\.1:5173/);
   assert.match(read("supabase/functions/manage-users/index.ts"), /detail: \{ accountCode/);
+  assert.match(read("src/features/inventory/AssetQuery.jsx"), /semantic-asset-query/);
+  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /ai_query_semantic_fields/);
+  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /identifier_range/);
+  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /ai_search_terms/);
+  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /compileGroup/);
+  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /formatChineseTypography/);
+  assert.match(read("supabase/migrations/20261004093000_add_ai_query_semantic_catalog.sql"), /asset_records_current_asset_serial_idx/);
+  assert.match(read("supabase/migrations/20261004094500_secure_ai_query_semantic_catalog.sql"), /service role manages AI query semantic catalog/);
+  assert.match(read("supabase/migrations/20261004101500_add_ai_acquisition_date_semantic.sql"), /date_range/);
+  assert.match(read("supabase/migrations/20261003145740_ai_agent_search.sql"), /users search terms for visible inventory/);
+}
+
+function checkAiQueryRegressionCases() {
+  const cases = JSON.parse(readFileSync(resolve(root, "scripts/ai-query-regression-cases.json"), "utf8"));
+  assert.equal(cases.length, 9);
+  assert.deepEqual(cases.slice(0, 4).map((item) => item.expected.count), [470, 203, 5, 7]);
+  const byName = new Map(cases.map((item) => [item.name, item.expected]));
+  assert.equal(byName.get("複合財產編號範圍").kind, "identifier_range");
+  assert.equal(byName.get("相對購置日期").kind, "date_range");
+  assert.equal(byName.get("實體排除條件").operator, "not");
+  assert.equal(byName.get("折舊數值比較").field, "depreciation");
+  assert.equal(byName.get("年限比較").field, "useful_life");
+  assert.equal(byName.get("已過年限").field, "service_life_expired");
 }
 
 function checkInventoryBehavior() {
@@ -131,6 +154,7 @@ function checkSearchBehavior() {
 
 checkImports();
 checkFeatureContracts();
+checkAiQueryRegressionCases();
 checkInventoryBehavior();
 checkSearchBehavior();
 console.log(`Regression checks passed for ${sourceFiles.length} source files.`);

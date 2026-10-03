@@ -33,6 +33,8 @@ export const searchFieldAliases = {
   財產大類: "assetMajorClass",
   已使用: "usedDuration",
   年限: "usefulLife",
+  已過年限: "serviceLifeExpired",
+  已過使用年限: "serviceLifeExpired",
   數量: "quantity",
   備註: "notes",
 };
@@ -82,6 +84,7 @@ export const searchRuleGroups = [
       ["已使用恰好 5 年", "已使用:=5年"],
       ["已使用至少 5 年", "已使用:>=5年"],
       ["年限至少 10 年", "年限:>=10"],
+      ["已過年限", "已過年限:true"],
       ["數量大於", "數量:>1"],
       ["原值大於", "原值:>50000"],
       ["累折大於", "累折:>10000"],
