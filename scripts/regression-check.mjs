@@ -80,6 +80,10 @@ function checkFeatureContracts() {
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /ai_search_terms/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /compileGroup/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /formatChineseTypography/);
+  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /clarificationFor/);
+  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /operator === "contains"/);
+  assert.match(read("src/features/inventory/AssetQuery.jsx"), /想再確認一下/);
+  assert.match(read("supabase/migrations/20261004140000_add_ai_query_clarifications.sql"), /expires_at/);
   assert.match(read("supabase/migrations/20261004093000_add_ai_query_semantic_catalog.sql"), /asset_records_current_asset_serial_idx/);
   assert.match(read("supabase/migrations/20261004094500_secure_ai_query_semantic_catalog.sql"), /service role manages AI query semantic catalog/);
   assert.match(read("supabase/migrations/20261004101500_add_ai_acquisition_date_semantic.sql"), /date_range/);

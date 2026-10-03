@@ -22,6 +22,8 @@ export function AssetQuery({
   const [term, setTerm] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
   const [aiReport, setAiReport] = useState(null);
+  const [aiClarification, setAiClarification] = useState(null);
+  const [clarificationText, setClarificationText] = useState("");
   const [aiAssetIds, setAiAssetIds] = useState(null);
   const { notify } = useFeedback();
   const [appliedTerm, setAppliedTerm] = useState("");
@@ -164,6 +166,7 @@ export function AssetQuery({
     setTerm("");
     setAppliedTerm("");
     setAiReport(null);
+    setAiClarification(null);
     setAiAssetIds(null);
     setSource("all");
     setFilters(Object.fromEntries(filterFields.map(([key]) => [key, ""])));
@@ -234,26 +237,48 @@ export function AssetQuery({
     setTerm("");
     setAppliedTerm("");
     setAiReport(null);
+    setAiClarification(null);
     setAiAssetIds(null);
     setSource("all");
   }
   function runSearch() {
     setAppliedTerm(term.trim());
     setAiReport(null);
+    setAiClarification(null);
     setAiAssetIds(null);
     setRuleMenuOpen(false);
+  }
+  function applyAiResult(result, fallbackQuestion) {
+    setAiAssetIds(new Set(result.assetIdentityIds || [])); setAppliedTerm(""); setAiClarification(null); setClarificationText("");
+    setAiReport({ question: result.question || fallbackQuestion, summary: result.summary, explanation: result.explanation, conditionGroups: result.conditionGroups || [], trace: result.trace || [] });
+  }
+  async function callAiQuery(body) {
+    const { data: { session } } = await supabase.auth.getSession();
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/semantic-asset-query`, { method: "POST", headers: { Authorization: `Bearer ${session.access_token}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error);
+    return result;
   }
   async function runAiSearch() {
     if (!term.trim()) return;
     setAiBusy(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       const question = term.trim();
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/semantic-asset-query`, { method: "POST", headers: { Authorization: `Bearer ${session.access_token}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ query: question }) });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error);
-      setAiAssetIds(new Set(result.assetIdentityIds || [])); setAppliedTerm(""); setAiReport({ question: result.question || question, summary: result.summary, explanation: result.explanation, conditionGroups: result.conditionGroups || [], trace: result.trace || [] }); notify("AI 已依索引事實完成查詢。");
+      const result = await callAiQuery({ query: question });
+      if (result.status === "clarification") {
+        setAiReport(null); setAiAssetIds(null); setAiClarification(result.clarification); setClarificationText("");
+      } else { applyAiResult(result, question); notify("AI 已依索引事實完成查詢。"); }
     } catch (error) { notify(error instanceof Error ? error.message : "自然語言查詢失敗。", "error"); } finally { setAiBusy(false); }
+  }
+  async function answerClarification(choiceId) {
+    if (!aiClarification) return;
+    setAiBusy(true);
+    try {
+      const customAnswer = choiceId === "custom" ? clarificationText.trim() : "";
+      if (choiceId === "custom" && !customAnswer) return notify("請先補充您想找的資料。", "error");
+      const result = await callAiQuery({ action: "clarify", clarificationId: aiClarification.id, choiceId, customAnswer });
+      applyAiResult(result, aiClarification.question); notify("已依您的選擇完成查詢。");
+    } catch (error) { notify(error instanceof Error ? error.message : "無法完成追問查詢。", "error"); } finally { setAiBusy(false); }
   }
   function showFullFilters() {
     setCompactFilterExpanded((open) => !open);
@@ -303,7 +328,7 @@ export function AssetQuery({
             <span className="sr-only">全局關鍵字搜尋</span>
             <input
               value={term}
-              onChange={(e) => { setTerm(e.target.value); setAiReport(null); setAiAssetIds(null); }}
+              onChange={(e) => { setTerm(e.target.value); setAiReport(null); setAiClarification(null); setAiAssetIds(null); }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") runSearch();
               }}
@@ -376,7 +401,7 @@ export function AssetQuery({
             <input
               ref={searchInputRef}
               value={term}
-              onChange={(e) => { setTerm(e.target.value); setAiReport(null); setAiAssetIds(null); }}
+              onChange={(e) => { setTerm(e.target.value); setAiReport(null); setAiClarification(null); setAiAssetIds(null); }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") runSearch();
               }}
@@ -399,6 +424,7 @@ export function AssetQuery({
             />
           </div>
           {aiReport && <aside aria-live="polite" className="ai-search-report"><strong>AI 查詢報告</strong><span>提問：{aiReport.question}</span><span>{aiReport.summary}</span>{aiReport.conditionGroups.length ? <span className="ai-report-conditions">查詢條件：<span className="ai-condition-chips">{aiReport.conditionGroups.map((group, groupIndex) => <React.Fragment key={`group-${groupIndex}`}>{groupIndex > 0 && <i className="ai-condition-or">或</i>}{group.map((rule) => <code className="ai-condition-chip" key={`${groupIndex}-${rule}`}>{rule}</code>)}</React.Fragment>)}</span></span> : <span>{aiReport.explanation}</span>}<span>共找到 {rows.length.toLocaleString()} 筆資料。{aiReport.trace.length ? ` 已執行：${aiReport.trace.join("、")}。` : ""}</span></aside>}
+          {aiClarification && <aside aria-live="polite" className="ai-clarification"><strong>想再確認一下</strong><span>{aiClarification.prompt}</span><div className="ai-clarification-options">{aiClarification.options.map((option) => <button className="button button-secondary" disabled={aiBusy} key={option.id} onClick={() => answerClarification(option.id)} type="button">{option.label}</button>)}</div><label className="ai-clarification-custom">或用自己的話說明<input disabled={aiBusy} onChange={(event) => setClarificationText(event.target.value)} placeholder="例如：放在消防班的財產" value={clarificationText} /></label><button className="button button-primary" disabled={aiBusy || !clarificationText.trim()} onClick={() => answerClarification("custom")} type="button">依這個說明查詢</button></aside>}
         </div>
         <fieldset>
           <legend>資料類型</legend>

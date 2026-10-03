@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 type CatalogField = { field_key: string; label: string; value_kind: "entity" | "number" | "identifier_range" | "date_range" | "service_life_status"; column_name: string | null; operators: string[] };
+type Candidate = { fieldKey: string; label: string; value: string; normalized: string; count: number };
 type Predicate = Record<string, unknown>;
 const origins = new Set(["http://localhost:5173", "http://127.0.0.1:5173"]);
 const headers = (request: Request) => ({ "Access-Control-Allow-Origin": origins.has(request.headers.get("Origin") ?? "") ? request.headers.get("Origin")! : "http://localhost:5173", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS", "Content-Type": "application/json" });
@@ -49,10 +50,10 @@ async function findCandidates(client: ReturnType<typeof createClient>, question:
   if (!filters.length) return [];
   const { data, error } = await client.from("ai_search_terms").select("field_name,display_value,normalized_value").in("field_name", [...byLabel.keys()]).or(filters.join(",")).limit(1500);
   if (error) throw error;
-  const grouped = new Map<string, { fieldKey: string; label: string; value: string; count: number }>();
+  const grouped = new Map<string, Candidate>();
   for (const row of data || []) {
     const field = byLabel.get(row.field_name); if (!field) continue;
-    const key = `${field.field_key}\0${row.normalized_value}`; const item = grouped.get(key) || { fieldKey: field.field_key, label: field.label, value: row.display_value, count: 0 };
+    const key = `${field.field_key}\0${row.normalized_value}`; const item = grouped.get(key) || { fieldKey: field.field_key, label: field.label, value: row.display_value, normalized: row.normalized_value, count: 0 };
     item.count++; grouped.set(key, item);
   }
   return [...grouped.values()].sort((left, right) => right.count - left.count).slice(0, 40);
@@ -66,6 +67,32 @@ async function resolveEntity(client: ReturnType<typeof createClient>, field: Cat
   if (!matches.length) throw new Error(`索引未找到${field.label}：${String(input)}。`);
   if (matches.length > 1) throw new Error(`${field.label}「${String(input)}」有 ${matches.length} 個可能值，請補充更具體的名稱。`);
   return matches[0] as string;
+}
+async function confirmEntityContains(client: ReturnType<typeof createClient>, field: CatalogField, input: unknown) {
+  const requested = normalize(input); if (!requested || requested.length > 120) throw new Error(`無效的${field.label}條件。`);
+  const { data, error } = await client.from("ai_search_terms").select("normalized_value").eq("field_name", field.label).ilike("normalized_value", `%${requested}%`).limit(1);
+  if (error) throw error;
+  if (!data?.length) throw new Error(`索引未找到${field.label}：${String(input)}。`);
+  return String(input).trim();
+}
+function clarificationFor(question: string, candidates: Candidate[]) {
+  const shared = new Map<string, Candidate[]>();
+  for (const candidate of candidates) shared.set(candidate.normalized, [...(shared.get(candidate.normalized) || []), candidate]);
+  const match = [...shared.values()]
+    .filter((items) => new Set(items.map((item) => item.fieldKey)).size > 1)
+    .filter((items) => normalize(question).includes(items[0].normalized))
+    .sort((left, right) => right[0].normalized.length - left[0].normalized.length)[0];
+  if (!match) return null;
+  const value = match[0].value;
+  const individual = match.map((item) => ({
+    id: item.fieldKey,
+    label: `只查${item.label}是「${value}」的財產`,
+    groups: [[{ kind: "entity", field: item.fieldKey, operator: "=", value }]],
+  }));
+  return {
+    prompt: `「${value}」可能是在說不同資料。您想找哪一種？`,
+    options: [...individual, { id: "all", label: `只要跟「${value}」有關的財產都查`, groups: individual.flatMap((item) => item.groups) }],
+  };
 }
 function comparison(request: any, column: string, operator: string, value: number | string) {
   return operator === ">" ? request.gt(column, value) : operator === ">=" ? request.gte(column, value) : operator === "<" ? request.lt(column, value) : operator === "<=" ? request.lte(column, value) : request.eq(column, value);
@@ -105,10 +132,10 @@ async function compileGroup(client: ReturnType<typeof createClient>, predicates:
     if (field.value_kind === "entity") {
       const operator = String(predicate.operator ?? "=");
       if (!field.operators.includes(operator)) throw new Error(`${field.label}不支援此查詢運算子。`);
-      const value = await resolveEntity(client, field, predicate.value);
-      request = operator === "not" ? request.neq(field.column_name!, value) : request.eq(field.column_name!, value);
-      description.push(operator === "not" ? `${field.label}不為${value}` : `${field.label}為${value}`);
-      rules.push(operator === "not" ? `-${field.label}:${value}` : `${field.label}:${value}`);
+      const value = operator === "contains" ? await confirmEntityContains(client, field, predicate.value) : await resolveEntity(client, field, predicate.value);
+      request = operator === "not" ? request.neq(field.column_name!, value) : operator === "contains" ? request.ilike(field.column_name!, `%${value}%`) : request.eq(field.column_name!, value);
+      description.push(operator === "not" ? `${field.label}不為${value}` : operator === "contains" ? `${field.label}包含${value}` : `${field.label}為${value}`);
+      rules.push(operator === "not" ? `-${field.label}:${value}` : operator === "contains" ? `${field.label}:~${value}` : `${field.label}:${value}`);
     } else if (field.value_kind === "number") {
       const operator = String(predicate.operator ?? ""); const value = Number(String(predicate.value ?? "").replaceAll(",", ""));
       if (!field.operators.includes(operator) || !Number.isFinite(value)) throw new Error(`${field.label}的比較條件無效。`);
@@ -142,14 +169,19 @@ async function executeGroup(client: ReturnType<typeof createClient>, predicates:
   if (identityIds.length < totalCount) throw new Error("查詢結果超過 10,000 筆，請補充條件後再試。");
   return { identityIds, description, rules };
 }
-async function plan(apiKey: string, model: string, question: string, catalog: CatalogField[], candidates: Array<{ fieldKey: string; label: string; value: string }>) {
+async function plan(apiKey: string, model: string, question: string, catalog: CatalogField[], candidates: Candidate[]) {
   const capabilities = catalog.map((field) => `${field.field_key}｜${field.label}｜${field.value_kind}｜${field.operators.join(",") || "entity"}`).join("\n");
   const facts = candidates.length ? candidates.map((item) => `${item.fieldKey}｜${item.label}｜${item.value}`).join("\n") : "（沒有名稱候選；仍可使用數值或完整財產編號。）";
   const today = taipeiToday();
-  const prompt = `你是財產查詢規劃器。理解使用者自然語言後，只輸出 JSON，不要回答筆數或加入 Markdown。\n\n語意目錄：\n${capabilities}\n\n可用索引事實（僅 entity 可使用；field 必須用 field_key）：\n${facts}\n\n規則：entity 是 {"kind":"entity","field":"custodian","value":"蕭詣程"}；若問題含「不是／不在／排除／以外／除外」，entity 必須輸出 operator:"not"，例如 {"kind":"entity","field":"location","operator":"not","value":"汙水處理廠"}。number 是 {"kind":"number","field":"net_value","operator":">=","value":100000}；「已過年限／已過使用年限／超過年限／使用年限已到」必須輸出 {"kind":"service_life_status","field":"service_life_expired","operator":"expired"}，絕不可把它解讀為年限 <= 0。完整財產編號範圍是 {"kind":"identifier_range","field":"asset_identifier","from":"5010106-0003-0000284","to":"5010106-0003-0000290"}；日期明確區間是 {"kind":"date_range","field":"acquired_at","from":"2026-07-04","to":"2026-10-04"}，相對日期是 {"kind":"date_range","field":"acquired_at","relative":{"amount":3,"unit":"month"}}。今天台北日期是 ${today}；「最近」包含今天。若使用者在完整起始編號後只寫流水號尾段（例如「到 290」），將 to 寫成完整的同前段 7 碼編號。每個 groups 的 all 是 AND；groups 之間是 OR。提到多個可查實體時，為每個實體建立 OR group。勿自創欄位或值。\n\n只回傳：{"version":1,"groups":[{"all":[...]}]}\n\n問題：${question}`;
+  const prompt = `你是財產查詢規劃器。理解使用者自然語言後，只輸出 JSON，不要回答筆數或加入 Markdown。\n\n語意目錄：\n${capabilities}\n\n可用索引事實（僅 entity 可使用；field 必須用 field_key）：\n${facts}\n\n規則：entity 精確比對是 {"kind":"entity","field":"custodian","operator":"=","value":"蕭詣程"}；使用者以類別、部分地點或泛稱描述時可使用 operator:"contains"，例如「宿舍的財產」是 {"kind":"entity","field":"location","operator":"contains","value":"宿舍"}。若問題含「不是／不在／排除／以外／除外」，entity 必須輸出 operator:"not"。number 是 {"kind":"number","field":"net_value","operator":">=","value":100000}；「已過年限／已過使用年限／超過年限／使用年限已到」必須輸出 {"kind":"service_life_status","field":"service_life_expired","operator":"expired"}，絕不可把它解讀為年限 <= 0。完整財產編號範圍是 {"kind":"identifier_range","field":"asset_identifier","from":"5010106-0003-0000284","to":"5010106-0003-0000290"}；日期明確區間是 {"kind":"date_range","field":"acquired_at","from":"2026-07-04","to":"2026-10-04"}，相對日期是 {"kind":"date_range","field":"acquired_at","relative":{"amount":3,"unit":"month"}}。今天台北日期是 ${today}；「最近」包含今天。若使用者在完整起始編號後只寫流水號尾段（例如「到 290」），將 to 寫成完整的同前段 7 碼編號。每個 groups 的 all 是 AND；groups 之間是 OR。提到多個可查實體時，為每個實體建立 OR group。勿自創欄位或值。\n\n只回傳：{"version":1,"groups":[{"all":[...]}]}\n\n問題：${question}`;
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey }, body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { temperature: 0, responseMimeType: "application/json" } }) });
   const payload = await response.json(); if (!response.ok) throw new Error(payload?.error?.message || "Gemini 查詢規劃失敗。");
   return parsePlan(payload.candidates?.[0]?.content?.parts || []);
+}
+async function completedResponse(client: ReturnType<typeof createClient>, question: string, candidates: Candidate[], groups: Predicate[][], catalog: CatalogField[], extraTrace: string[] = []) {
+  const catalogByKey = new Map(catalog.map((field) => [field.field_key, field])); const results = await Promise.all(groups.map((predicates) => executeGroup(client, predicates, catalogByKey)));
+  const assetIdentityIds = [...new Set(results.flatMap((result) => result.identityIds))]; const descriptions = [...new Set(results.flatMap((result) => result.description))]; const conditionGroups = results.map((result) => result.rules);
+  return { question: formatChineseTypography(question), summary: formatChineseTypography(`已依語意目錄與索引事實完成查詢，系統驗證共 ${assetIdentityIds.length} 筆資料。`), explanation: formatChineseTypography(descriptions.length ? `查詢條件：${descriptions.join("；")}。` : "已依語意目錄完成查詢。"), conditionGroups, assetIdentityIds, trace: ["語意目錄", candidates.length ? "解析索引事實" : "直接識別條件", ...extraTrace, formatChineseTypography(`編譯查詢（${assetIdentityIds.length} 筆）`)] };
 }
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: headers(request) });
@@ -157,13 +189,39 @@ Deno.serve(async (request) => {
     const url = Deno.env.get("SUPABASE_URL")!; const anon = Deno.env.get("SUPABASE_ANON_KEY")!; const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!; const auth = request.headers.get("Authorization") ?? "";
     const client = createClient(url, anon, { global: { headers: { Authorization: auth } } }); const admin = createClient(url, service);
     const { data: { user } } = await client.auth.getUser(); if (!user) throw new Error("登入已失效。");
-    const { query } = await request.json(); if (typeof query !== "string" || !query.trim() || query.length > 300) throw new Error("請輸入不超過 300 字的查詢。");
-    const [{ data: setting }, catalog] = await Promise.all([admin.from("user_ai_settings").select("gemini_key_ciphertext,gemini_key_iv,gemini_model").eq("user_id", user.id).maybeSingle(), loadCatalog(admin)]);
+    const payload = await request.json(); const catalog = await loadCatalog(admin);
+    if (payload?.action === "clarify") {
+      const clarificationId = String(payload.clarificationId ?? ""); const choiceId = String(payload.choiceId ?? ""); const customAnswer = String(payload.customAnswer ?? "").trim();
+      const { data: clarification, error } = await admin.from("ai_query_clarifications").select("question,candidates,choices,expires_at,resolved_at").eq("id", clarificationId).eq("user_id", user.id).maybeSingle();
+      if (error) throw error;
+      if (!clarification || clarification.resolved_at || new Date(clarification.expires_at) < new Date()) throw new Error("這個問題已失效，請重新提問。");
+      const candidates = (clarification.candidates || []) as Candidate[]; let groups: Predicate[][]; let question = clarification.question; let trace = ["依追問選擇"];
+      if (choiceId === "custom") {
+        if (!customAnswer || customAnswer.length > 200) throw new Error("請用不超過 200 字補充您的需求。");
+        const { data: setting } = await admin.from("user_ai_settings").select("gemini_key_ciphertext,gemini_key_iv,gemini_model").eq("user_id", user.id).maybeSingle();
+        if (!setting?.gemini_key_ciphertext || !setting.gemini_key_iv || !setting.gemini_model) throw new Error("請先在個人設定儲存 Gemini API Key 與模型。");
+        const raw = await crypto.subtle.decrypt({ name: "AES-GCM", iv: decode(setting.gemini_key_iv) }, await encryptionKey(), decode(setting.gemini_key_ciphertext));
+        question = `${question}\n使用者補充：${customAnswer}`; groups = await plan(new TextDecoder().decode(raw), setting.gemini_model, question, catalog, candidates); trace = ["依追問補充"];
+      } else {
+        const choices = (clarification.choices || []) as Array<{ id: string; groups: Predicate[][] }>;
+        const choice = choices.find((item) => item.id === choiceId);
+        if (!choice?.groups?.length) throw new Error("請選擇一個查詢方式，或補充說明。");
+        groups = choice.groups;
+      }
+      await admin.from("ai_query_clarifications").update({ resolved_at: new Date().toISOString() }).eq("id", clarificationId).eq("user_id", user.id);
+      return Response.json(await completedResponse(client, question, candidates, groups, catalog, trace), { headers: headers(request) });
+    }
+    const query = payload?.query; if (typeof query !== "string" || !query.trim() || query.length > 300) throw new Error("請輸入不超過 300 字的查詢。");
+    const question = query.trim(); const candidates = await findCandidates(client, question, catalog); const clarification = clarificationFor(question, candidates);
+    if (clarification) {
+      const { data, error } = await admin.from("ai_query_clarifications").insert({ user_id: user.id, question, candidates, choices: clarification.options }).select("id").single();
+      if (error) throw error;
+      return Response.json({ status: "clarification", clarification: { id: data.id, question, prompt: clarification.prompt, options: clarification.options.map(({ id, label }) => ({ id, label })) } }, { headers: headers(request) });
+    }
+    const { data: setting } = await admin.from("user_ai_settings").select("gemini_key_ciphertext,gemini_key_iv,gemini_model").eq("user_id", user.id).maybeSingle();
     if (!setting?.gemini_key_ciphertext || !setting.gemini_key_iv || !setting.gemini_model) throw new Error("請先在個人設定儲存 Gemini API Key 與模型。");
     const raw = await crypto.subtle.decrypt({ name: "AES-GCM", iv: decode(setting.gemini_key_iv) }, await encryptionKey(), decode(setting.gemini_key_ciphertext));
-    const candidates = await findCandidates(client, query, catalog); const groups = await plan(new TextDecoder().decode(raw), setting.gemini_model, query.trim(), catalog, candidates);
-    const catalogByKey = new Map(catalog.map((field) => [field.field_key, field])); const results = await Promise.all(groups.map((predicates) => executeGroup(client, predicates, catalogByKey)));
-    const assetIdentityIds = [...new Set(results.flatMap((result) => result.identityIds))]; const descriptions = [...new Set(results.flatMap((result) => result.description))]; const conditionGroups = results.map((result) => result.rules);
-    return Response.json({ question: formatChineseTypography(query.trim()), summary: formatChineseTypography(`已依語意目錄與索引事實完成查詢，系統驗證共 ${assetIdentityIds.length} 筆資料。`), explanation: formatChineseTypography(descriptions.length ? `查詢條件：${descriptions.join("；")}。` : "已依語意目錄完成查詢。"), conditionGroups, assetIdentityIds, trace: ["語意目錄", candidates.length ? "解析索引事實" : "直接識別條件", formatChineseTypography(`編譯查詢（${assetIdentityIds.length} 筆）`)] }, { headers: headers(request) });
+    const groups = await plan(new TextDecoder().decode(raw), setting.gemini_model, question, catalog, candidates);
+    return Response.json(await completedResponse(client, question, candidates, groups, catalog), { headers: headers(request) });
   } catch (error) { return Response.json({ error: error instanceof Error ? error.message : "查詢失敗。" }, { status: 400, headers: headers(request) }); }
 });
