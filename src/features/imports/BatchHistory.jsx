@@ -2,6 +2,7 @@ import React, { Fragment, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../supabase";
 import { rocDate, rocDateTime } from "../../lib/formatters";
 import { sourceLabels } from "../../lib/labels";
+import { CapsuleSpinner } from "../../components/FeedbackCenter";
 
 export function BatchHistory({ imports, onDeleted }) {
   const [selected, setSelected] = useState(null);
@@ -295,6 +296,7 @@ export function BatchHistory({ imports, onDeleted }) {
                     onClick={deleteSelected}
                     type="button"
                   >
+                    {deletingId === selected.id && <CapsuleSpinner compact />}
                     {deletingId === selected.id ? "正在刪除…" : "刪除此批次"}
                   </button>
                 )}

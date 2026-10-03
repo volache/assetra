@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useFeedback } from "../../components/FeedbackCenter";
+import { CapsuleSpinner, useFeedback } from "../../components/FeedbackCenter";
 import { supabase } from "../../supabase";
 
 export function Password() {
@@ -61,6 +61,7 @@ export function Password() {
           />
         </label>
         <button className="button button-primary" disabled={isSaving} type="submit">
+          {isSaving && <CapsuleSpinner compact />}
           {isSaving ? "更新中…" : "更新密碼"}
         </button>
         {message && (

@@ -11,6 +11,7 @@ import { supabase } from "../../supabase";
 import { requestOwnershipDocument } from "../ownership/api";
 import { FilterCombo } from "../inventory/QueryControls";
 import { normalized } from "../inventory/search";
+import { CapsuleSpinner } from "../../components/FeedbackCenter";
 
 const emptyFeatureCollection = { type: "FeatureCollection", features: [] };
 
@@ -1543,6 +1544,7 @@ export function GeographicAssets() {
                       </div>
                     ) : !isLoadingOwnershipDocuments ? (
                       <button className="geo-ownership-upload" disabled={isUploadingOwnershipDocuments} onClick={() => beginOwnershipUpload(selected)} type="button">
+                        {isUploadingOwnershipDocuments && <CapsuleSpinner compact />}
                         {isUploadingOwnershipDocuments ? "權狀上傳中…" : "上傳權狀"}
                       </button>
                     ) : null}

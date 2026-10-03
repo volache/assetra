@@ -4,7 +4,7 @@ import { accountCodeFor } from "../../lib/accounts";
 import { roleDescriptions, roleLabels } from "../../lib/labels";
 import { HighlightText } from "../../components/HighlightText";
 import { FormCombo, UserFilterCombo } from "../../components/Comboboxes";
-import { useFeedback } from "../../components/FeedbackCenter";
+import { CapsuleSpinner, useFeedback } from "../../components/FeedbackCenter";
 import { normalized } from "../inventory/search";
 
 export function Accounts({ store, setStore, onUsersChanged }) {
@@ -33,7 +33,7 @@ export function Accounts({ store, setStore, onUsersChanged }) {
   const [userPageSize, setUserPageSize] = useState(25);
   const [message, setMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-  const { run } = useFeedback();
+  const { notify, run } = useFeedback();
   const [compactUserFilters, setCompactUserFilters] = useState(false);
   const [compactUserFiltersOpen, setCompactUserFiltersOpen] = useState(false);
   const userFilterSentinelRef = useRef(null);
@@ -328,10 +328,13 @@ export function Accounts({ store, setStore, onUsersChanged }) {
         await onUsersChanged();
       }, {
         loading: editingId ? "正在儲存使用者資料…" : "正在建立使用者…",
-        success: editingId ? "使用者資料已更新。" : "使用者已建立。",
       });
       setIsEditorOpen(false);
       setMessage("");
+      window.setTimeout(
+        () => notify(editingId ? "使用者資料已更新。" : "使用者已建立。"),
+        0,
+      );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "儲存失敗。");
     } finally {
@@ -780,6 +783,7 @@ export function Accounts({ store, setStore, onUsersChanged }) {
                   取消
                 </button>
                 <button className="button button-primary" disabled={isSaving} type="submit">
+                  {isSaving && <CapsuleSpinner compact />}
                   {isSaving ? "儲存中…" : editingId ? "儲存變更" : "新增使用者"}
                 </button>
               </footer>

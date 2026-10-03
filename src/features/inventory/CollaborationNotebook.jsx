@@ -8,6 +8,7 @@ import {
   requestCollaboration,
 } from "../collaboration/api";
 import { AssetPhotos } from "../photos/AssetPhotos";
+import { CapsuleSpinner } from "../../components/FeedbackCenter";
 
 const taskKinds = ["tag_missing", "disposal_candidate", "custodian_change", "location_change", "other"];
 
@@ -84,7 +85,7 @@ export function CollaborationNotebook({ identityId, autoLoad = false, focusColla
           <h3>協作紀錄</h3>
           <p>一般筆記補充現場脈絡；處理事項才會列入協作追蹤與待辦統計。</p>
         </div>
-        {!loaded && <button className="button button-secondary collaboration-load" disabled={busy || !identityId} onClick={refresh} type="button">{busy ? "載入中…" : "查看紀錄"}</button>}
+        {!loaded && <button className="button button-secondary collaboration-load" disabled={busy || !identityId} onClick={refresh} type="button">{busy && <CapsuleSpinner compact />}{busy ? "載入中…" : "查看紀錄"}</button>}
       </header>
       {!loaded && autoLoad && <div className="collaboration-loading" aria-live="polite"><div className="collaboration-loading-pills" aria-hidden="true"><span /><span /><span /></div><strong>正在載入協作紀錄</strong><p>整理此財物的現場筆記與處理事項。</p></div>}
       {loaded && <>
@@ -109,7 +110,7 @@ export function CollaborationNotebook({ identityId, autoLoad = false, focusColla
                 <div className="collaboration-event-meta"><strong>{event.actor_name}</strong><time dateTime={event.created_at}>{rocDateTime(event.created_at)}</time></div>
                 {event.event_type === "commented" ? <p>{event.payload?.body}</p> : <span>完成處理</span>}
               </div>)}
-              {!closed && canResolve && <div className="collaboration-resolve"><button className="text-button" disabled={busy} onClick={() => submit("resolve", entry.id)} type="button">完成處理</button></div>}
+              {!closed && canResolve && <div className="collaboration-resolve"><button className="text-button" disabled={busy} onClick={() => submit("resolve", entry.id)} type="button">{busy && <CapsuleSpinner compact />}完成處理</button></div>}
               {!closed && <form className="collaboration-reply" onSubmit={(event) => { event.preventDefault(); submit("comment", entry.id, replyDrafts[entry.id] || ""); }}><label><span className="sr-only">補充內容</span><input disabled={busy} maxLength="2000" onChange={(event) => setReplyDrafts((current) => ({ ...current, [entry.id]: event.target.value }))} placeholder={isTask ? "補充處理進度…" : "補充筆記…"} value={replyDrafts[entry.id] || ""} /></label><button className="button button-secondary" disabled={busy || !(replyDrafts[entry.id] || "").trim()} type="submit">補充</button></form>}
             </article>;
           }) : <div className="collaboration-empty"><strong>還沒有協作紀錄</strong><p>可留下查找提示等一般筆記，或建立需要處理的事項。</p></div>}
@@ -118,7 +119,7 @@ export function CollaborationNotebook({ identityId, autoLoad = false, focusColla
           <fieldset className="collaboration-record-type"><legend>新增紀錄</legend><div className="segmented"><label><input checked={recordType === "note"} name="collaboration-record-type" onChange={() => setRecordType("note")} type="radio" /><span>一般筆記</span></label><label><input checked={recordType === "task"} name="collaboration-record-type" onChange={() => setRecordType("task")} type="radio" /><span>處理事項</span></label></div></fieldset>
           {recordType === "note" ? <label>筆記類型<select onChange={(event) => setNoteCategory(event.target.value)} value={noteCategory}><option value="general">一般筆記</option><option value="location_hint">實際位置</option></select></label> : <label>處理類型<select onChange={(event) => setTaskKind(event.target.value)} value={taskKind}>{taskKinds.map((kind) => <option key={kind} value={kind}>{collaborationKindLabels[kind]}</option>)}</select></label>}
           <label>{recordType === "note" ? "筆記內容" : "處理說明"}<textarea disabled={busy} maxLength="2000" onChange={(event) => setDraft(event.target.value)} placeholder={recordType === "note" && noteCategory === "location_hint" ? "例如：三樓西側檔案室，最內層鐵櫃。" : recordType === "note" ? "記錄有助於日後查找或理解的現場資訊。" : "說明需要協助處理的情況。"} value={draft} /></label>
-          <div><button className="text-button" disabled={busy} onClick={() => setComposerOpen(false)} type="button">取消</button><small>{draft.length}/2,000</small><button className="button button-primary" disabled={busy || !draft.trim()} type="submit">{recordType === "note" ? "新增筆記" : "建立處理事項"}</button></div>
+          <div><button className="text-button" disabled={busy} onClick={() => setComposerOpen(false)} type="button">取消</button><small>{draft.length}/2,000</small><button className="button button-primary" disabled={busy || !draft.trim()} type="submit">{busy && <CapsuleSpinner compact />}{recordType === "note" ? "新增筆記" : "建立處理事項"}</button></div>
         </form>}</>}
       </>}
     </section>

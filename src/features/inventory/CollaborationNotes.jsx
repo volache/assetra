@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { rocDateTime } from "../../lib/formatters";
 import { collaborationStatusLabel, requestCollaboration } from "../collaboration/api";
+import { CapsuleSpinner } from "../../components/FeedbackCenter";
 
 export function CollaborationNotes({ identityId, autoLoad = false, focusCollaborationId, onChanged }) {
   const [collaborations, setCollaborations] = useState([]);
@@ -95,6 +96,7 @@ export function CollaborationNotes({ identityId, autoLoad = false, focusCollabor
             onClick={refresh}
             type="button"
           >
+            {busy && <CapsuleSpinner compact />}
             {busy ? "載入中…" : "查看筆記"}
           </button>
         )}
@@ -183,6 +185,7 @@ export function CollaborationNotes({ identityId, autoLoad = false, focusCollabor
                           onClick={() => submit("resolve", note.id)}
                           type="button"
                         >
+                          {busy && <CapsuleSpinner compact />}
                           完成處理
                         </button>
                       </div>
@@ -259,6 +262,7 @@ export function CollaborationNotes({ identityId, autoLoad = false, focusCollabor
                 disabled={busy || !draft.trim()}
                 type="submit"
               >
+                {busy && <CapsuleSpinner compact />}
                 新增筆記
               </button>
             </div>

@@ -60,7 +60,10 @@ function checkFeatureContracts() {
   assert.match(read("src/features/accounts/Accounts.jsx"), /儲存中/);
   assert.match(read("src/features/auth/Password.jsx"), /正在更新密碼/);
   assert.match(read("src/main.jsx"), /FeedbackProvider/);
-  assert.match(read("src/components/FeedbackCenter.jsx"), /正在與伺服器連線/);
+  assert.match(read("src/components/FeedbackCenter.jsx"), /CapsuleSpinner/);
+  assert.match(read("src/styles/feedback.css"), /capsule-turn/);
+  assert.doesNotMatch(read("src/components/FeedbackCenter.jsx"), /<dialog/);
+  assert.doesNotMatch(read("src/components/FeedbackCenter.jsx"), /window\.fetch\s*=/);
   assert.match(read("src/features/inventory/AssetQuery.jsx"), /action: "summaries"/);
   assert.match(read("src/features/collaboration/CollaborationTasks.jsx"), /action: "list_tasks"/);
   assert.match(read("supabase/functions/manage-collaborations/index.ts"), /action === "summaries"/);

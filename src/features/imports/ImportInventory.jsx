@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import { supabase } from "../../supabase";
 import { rocDate } from "../../lib/formatters";
 import { sourceLabels } from "../../lib/labels";
+import { CapsuleSpinner } from "../../components/FeedbackCenter";
 
 const columns = {
   assetNo: ["財產編號"],
@@ -298,6 +299,7 @@ export function ImportInventory({ store, onImported }) {
           <span>{file ? file.name : "選擇 .xlsx、.xls 或 .xlsm 檔案"}</span>
         </label>
         <button className="button button-primary" disabled={busy} type="submit">
+          {busy && <CapsuleSpinner compact />}
           {busy ? "正在檢查…" : "檢查並產生預覽"}
         </button>
         {message && (
@@ -426,6 +428,7 @@ export function ImportInventory({ store, onImported }) {
               onClick={commitImport}
               type="button"
             >
+              {busy && <CapsuleSpinner compact />}
               {busy
                 ? "正在寫入…"
                 : `確認匯入 ${preview.records.length.toLocaleString()} 筆`}
