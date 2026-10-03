@@ -3,6 +3,8 @@ import { assetMajorClass, money, usedDuration } from "../../lib/formatters";
 import { CollaborationDrawer } from "../collaboration/CollaborationDrawer";
 import { requestCollaboration } from "../collaboration/api";
 import { FilterCombo, HighlightText, SearchRuleMenu } from "./QueryControls";
+import { CapsuleSpinner, useFeedback } from "../../components/FeedbackCenter";
+import { supabase } from "../../supabase";
 import {
   defaultPageSize,
   filterFields,
@@ -18,6 +20,9 @@ export function AssetQuery({
   onTaskFocusHandled,
 }) {
   const [term, setTerm] = useState("");
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiReport, setAiReport] = useState(null);
+  const { notify } = useFeedback();
   const [appliedTerm, setAppliedTerm] = useState("");
   const [source, setSource] = useState("all");
   const [filters, setFilters] = useState(() =>
@@ -154,6 +159,7 @@ export function AssetQuery({
     const index = orderedAssets.findIndex((item) => item.id === asset.id);
     setTerm("");
     setAppliedTerm("");
+    setAiReport(null);
     setSource("all");
     setFilters(Object.fromEntries(filterFields.map(([key]) => [key, ""])));
     window.requestAnimationFrame(() => {
@@ -222,11 +228,25 @@ export function AssetQuery({
     setFilters(Object.fromEntries(filterFields.map(([key]) => [key, ""])));
     setTerm("");
     setAppliedTerm("");
+    setAiReport(null);
     setSource("all");
   }
   function runSearch() {
     setAppliedTerm(term.trim());
+    setAiReport(null);
     setRuleMenuOpen(false);
+  }
+  async function runAiSearch() {
+    if (!term.trim()) return;
+    setAiBusy(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const question = term.trim();
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/natural-language-search`, { method: "POST", headers: { Authorization: `Bearer ${session.access_token}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ query: question }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error);
+      setTerm(result.query); setAppliedTerm(result.query); setAiReport({ question, query: result.query, summary: result.summary, retried: result.retried }); notify(result.retried ? "AI 已修正條件並套用。" : "已套用 AI 搜尋條件。");
+    } catch (error) { notify(error instanceof Error ? error.message : "自然語言查詢失敗。", "error"); } finally { setAiBusy(false); }
   }
   function showFullFilters() {
     setCompactFilterExpanded((open) => !open);
@@ -276,7 +296,7 @@ export function AssetQuery({
             <span className="sr-only">全局關鍵字搜尋</span>
             <input
               value={term}
-              onChange={(e) => setTerm(e.target.value)}
+              onChange={(e) => { setTerm(e.target.value); setAiReport(null); }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") runSearch();
               }}
@@ -353,10 +373,11 @@ export function AssetQuery({
               onKeyDown={(e) => {
                 if (e.key === "Enter") runSearch();
               }}
-              placeholder="輸入文字、欄位或搜尋規則"
+              placeholder="輸入關鍵字，或以自然語言描述需求"
             />
           </label>
           <div className="advanced-search-actions">
+            <button className="button button-secondary" disabled={aiBusy || !term.trim()} onClick={runAiSearch} type="button">{aiBusy && <CapsuleSpinner compact />}{aiBusy ? "AI 轉換中…" : "AI 查詢"}</button>
             <button
               className={`button button-primary search-submit ${term !== appliedTerm ? "pending" : ""}`}
               onClick={runSearch}
@@ -370,6 +391,7 @@ export function AssetQuery({
               open={ruleMenuOpen}
             />
           </div>
+          {aiReport && <aside aria-live="polite" className="ai-search-report"><strong>AI 查詢報告</strong><span>提問：{aiReport.question}</span><span>套用條件：<span className="ai-condition-chips">{tokenizeSearch(aiReport.query).map((condition, index) => condition === "|" ? <span className="ai-condition-or" key={`${condition}-${index}`}>或</span> : <span className="ai-condition-chip" key={`${condition}-${index}`}>{condition}</span>)}</span></span><span>{aiReport.summary} 共找到 {rows.length.toLocaleString()} 筆資料。{aiReport.retried ? " 系統已驗證並修正 AI 的第一次回應。" : ""}</span></aside>}
         </div>
         <fieldset>
           <legend>資料類型</legend>

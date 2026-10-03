@@ -87,6 +87,31 @@ async function loadCurrentRecords(client: ReturnType<typeof createClient>, sourc
   }
 }
 
+const aiIndexFields: Array<[string, string]> = [
+  ['保管單位', 'unit_name'], ['使用單位', 'use_unit_name'], ['保管人', 'custodian_name'], ['使用人', 'user_name'], ['存置地點', 'location_name'], ['財產名稱', 'name'], ['財產別名', 'category_name'], ['財產區分別', 'category_type'], ['使用現況', 'status'], ['廠牌', 'brand'], ['型式', 'model'], ['計量單位', 'measure_unit'],
+];
+async function refreshAiQueryIndex(client: ReturnType<typeof createClient>) {
+  const [assets, items] = await Promise.all([loadCurrentRecords(client, 'asset'), loadCurrentRecords(client, 'item')]);
+  const values = new Map<string, { field_name: string; normalized_value: string; display_value: string; record_count: number; updated_at: string }>();
+  for (const record of [...assets, ...items]) for (const [fieldName, column] of aiIndexFields) {
+    const displayValue = asText(record[column]);
+    if (!displayValue) continue;
+    const normalizedValue = displayValue.toLocaleLowerCase('zh-TW');
+    const key = `${fieldName}\u0000${normalizedValue}`;
+    const existing = values.get(key);
+    if (existing) existing.record_count += 1;
+    else values.set(key, { field_name: fieldName, normalized_value: normalizedValue, display_value: displayValue, record_count: 1, updated_at: new Date().toISOString() });
+  }
+  const { error: clearError } = await client.from('ai_query_index_values').delete().not('field_name', 'is', null);
+  if (clearError) throw clearError;
+  const entries = [...values.values()];
+  for (let start = 0; start < entries.length; start += 500) {
+    const { error } = await client.from('ai_query_index_values').insert(entries.slice(start, start + 500));
+    if (error) throw error;
+  }
+  return { values: entries.length };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: corsHeaders });
@@ -150,6 +175,10 @@ Deno.serve(async (req) => {
       p_source_type: body.sourceType,
     });
     if (reconciliationError) throw reconciliationError;
+    let aiIndex: { values: number } | null = null;
+    let aiIndexWarning: string | null = null;
+    try { aiIndex = await refreshAiQueryIndex(admin); }
+    catch (indexError) { console.error("AI query index refresh failed:", indexError); aiIndexWarning = '清冊已匯入，但 AI 候選索引更新失敗，稍後再次匯入會重試。'; }
     const changes = records.map((record) => {
       const before = currentByIdentity.get(identityOf(record));
       const change_kind = !before ? 'added' : sameRecord(record, before) ? 'unchanged' : 'changed';
@@ -169,6 +198,8 @@ Deno.serve(async (req) => {
       recordCount: records.length,
       summary,
       reconciliation,
+      aiIndex,
+      aiIndexWarning,
       retention: retentionError ? { warning: '新批次已完成，但舊批次尚未清理。下次成功匯入時會再次嘗試。' } : retention,
     }), { headers: corsHeaders });
   } catch (error) {

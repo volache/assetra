@@ -24,6 +24,7 @@
 .feedback-preview .is-hover { background: var(--color-accent-deep); }
 .feedback-preview .is-focus { outline: 3px solid color-mix(in srgb, var(--color-accent) 38%, transparent); outline-offset: 3px; }
 .feedback-preview .is-active { transform: translateY(1px); }
+.gemini-key-input { font-size: var(--text-sm); }
 
 @media (prefers-reduced-motion: reduce) { .capsule-spinner { animation-duration: 2.4s; } .capsule-spinner i { animation-duration: 3.2s; } }
 @media (max-width: 40rem) { .feedback-center { inset: auto var(--space-md) var(--space-md); max-inline-size: none; } }

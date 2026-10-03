@@ -39,11 +39,7 @@ const Organization = lazy(() =>
     default: Organization,
   })),
 );
-const Password = lazy(() =>
-  import("../features/auth/Password").then(({ Password }) => ({
-    default: Password,
-  })),
-);
+const PersonalSettings = lazy(() => import("../features/settings/PersonalSettings").then(({ PersonalSettings }) => ({ default: PersonalSettings })));
 
 function allowedAssets(assets, user) {
   if (user.roles.includes("admin")) return assets;
@@ -102,7 +98,7 @@ export function Portal({
           { id: "accounts", label: "使用者管理" },
         ]
       : []),
-    { id: "password", label: "修改密碼" },
+    { id: "settings", label: "個人設定" },
   ];
   return (
     <div
@@ -192,7 +188,7 @@ export function Portal({
             {page === "organization" && canAdmin && (
               <Organization store={store} setStore={setStore} />
             )}
-            {page === "password" && <Password />}
+            {page === "settings" && <PersonalSettings />}
           </Suspense>
         </div>
       </main>
