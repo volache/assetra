@@ -88,7 +88,7 @@ async function loadCurrentRecords(client: ReturnType<typeof createClient>, sourc
 }
 
 const aiIndexFields: Array<[string, string, string]> = [
-  ['保管單位', 'unit_name', 'unit'], ['使用單位', 'use_unit_name', 'unit'], ['保管人', 'custodian_name', 'person'], ['使用人', 'user_name', 'person'], ['存置地點', 'location_name', 'location'], ['財產名稱', 'name', 'asset'], ['財產別名', 'category_name', 'asset'], ['財產區分別', 'category_type', 'asset'], ['使用現況', 'status', 'status'], ['廠牌', 'brand', 'brand'], ['型式', 'model', 'brand'], ['計量單位', 'measure_unit', 'measure'],
+  ['保管單位', 'unit_name', 'unit'], ['使用單位', 'use_unit_name', 'unit'], ['保管人', 'custodian_name', 'person'], ['使用人', 'user_name', 'person'], ['存置地點', 'location_name', 'location'], ['財產名稱', 'name', 'asset'], ['財產別名', 'category_name', 'asset'], ['財產區分別', 'category_type', 'asset'], ['財產大類', 'asset_major_class', 'asset'], ['使用現況', 'status', 'status'], ['廠牌', 'brand', 'brand'], ['型式', 'model', 'brand'], ['計量單位', 'measure_unit', 'measure'],
 ];
 async function refreshAiQueryIndex(client: ReturnType<typeof createClient>) {
   const [assets, items] = await Promise.all([loadCurrentRecords(client, 'asset'), loadCurrentRecords(client, 'item')]);

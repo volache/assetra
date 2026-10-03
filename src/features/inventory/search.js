@@ -33,6 +33,7 @@ export const searchFieldAliases = {
   財產大類: "assetMajorClass",
   已使用: "usedDuration",
   年限: "usefulLife",
+  已達年限: "serviceLifeExpired",
   已過年限: "serviceLifeExpired",
   已過使用年限: "serviceLifeExpired",
   數量: "quantity",
@@ -97,7 +98,7 @@ export const searchRuleGroups = [
       ["已使用恰好 5 年", "已使用:=5年"],
       ["已使用至少 5 年", "已使用:>=5年"],
       ["年限至少 10 年", "年限:>=10"],
-      ["已過年限", "已過年限:true"],
+      ["已達年限", "已達年限:true"],
       ["數量大於", "數量:>1"],
       ["原值大於", "原值:>50000"],
       ["累折大於", "累折:>10000"],
@@ -162,7 +163,7 @@ function searchableValues(asset) {
   ];
 }
 function textMatches(value, needle) {
-  const query = normalized(String(needle).replace(/^~/, "").replace(/^"|"$/g, ""));
+  const query = normalized(String(needle).replace(/^"|"$/g, ""));
   if (!/[?*]/.test(query)) return normalized(value).includes(query);
   const expression = [...query]
     .map((character) =>
@@ -174,6 +175,9 @@ function textMatches(value, needle) {
     )
     .join("");
   return new RegExp(expression, "u").test(normalized(value));
+}
+function exactMatches(value, needle) {
+  return normalized(value) === normalized(String(needle).replace(/^"|"$/g, ""));
 }
 function tokenMatches(asset, rawToken) {
   const negated = rawToken.startsWith("-");
@@ -207,10 +211,10 @@ function tokenMatches(asset, rawToken) {
         "=": actual === target,
       }[operator];
   } else if (fieldSearch && searchFieldAliases[fieldSearch[1]]) {
-    matched = textMatches(
-      asset[searchFieldAliases[fieldSearch[1]]],
-      fieldSearch[2],
-    );
+    const value = fieldSearch[2];
+    matched = value.startsWith("~")
+      ? textMatches(asset[searchFieldAliases[fieldSearch[1]]], value.slice(1))
+      : exactMatches(asset[searchFieldAliases[fieldSearch[1]]], value);
   } else {
     matched = searchableValues(asset).some((value) =>
       textMatches(value, token),

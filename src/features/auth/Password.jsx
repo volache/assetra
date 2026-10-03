@@ -10,8 +10,8 @@ export function Password() {
   const { run } = useFeedback();
   async function submit(e) {
     e.preventDefault();
-    if (nextPassword.length < 12)
-      return setMessage("新密碼至少需要 12 個字元。");
+    if (nextPassword.length < 8)
+      return setMessage("新密碼至少需要 8 個字元。");
     setIsSaving(true);
     setMessage("");
     try {
@@ -40,7 +40,7 @@ export function Password() {
         <div>
           <p className="eyebrow">PASSWORD</p>
           <h1>修改密碼</h1>
-          <p>新密碼至少需要 12 個字元。</p>
+          <p>新密碼至少需要 8 個字元。</p>
         </div>
       </div>
       <form className="account-form" onSubmit={submit}>

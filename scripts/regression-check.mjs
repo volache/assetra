@@ -83,9 +83,20 @@ function checkFeatureContracts() {
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /clarificationFor/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /operator === "contains"/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /欄位:~文字/);
+  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /runAnalysis/);
+  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /analysisPlan/);
+  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /intent: "lookup" \| "analysis"/);
+  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /你必須先自行判斷 intent/);
+  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /analysisPlan = planned\.analysis/);
+  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /資料品質檢查/);
+  assert.match(read("supabase/functions/import-inventory/index.ts"), /財產大類/);
+  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /from === to/);
   assert.match(read("src/features/inventory/AssetQuery.jsx"), /想再確認一下/);
   assert.match(read("src/features/inventory/AssetQuery.jsx"), /智慧查詢/);
+  assert.match(read("src/features/inventory/AssetQuery.jsx"), /分析結果/);
   assert.match(read("supabase/migrations/20261004140000_add_ai_query_clarifications.sql"), /expires_at/);
+  assert.match(read("supabase/migrations/20261004150000_add_ai_analysis_capabilities.sql"), /analysis/);
+  assert.match(read("supabase/migrations/20261004160000_add_major_class_and_data_quality_analysis.sql"), /asset_major_class/);
   assert.match(read("supabase/migrations/20261004093000_add_ai_query_semantic_catalog.sql"), /asset_records_current_asset_serial_idx/);
   assert.match(read("supabase/migrations/20261004094500_secure_ai_query_semantic_catalog.sql"), /service role manages AI query semantic catalog/);
   assert.match(read("supabase/migrations/20261004101500_add_ai_acquisition_date_semantic.sql"), /date_range/);
@@ -102,7 +113,7 @@ function checkAiQueryRegressionCases() {
   assert.equal(byName.get("實體排除條件").operator, "not");
   assert.equal(byName.get("折舊數值比較").field, "depreciation");
   assert.equal(byName.get("年限比較").field, "useful_life");
-  assert.equal(byName.get("已過年限").field, "service_life_expired");
+  assert.equal(byName.get("已達年限").field, "service_life_expired");
 }
 
 function checkInventoryBehavior() {
@@ -151,6 +162,7 @@ function checkSearchBehavior() {
     status: "使用中",
   };
   assert.equal(matchesAdvancedSearch(asset, "保管人:王小明"), true);
+  assert.equal(matchesAdvancedSearch(asset, "存置地點:宿舍"), false);
   assert.equal(matchesAdvancedSearch(asset, "存置地點:~宿舍"), true);
   assert.equal(matchesAdvancedSearch(asset, "計量單位:具"), true);
   assert.equal(matchesAdvancedSearch(asset, "財產大類:機械及設備"), true);

@@ -22,6 +22,7 @@ export function AssetQuery({
   const [term, setTerm] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
   const [aiReport, setAiReport] = useState(null);
+  const [aiAnalysis, setAiAnalysis] = useState(null);
   const [aiClarification, setAiClarification] = useState(null);
   const [clarificationText, setClarificationText] = useState("");
   const [aiAssetIds, setAiAssetIds] = useState(null);
@@ -166,6 +167,7 @@ export function AssetQuery({
     setTerm("");
     setAppliedTerm("");
     setAiReport(null);
+    setAiAnalysis(null);
     setAiClarification(null);
     setAiAssetIds(null);
     setSource("all");
@@ -237,6 +239,7 @@ export function AssetQuery({
     setTerm("");
     setAppliedTerm("");
     setAiReport(null);
+    setAiAnalysis(null);
     setAiClarification(null);
     setAiAssetIds(null);
     setSource("all");
@@ -244,13 +247,14 @@ export function AssetQuery({
   function runSearch() {
     setAppliedTerm(term.trim());
     setAiReport(null);
+    setAiAnalysis(null);
     setAiClarification(null);
     setAiAssetIds(null);
     setRuleMenuOpen(false);
   }
   function applyAiResult(result, fallbackQuestion) {
-    setAiAssetIds(new Set(result.assetIdentityIds || [])); setAppliedTerm(""); setAiClarification(null); setClarificationText("");
-    setAiReport({ question: result.question || fallbackQuestion, summary: result.summary, explanation: result.explanation, conditionGroups: result.conditionGroups || [], trace: result.trace || [] });
+    setAiAssetIds(new Set(result.displayIdentityIds || result.assetIdentityIds || [])); setAppliedTerm(""); setAiClarification(null); setClarificationText(""); setAiAnalysis(result.analysis || null);
+    setAiReport({ question: result.question || fallbackQuestion, summary: result.summary, explanation: result.explanation, analysisDescription: result.analysisDescription, conditionGroups: result.conditionGroups || [], scopeCount: result.scopeCount, trace: result.trace || [] });
   }
   async function callAiQuery(body) {
     const { data: { session } } = await supabase.auth.getSession();
@@ -266,7 +270,7 @@ export function AssetQuery({
       const question = term.trim();
       const result = await callAiQuery({ query: question });
       if (result.status === "clarification") {
-        setAiReport(null); setAiAssetIds(null); setAiClarification(result.clarification); setClarificationText("");
+        setAiReport(null); setAiAnalysis(null); setAiAssetIds(null); setAiClarification(result.clarification); setClarificationText("");
       } else { applyAiResult(result, question); notify("AI 已依索引事實完成查詢。"); }
     } catch (error) { notify(error instanceof Error ? error.message : "自然語言查詢失敗。", "error"); } finally { setAiBusy(false); }
   }
@@ -328,7 +332,7 @@ export function AssetQuery({
             <span className="sr-only">全局關鍵字搜尋</span>
             <input
               value={term}
-              onChange={(e) => { setTerm(e.target.value); setAiReport(null); setAiClarification(null); setAiAssetIds(null); }}
+              onChange={(e) => { setTerm(e.target.value); setAiReport(null); setAiAnalysis(null); setAiClarification(null); setAiAssetIds(null); }}
               onKeyDown={(e) => {
                 if (e.key !== "Enter") return;
                 e.preventDefault();
@@ -403,7 +407,7 @@ export function AssetQuery({
             <input
               ref={searchInputRef}
               value={term}
-              onChange={(e) => { setTerm(e.target.value); setAiReport(null); setAiClarification(null); setAiAssetIds(null); }}
+              onChange={(e) => { setTerm(e.target.value); setAiReport(null); setAiAnalysis(null); setAiClarification(null); setAiAssetIds(null); }}
               onKeyDown={(e) => {
                 if (e.key !== "Enter") return;
                 e.preventDefault();
@@ -428,7 +432,8 @@ export function AssetQuery({
               open={ruleMenuOpen}
             />
           </div>
-          {aiReport && <aside aria-live="polite" className="ai-search-report"><strong>AI 查詢報告</strong><span>提問：{aiReport.question}</span><span>{aiReport.summary}</span>{aiReport.conditionGroups.length ? <span className="ai-report-conditions">查詢條件：<span className="ai-condition-chips">{aiReport.conditionGroups.map((group, groupIndex) => <React.Fragment key={`group-${groupIndex}`}>{groupIndex > 0 && <i className="ai-condition-or">或</i>}{group.map((rule) => <code className="ai-condition-chip" key={`${groupIndex}-${rule}`}>{rule}</code>)}</React.Fragment>)}</span></span> : <span>{aiReport.explanation}</span>}<span>共找到 {rows.length.toLocaleString()} 筆資料。{aiReport.trace.length ? ` 已執行：${aiReport.trace.join("、")}。` : ""}</span></aside>}
+          {aiReport && <aside aria-live="polite" className="ai-search-report"><strong>AI 查詢報告</strong><span>提問：{aiReport.question}</span><span>{aiReport.summary}</span>{aiReport.conditionGroups.some((group) => group.length) ? <span className="ai-report-conditions">查詢條件：<span className="ai-condition-chips">{aiReport.conditionGroups.map((group, groupIndex) => <React.Fragment key={`group-${groupIndex}`}>{groupIndex > 0 && <i className="ai-condition-or">或</i>}{group.map((rule) => <code className="ai-condition-chip" key={`${groupIndex}-${rule}`}>{rule}</code>)}</React.Fragment>)}</span></span> : <span>{aiReport.analysisDescription || aiReport.explanation}</span>}<span>{aiAnalysis ? `${typeof aiAnalysis.matchCount === "number" ? `符合分析條件共 ${aiAnalysis.matchCount.toLocaleString()} 筆資料；` : ""}分析範圍共 ${(aiReport.scopeCount ?? 0).toLocaleString()} 筆資料。` : `共找到 ${rows.length.toLocaleString()} 筆資料。`}{aiReport.trace.length ? ` 已執行：${aiReport.trace.join("、")}。` : ""}</span></aside>}
+          {aiAnalysis && <aside aria-live="polite" className="ai-analysis"><strong>分析結果</strong><span>{aiAnalysis.title}</span><span>{aiAnalysis.summary}</span>{aiAnalysis.value ? <b className="ai-analysis-value">{aiAnalysis.value}{aiAnalysis.unit}</b> : <div className="ai-analysis-table-wrap"><table><thead><tr>{aiAnalysis.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{aiAnalysis.rows.map((row, index) => <tr key={`${row[0]}-${index}`}>{row.map((value, cellIndex) => <td key={cellIndex}>{value}</td>)}</tr>)}</tbody></table></div>}</aside>}
           {aiClarification && <aside aria-live="polite" className="ai-clarification"><strong>想再確認一下</strong><span>{aiClarification.prompt}</span><div className="ai-clarification-options">{aiClarification.options.map((option) => <button className="button button-secondary" disabled={aiBusy} key={option.id} onClick={() => answerClarification(option.id)} type="button">{option.label}</button>)}</div><label className="ai-clarification-custom">或用自己的話說明<input disabled={aiBusy} onChange={(event) => setClarificationText(event.target.value)} placeholder="例如：放在消防班的財產" value={clarificationText} /></label><button className="button button-primary" disabled={aiBusy || !clarificationText.trim()} onClick={() => answerClarification("custom")} type="button">依這個說明查詢</button></aside>}
         </div>
         <fieldset>

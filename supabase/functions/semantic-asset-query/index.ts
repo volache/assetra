@@ -1,9 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-type CatalogField = { field_key: string; label: string; value_kind: "entity" | "number" | "identifier_range" | "date_range" | "service_life_status"; column_name: string | null; operators: string[] };
+type CatalogField = { field_key: string; label: string; value_kind: "entity" | "number" | "identifier_range" | "date_range" | "service_life_status" | "data_quality"; column_name: string | null; operators: string[]; configuration: Record<string, unknown> };
 type Candidate = { fieldKey: string; label: string; value: string; normalized: string; count: number };
 type Predicate = Record<string, unknown>;
+type AnalysisPlan = { type: "rank" | "aggregate" | "group" | "quality"; field?: string; aggregate?: "count" | "sum" | "average" | "min" | "max"; groupBy?: string; direction?: "asc" | "desc"; limit?: number; checks?: string[] };
+type PlannedQuery = { intent: "lookup" | "analysis"; groups: Predicate[][]; analysis: AnalysisPlan | null };
 const origins = new Set(["http://localhost:5173", "http://127.0.0.1:5173"]);
 const headers = (request: Request) => ({ "Access-Control-Allow-Origin": origins.has(request.headers.get("Origin") ?? "") ? request.headers.get("Origin")! : "http://localhost:5173", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS", "Content-Type": "application/json" });
 const normalize = (value: unknown) => String(value ?? "").trim().toLocaleLowerCase("zh-TW");
@@ -14,24 +16,34 @@ const resultFields = "identity_id,asset_no,serial_no,name,custodian_name,user_na
 const formatChineseTypography = (value: unknown) => String(value ?? "")
   .replace(/([\u3400-\u9fff])([A-Za-z0-9])/g, "$1 $2")
   .replace(/([A-Za-z0-9])([\u3400-\u9fff])/g, "$1 $2");
+const formatCount = (value: number) => Number(value).toLocaleString("zh-TW");
+const formatAiText = (value: unknown) => formatChineseTypography(value);
 
 async function encryptionKey() {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!));
   return crypto.subtle.importKey("raw", digest, "AES-GCM", false, ["decrypt"]);
 }
-function parsePlan(parts: Array<Record<string, unknown>>) {
+function parsePlan(parts: Array<Record<string, unknown>>): PlannedQuery {
   const text = parts.map((part) => String(part.text ?? "")).join("\n"); const start = text.indexOf("{"); const end = text.lastIndexOf("}");
   if (start < 0 || end < start) throw new Error("AI 未回傳可驗證的查詢計畫。");
   const plan = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
   if (plan.version !== 1 || !Array.isArray(plan.groups) || !plan.groups.length || plan.groups.length > 4) throw new Error("AI 查詢計畫格式錯誤。");
-  return plan.groups.map((group) => {
+  const groups = plan.groups.map((group) => {
     const all = (group as Record<string, unknown>)?.all;
-    if (!Array.isArray(all) || !all.length || all.length > 6 || !all.every((item) => item && typeof item === "object")) throw new Error("AI 查詢條件格式錯誤。");
+    if (!Array.isArray(all) || all.length > 6 || !all.every((item) => item && typeof item === "object")) throw new Error("AI 查詢條件格式錯誤。");
     return all as Predicate[];
   });
+  if (groups.length > 1 && groups.some((group) => !group.length)) throw new Error("不限定條件時只能使用一個查詢群組。");
+  const intent = String(plan.intent ?? "");
+  if (intent !== "lookup" && intent !== "analysis") throw new Error("AI 未能判定本次查詢意圖。");
+  const analysis = plan.analysis;
+  if (intent === "lookup") return { intent, groups, analysis: null };
+  if (analysis === undefined || analysis === null) return { intent, groups, analysis: null };
+  if (!analysis || typeof analysis !== "object" || !["rank", "aggregate", "group", "quality"].includes(String((analysis as Record<string, unknown>).type ?? ""))) throw new Error("AI 分析計畫格式錯誤。");
+  return { intent, groups, analysis: analysis as AnalysisPlan };
 }
 async function loadCatalog(admin: ReturnType<typeof createClient>) {
-  const { data, error } = await admin.from("ai_query_semantic_fields").select("field_key,label,value_kind,column_name,operators").eq("is_active", true).order("field_key");
+  const { data, error } = await admin.from("ai_query_semantic_fields").select("field_key,label,value_kind,column_name,operators,configuration").eq("is_active", true).order("field_key");
   if (error) throw error;
   const catalog = (data || []) as CatalogField[];
   if (!catalog.length) throw new Error("AI 查詢語意目錄尚未初始化。");
@@ -146,16 +158,17 @@ async function compileGroup(client: ReturnType<typeof createClient>, predicates:
       const to = first && /^\d{1,7}$/.test(rawTo) ? `${first[1]}-${rawTo.padStart(7, "0")}` : rawTo;
       const last = assetIdentifier.exec(to);
       if (!first || !last || first[1] !== last[1] || (prefix && prefix !== first[1])) throw new Error("財產編號範圍必須使用相同前段的完整 7碼-4碼-7碼格式。");
-      prefix = first[1]; request = request.eq("asset_no", first[1]).gte("serial_no", first[2]).lte("serial_no", last[2]); description.push(`財產編號${from}至${to}`);
-      rules.push(`${field.label}:${from}`, `${field.label}:<=${to}`);
+      prefix = first[1]; request = request.eq("asset_no", first[1]).gte("serial_no", first[2]).lte("serial_no", last[2]); description.push(from === to ? `財產編號${from}` : `財產編號${from}至${to}`);
+      if (from === to) rules.push(`${field.label}:${from}`);
+      else rules.push(`${field.label}:>=${from}`, `${field.label}:<=${to}`);
     } else if (field.value_kind === "date_range") {
       const range = dateRange(predicate); request = request.gte(field.column_name!, range.from).lte(field.column_name!, range.to); description.push(`${field.label}${range.description}`);
       rules.push(`${field.label}:>=${rocDate(range.from)}`, `${field.label}:<=${rocDate(range.to)}`);
-    } else {
-      if (String(predicate.operator ?? "expired") !== "expired") throw new Error("已過年限僅支援逾期條件。");
+    } else if (field.value_kind === "service_life_status") {
+      if (String(predicate.operator ?? "expired") !== "expired") throw new Error("已達年限僅支援此條件。");
       request = request.not(field.column_name!, "is", null).lte(field.column_name!, taipeiToday()); description.push(field.label);
-      rules.push("已過年限:true");
-    }
+      rules.push("已達年限:true");
+    } else throw new Error("資料品質欄位僅能用於分析。");
   }
   return { request, description, rules };
 }
@@ -169,19 +182,112 @@ async function executeGroup(client: ReturnType<typeof createClient>, predicates:
   if (identityIds.length < totalCount) throw new Error("查詢結果超過 10,000 筆，請補充條件後再試。");
   return { identityIds, description, rules };
 }
+function supportsAnalysis(field: CatalogField, capability: string) {
+  return Array.isArray(field.configuration?.analysis) && field.configuration.analysis.includes(capability);
+}
+function analysisNumber(value: unknown) {
+  const number = Number(value); return Number.isFinite(number) ? number : null;
+}
+function formatAnalysisValue(field: CatalogField, value: unknown) {
+  if (value === null || value === undefined || value === "") return "未填";
+  if (field.value_kind === "date_range") return rocDate(String(value));
+  if (field.value_kind === "number") return Number(value).toLocaleString("zh-TW", { maximumFractionDigits: 2 });
+  return String(value);
+}
+async function loadAnalysisRows(client: ReturnType<typeof createClient>, identityIds: string[], columns: string[]) {
+  const rows: Array<Record<string, unknown>> = [];
+  const selected = [...new Set(["identity_id", "asset_no", "serial_no", "name", ...columns])].join(",");
+  for (let start = 0; start < identityIds.length; start += 200) {
+    const { data, error } = await client.from("asset_records").select(selected).in("identity_id", identityIds.slice(start, start + 200));
+    if (error) throw error; rows.push(...(data || []));
+  }
+  return rows;
+}
+async function runAnalysis(client: ReturnType<typeof createClient>, input: AnalysisPlan, identityIds: string[], catalog: Map<string, CatalogField>) {
+  const type = input.type;
+  const field = input.field ? catalog.get(input.field) : undefined;
+  const aggregate = input.aggregate ?? "count";
+  const limit = Math.min(100, Math.max(1, Number.isInteger(input.limit) ? input.limit! : 10));
+  if (type === "quality") {
+    const allowed = new Set(["missing_custodian", "missing_location", "missing_acquired_at", "missing_useful_life", "unit_mismatch", "person_mismatch"]);
+    const checks = (Array.isArray(input.checks) && input.checks.length ? input.checks : [...allowed]).filter((check) => allowed.has(check));
+    const rows = await loadAnalysisRows(client, identityIds, ["custodian_name", "location_name", "acquired_at", "useful_life", "unit_name", "use_unit_name", "user_name"]);
+    const absent = (value: unknown) => !String(value ?? "").trim();
+    const definitions: Record<string, [string, (row: Record<string, unknown>) => boolean]> = {
+      missing_custodian: ["未填保管人", (row) => absent(row.custodian_name)],
+      missing_location: ["未填存置地點", (row) => absent(row.location_name)],
+      missing_acquired_at: ["未填購置日期", (row) => absent(row.acquired_at)],
+      missing_useful_life: ["未填年限", (row) => row.useful_life === null || row.useful_life === undefined],
+      unit_mismatch: ["保管單位與使用單位不一致", (row) => !absent(row.unit_name) && !absent(row.use_unit_name) && normalize(row.unit_name) !== normalize(row.use_unit_name)],
+      person_mismatch: ["保管人與使用人不一致", (row) => !absent(row.custodian_name) && !absent(row.user_name) && normalize(row.custodian_name) !== normalize(row.user_name)],
+    };
+    const qualityMatches = new Set<string>();
+    const qualityRows = checks.map((check) => {
+      const matched = rows.filter(definitions[check][1]);
+      matched.forEach((row) => qualityMatches.add(String(row.identity_id)));
+      return [definitions[check][0], matched.length];
+    }).sort((left, right) => Number(right[1]) - Number(left[1]));
+    const issues = qualityRows.reduce((sum, row) => sum + Number(row[1]), 0);
+    return { kind: "quality", title: "資料品質檢查", summary: formatAiText(`在 ${formatCount(identityIds.length)} 筆資料中，檢出 ${formatCount(issues)} 項欄位缺漏或不一致。`), conditionDescription: `檢查項目：${qualityRows.map(([label]) => String(label)).join("、")}。`, matchCount: qualityMatches.size, columns: ["檢查項目", "筆數"], rows: qualityRows.map(([label, count]) => [String(label), formatCount(Number(count))]), displayIdentityIds: [...qualityMatches] };
+  }
+  if (type === "rank") {
+    if (!field?.column_name || !supportsAnalysis(field, "sort")) throw new Error("此欄位不支援排序分析。");
+    const direction = input.direction === "asc" ? "asc" : "desc";
+    const rows = await loadAnalysisRows(client, identityIds, [field.column_name]);
+    const ranked = rows.filter((row) => row[field.column_name!] !== null && row[field.column_name!] !== undefined).sort((left, right) => {
+      const leftValue = field.value_kind === "number" ? analysisNumber(left[field.column_name!]) ?? 0 : String(left[field.column_name!]);
+      const rightValue = field.value_kind === "number" ? analysisNumber(right[field.column_name!]) ?? 0 : String(right[field.column_name!]);
+      return direction === "asc" ? (leftValue < rightValue ? -1 : leftValue > rightValue ? 1 : 0) : (leftValue > rightValue ? -1 : leftValue < rightValue ? 1 : 0);
+    }).slice(0, limit);
+    const directionLabel = direction === "asc" ? "由小到大" : "由大到小";
+    return { kind: "rank", title: `${field.label}排名`, summary: formatAiText(`依 ${field.label} ${directionLabel}，顯示前 ${formatCount(ranked.length)} 筆。`), columns: ["財產", field.label], rows: ranked.map((row) => [`${row.asset_no ?? ""}-${row.serial_no ?? ""} ${row.name ?? ""}`.trim(), formatAnalysisValue(field, row[field.column_name!])]), displayIdentityIds: ranked.map((row) => String(row.identity_id)) };
+  }
+  if (type === "aggregate") {
+    if (aggregate === "count") return { kind: "aggregate", title: "筆數統計", summary: formatAiText(`符合條件的財產共 ${formatCount(identityIds.length)} 筆。`), value: formatCount(identityIds.length), unit: "筆" };
+    if (!field?.column_name || !supportsAnalysis(field, aggregate)) throw new Error("此欄位不支援指定的統計方式。");
+    const values = (await loadAnalysisRows(client, identityIds, [field.column_name])).map((row) => analysisNumber(row[field.column_name!])).filter((value): value is number => value !== null);
+    if (!values.length) return { kind: "aggregate", title: `${field.label}統計`, summary: "符合條件的資料沒有可計算的數值。", value: "—", unit: "" };
+    const result = aggregate === "sum" ? values.reduce((sum, value) => sum + value, 0) : aggregate === "average" ? values.reduce((sum, value) => sum + value, 0) / values.length : aggregate === "min" ? Math.min(...values) : Math.max(...values);
+    const labels: Record<string, string> = { sum: "總計", average: "平均", min: "最小", max: "最大" };
+    return { kind: "aggregate", title: `${field.label}${labels[aggregate]}`, summary: formatAiText(`以 ${formatCount(values.length)} 筆可計算資料求得。`), value: formatAnalysisValue(field, result), unit: "" };
+  }
+  const groupField = input.groupBy ? catalog.get(input.groupBy) : undefined;
+  if (!groupField?.column_name || !supportsAnalysis(groupField, "group")) throw new Error("此欄位不支援分組分析。");
+  if (aggregate !== "count" && (!field?.column_name || !supportsAnalysis(field, aggregate))) throw new Error("此統計欄位不支援分組分析。");
+  const columns = [groupField.column_name, ...(aggregate === "count" ? [] : [field!.column_name!])]; const grouped = new Map<string, { count: number; values: number[] }>();
+  for (const row of await loadAnalysisRows(client, identityIds, columns)) {
+    const key = formatAnalysisValue(groupField, row[groupField.column_name]); const item = grouped.get(key) || { count: 0, values: [] }; item.count++;
+    if (aggregate !== "count") { const value = analysisNumber(row[field!.column_name!]); if (value !== null) item.values.push(value); } grouped.set(key, item);
+  }
+  const label = aggregate === "count" ? "筆數" : `${field!.label}${aggregate === "sum" ? "總計" : aggregate === "average" ? "平均" : aggregate === "min" ? "最小" : "最大"}`;
+  const rows = [...grouped.entries()].map(([key, item]) => {
+    const value = aggregate === "count" ? item.count : !item.values.length ? null : aggregate === "sum" ? item.values.reduce((sum, value) => sum + value, 0) : aggregate === "average" ? item.values.reduce((sum, value) => sum + value, 0) / item.values.length : aggregate === "min" ? Math.min(...item.values) : Math.max(...item.values);
+    return { key, value: value ?? -Infinity };
+  }).sort((left, right) => Number(right.value) - Number(left.value)).slice(0, limit);
+  return { kind: "group", title: `${groupField.label}${label}分布`, summary: formatAiText(`依 ${groupField.label} 分組，顯示前 ${formatCount(rows.length)} 項。`), columns: [groupField.label, label], rows: rows.map((row) => [row.key, aggregate === "count" ? formatCount(Number(row.value)) : formatAnalysisValue(field!, row.value)]) };
+}
 async function plan(apiKey: string, model: string, question: string, catalog: CatalogField[], candidates: Candidate[]) {
-  const capabilities = catalog.map((field) => `${field.field_key}｜${field.label}｜${field.value_kind}｜${field.operators.join(",") || "entity"}`).join("\n");
+  const capabilities = catalog.map((field) => `${field.field_key}｜${field.label}｜${field.value_kind}｜查詢:${field.operators.join(",") || "entity"}｜分析:${Array.isArray(field.configuration?.analysis) ? field.configuration.analysis.join(",") : "無"}`).join("\n");
   const facts = candidates.length ? candidates.map((item) => `${item.fieldKey}｜${item.label}｜${item.value}`).join("\n") : "（沒有名稱候選；仍可使用數值或完整財產編號。）";
   const today = taipeiToday();
-  const prompt = `你是財產查詢規劃器。理解使用者自然語言後，只輸出 JSON，不要回答筆數或加入 Markdown。\n\n語意目錄：\n${capabilities}\n\n可用索引事實（僅 entity 可使用；field 必須用 field_key）：\n${facts}\n\n規則：entity 精確比對是 {"kind":"entity","field":"custodian","operator":"=","value":"蕭詣程"}；使用者以類別、部分名稱、區域或泛稱描述時可使用 operator:"contains"。使用者若直接寫「欄位:~文字」，~ 表示包含比對，必須轉成該欄位的 operator:"contains"。若問題含「不是／不在／排除／以外／除外」，entity 必須輸出 operator:"not"。number 是 {"kind":"number","field":"net_value","operator":">=","value":100000}；「已過年限／已過使用年限／超過年限／使用年限已到」必須輸出 {"kind":"service_life_status","field":"service_life_expired","operator":"expired"}，絕不可把它解讀為年限 <= 0。完整財產編號範圍是 {"kind":"identifier_range","field":"asset_identifier","from":"5010106-0003-0000284","to":"5010106-0003-0000290"}；日期明確區間是 {"kind":"date_range","field":"acquired_at","from":"2026-07-04","to":"2026-10-04"}，相對日期是 {"kind":"date_range","field":"acquired_at","relative":{"amount":3,"unit":"month"}}。今天台北日期是 ${today}；「最近」包含今天。若使用者在完整起始編號後只寫流水號尾段（例如「到 290」），將 to 寫成完整的同前段 7 碼編號。每個 groups 的 all 是 AND；groups 之間是 OR。提到多個可查實體時，為每個實體建立 OR group。勿自創欄位或值。\n\n只回傳：{"version":1,"groups":[{"all":[...]}]}\n\n問題：${question}`;
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey }, body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { temperature: 0, responseMimeType: "application/json" } }) });
-  const payload = await response.json(); if (!response.ok) throw new Error(payload?.error?.message || "Gemini 查詢規劃失敗。");
-  return parsePlan(payload.candidates?.[0]?.content?.parts || []);
+  const prompt = `你是財產查詢與分析規劃器。理解使用者自然語言後，只輸出 JSON，不要回答筆數或加入 Markdown。\n\n語意目錄：\n${capabilities}\n\n可用索引事實（僅 entity 可使用；field 必須用 field_key）：\n${facts}\n\n查詢規則：entity 精確比對是 {"kind":"entity","field":"custodian","operator":"=","value":"蕭詣程"}；使用者以類別、部分名稱、區域或泛稱描述時可使用 operator:"contains"。使用者若直接寫「欄位:~文字」，~ 表示包含比對，必須轉成該欄位的 operator:"contains"。若問題含「不是／不在／排除／以外／除外」，entity 必須輸出 operator:"not"。number 是 {"kind":"number","field":"net_value","operator":">=","value":100000}；「已達年限／已過年限／已過使用年限／超過年限／使用年限已到」必須輸出 {"kind":"service_life_status","field":"service_life_expired","operator":"expired"}，絕不可把它解讀為年限 <= 0。完整財產編號範圍是 {"kind":"identifier_range","field":"asset_identifier","from":"5010106-0003-0000284","to":"5010106-0003-0000290"}；日期明確區間是 {"kind":"date_range","field":"acquired_at","from":"2026-07-04","to":"2026-10-04"}，相對日期是 {"kind":"date_range","field":"acquired_at","relative":{"amount":3,"unit":"month"}}。今天台北日期是 ${today}；「最近」包含今天。若不需篩選，groups 必須為 [{"all":[]}]。每個 groups 的 all 是 AND；groups 之間是 OR。\n\n意圖判斷：你必須先自行判斷 intent。lookup 表示使用者要找出符合條件的原始財產資料；此時 analysis 必須為 null，系統會直接顯示資料列表。例：「詣程的財產」、「宿舍的財產」、「列出滅火器」都屬 lookup。analysis 表示使用者要從一組資料導出新的觀察或答案，例如排名、統計、比較、分布、資料品質，或「消防班有哪些保管人」這種要找出不同欄位值的問題；此時 analysis 不可為 null。不要因為資料可能有很多筆，或使用者說「列出」，就自行改成分析。\n\n分析規則：rank 格式是 {"type":"rank","field":"acquired_at","direction":"asc","limit":1}；aggregate 格式是 {"type":"aggregate","field":"original_value","aggregate":"sum"}，筆數用 {"type":"aggregate","aggregate":"count"}；group 格式是 {"type":"group","groupBy":"unit","aggregate":"count","limit":10}，如需金額可加 field 與 aggregate:"sum"。詢問「有哪些保管人／地點／單位」時使用對應 entity 欄位的 group，aggregate 為 count，limit 為 100；若問題包含某個組織名稱，先以索引確認的組織欄位篩選，再依被詢問的實體欄位分組。詢問資料品質、缺漏、未填或不一致時，analysis 必須為 {"type":"quality"}，可選 checks：missing_custodian、missing_location、missing_acquired_at、missing_useful_life、unit_mismatch、person_mismatch。欄位只可使用語意目錄宣告的分析能力。\n\n只回傳：{"version":1,"intent":"lookup","groups":[{"all":[...]}],"analysis":null}\n\n問題：${question}`;
+  const generate = async (text: string) => {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey }, body: JSON.stringify({ contents: [{ role: "user", parts: [{ text }] }], generationConfig: { temperature: 0, responseMimeType: "application/json" } }) });
+    const payload = await response.json(); if (!response.ok) throw new Error(payload?.error?.message || "Gemini 查詢規劃失敗。");
+    return parsePlan(payload.candidates?.[0]?.content?.parts || []);
+  };
+  const planned = await generate(prompt);
+  if (planned.intent === "lookup" || planned.analysis) return planned;
+  const repaired = await generate(`${prompt}\n\n重要：你已判定 intent 為 analysis，因此 analysis 不可為 null。請保留已確認的查詢範圍，重新輸出完整 JSON，並提供語意目錄支援的 analysis 計畫。`);
+  if (repaired.intent !== "analysis" || !repaired.analysis) throw new Error("AI 未能產生與意圖一致的分析計畫，請換一種說法後重試。");
+  return repaired;
 }
-async function completedResponse(client: ReturnType<typeof createClient>, question: string, candidates: Candidate[], groups: Predicate[][], catalog: CatalogField[], extraTrace: string[] = []) {
+async function completedResponse(client: ReturnType<typeof createClient>, question: string, candidates: Candidate[], groups: Predicate[][], catalog: CatalogField[], analysisPlan: AnalysisPlan | null, extraTrace: string[] = []) {
   const catalogByKey = new Map(catalog.map((field) => [field.field_key, field])); const results = await Promise.all(groups.map((predicates) => executeGroup(client, predicates, catalogByKey)));
   const assetIdentityIds = [...new Set(results.flatMap((result) => result.identityIds))]; const descriptions = [...new Set(results.flatMap((result) => result.description))]; const conditionGroups = results.map((result) => result.rules);
-  return { question: formatChineseTypography(question), summary: formatChineseTypography(`已依語意目錄與索引事實完成查詢，系統驗證共 ${assetIdentityIds.length} 筆資料。`), explanation: formatChineseTypography(descriptions.length ? `查詢條件：${descriptions.join("；")}。` : "已依語意目錄完成查詢。"), conditionGroups, assetIdentityIds, trace: ["語意目錄", candidates.length ? "解析索引事實" : "直接識別條件", ...extraTrace, formatChineseTypography(`編譯查詢（${assetIdentityIds.length} 筆）`)] };
+  const analysis = analysisPlan ? await runAnalysis(client, analysisPlan, assetIdentityIds, catalogByKey) : null;
+  const displayIdentityIds = analysis && "displayIdentityIds" in analysis ? analysis.displayIdentityIds : assetIdentityIds;
+  return { question: formatAiText(question), summary: formatAiText(`已依語意目錄與索引事實完成${analysis ? "分析與" : ""}查詢，系統驗證共 ${formatCount(assetIdentityIds.length)} 筆資料。`), explanation: formatAiText(descriptions.length ? `查詢條件：${descriptions.join("；")}。` : "已依語意目錄完成查詢。"), analysisDescription: analysis && "conditionDescription" in analysis ? formatAiText(analysis.conditionDescription) : null, conditionGroups, assetIdentityIds, displayIdentityIds, scopeCount: assetIdentityIds.length, analysis, trace: ["語意目錄", candidates.length ? "解析索引事實" : "直接識別條件", ...(analysis ? ["執行分析"] : []), ...extraTrace, formatAiText(`編譯查詢（${formatCount(assetIdentityIds.length)} 筆）`)] };
 }
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: headers(request) });
@@ -195,21 +301,26 @@ Deno.serve(async (request) => {
       const { data: clarification, error } = await admin.from("ai_query_clarifications").select("question,candidates,choices,expires_at,resolved_at").eq("id", clarificationId).eq("user_id", user.id).maybeSingle();
       if (error) throw error;
       if (!clarification || clarification.resolved_at || new Date(clarification.expires_at) < new Date()) throw new Error("這個問題已失效，請重新提問。");
-      const candidates = (clarification.candidates || []) as Candidate[]; let groups: Predicate[][]; let question = clarification.question; let trace = ["依追問選擇"];
+      const candidates = (clarification.candidates || []) as Candidate[]; let groups: Predicate[][]; let analysisPlan: AnalysisPlan | null = null; let question = clarification.question; let trace = ["依追問選擇"];
       if (choiceId === "custom") {
         if (!customAnswer || customAnswer.length > 200) throw new Error("請用不超過 200 字補充您的需求。");
         const { data: setting } = await admin.from("user_ai_settings").select("gemini_key_ciphertext,gemini_key_iv,gemini_model").eq("user_id", user.id).maybeSingle();
         if (!setting?.gemini_key_ciphertext || !setting.gemini_key_iv || !setting.gemini_model) throw new Error("請先在個人設定儲存 Gemini API Key 與模型。");
         const raw = await crypto.subtle.decrypt({ name: "AES-GCM", iv: decode(setting.gemini_key_iv) }, await encryptionKey(), decode(setting.gemini_key_ciphertext));
-        question = `${question}\n使用者補充：${customAnswer}`; groups = await plan(new TextDecoder().decode(raw), setting.gemini_model, question, catalog, candidates); trace = ["依追問補充"];
+        question = `${question}\n使用者補充：${customAnswer}`; const planned = await plan(new TextDecoder().decode(raw), setting.gemini_model, question, catalog, candidates); groups = planned.groups; analysisPlan = planned.analysis; trace = ["依追問補充"];
       } else {
         const choices = (clarification.choices || []) as Array<{ id: string; groups: Predicate[][] }>;
         const choice = choices.find((item) => item.id === choiceId);
         if (!choice?.groups?.length) throw new Error("請選擇一個查詢方式，或補充說明。");
         groups = choice.groups;
+        const { data: setting } = await admin.from("user_ai_settings").select("gemini_key_ciphertext,gemini_key_iv,gemini_model").eq("user_id", user.id).maybeSingle();
+        if (!setting?.gemini_key_ciphertext || !setting.gemini_key_iv || !setting.gemini_model) throw new Error("請先在個人設定儲存 Gemini API Key 與模型。");
+        const raw = await crypto.subtle.decrypt({ name: "AES-GCM", iv: decode(setting.gemini_key_iv) }, await encryptionKey(), decode(setting.gemini_key_ciphertext));
+        const planned = await plan(new TextDecoder().decode(raw), setting.gemini_model, question, catalog, candidates);
+        analysisPlan = planned.analysis;
       }
       await admin.from("ai_query_clarifications").update({ resolved_at: new Date().toISOString() }).eq("id", clarificationId).eq("user_id", user.id);
-      return Response.json(await completedResponse(client, question, candidates, groups, catalog, trace), { headers: headers(request) });
+      return Response.json(await completedResponse(client, question, candidates, groups, catalog, analysisPlan, trace), { headers: headers(request) });
     }
     const query = payload?.query; if (typeof query !== "string" || !query.trim() || query.length > 300) throw new Error("請輸入不超過 300 字的查詢。");
     const question = query.trim(); const candidates = await findCandidates(client, question, catalog); const clarification = clarificationFor(question, candidates);
@@ -221,7 +332,7 @@ Deno.serve(async (request) => {
     const { data: setting } = await admin.from("user_ai_settings").select("gemini_key_ciphertext,gemini_key_iv,gemini_model").eq("user_id", user.id).maybeSingle();
     if (!setting?.gemini_key_ciphertext || !setting.gemini_key_iv || !setting.gemini_model) throw new Error("請先在個人設定儲存 Gemini API Key 與模型。");
     const raw = await crypto.subtle.decrypt({ name: "AES-GCM", iv: decode(setting.gemini_key_iv) }, await encryptionKey(), decode(setting.gemini_key_ciphertext));
-    const groups = await plan(new TextDecoder().decode(raw), setting.gemini_model, question, catalog, candidates);
-    return Response.json(await completedResponse(client, question, candidates, groups, catalog), { headers: headers(request) });
+    const planned = await plan(new TextDecoder().decode(raw), setting.gemini_model, question, catalog, candidates);
+    return Response.json(await completedResponse(client, question, candidates, planned.groups, catalog, planned.analysis), { headers: headers(request) });
   } catch (error) { return Response.json({ error: error instanceof Error ? error.message : "查詢失敗。" }, { status: 400, headers: headers(request) }); }
 });

@@ -7,5 +7,5 @@
   { "name": "實體排除條件", "query": "詣程在汙水場以外的財產", "expected": { "kind": "entity", "field": "location", "operator": "not", "resolvedValue": "汙水處理廠" } },
   { "name": "折舊數值比較", "query": "折舊超過 10 萬的財產", "expected": { "kind": "number", "field": "depreciation", "operator": ">", "value": 100000 } },
   { "name": "年限比較", "query": "年限不超過 5 年的財產", "expected": { "kind": "number", "field": "useful_life", "operator": "<=", "value": 5 } },
-  { "name": "已過年限", "query": "玲玲已過年限的財產", "expected": { "kind": "service_life_status", "field": "service_life_expired", "operator": "expired" } }
+  { "name": "已達年限", "query": "玲玲已達年限的財產", "expected": { "kind": "service_life_status", "field": "service_life_expired", "operator": "expired" } }
 ]
