@@ -206,6 +206,19 @@
   margin: .05rem .1rem -.25rem;
 }
 
+.asset-photo-order-help {
+  align-items: center;
+  color: rgb(255 255 255 / 58%);
+  display: flex;
+  font-size: var(--text-xs);
+  gap: .4rem;
+  line-height: 1.5;
+}
+
+.asset-photo-order-help.has-changes {
+  color: rgb(255 180 158 / 92%);
+}
+
 .asset-photo-category-pills {
   display: grid;
   gap: .35rem;
@@ -423,6 +436,7 @@
 }
 
 .asset-photo-hand {
+  pointer-events: none;
   align-items: flex-end;
   background: transparent;
   border: 0;
@@ -453,9 +467,9 @@
 
 .asset-photo-hand::before { content: none; }
 
-.asset-photo-hand > button:not(.asset-photo-hand-more) {
-  animation: photo-card-deal 430ms cubic-bezier(.22, 1, .36, 1) backwards;
-  animation-delay: calc(var(--photo-card-index) * 45ms);
+.asset-photo-hand > button:not(.asset-photo-hand-more),
+.asset-photo-hand > button:not(.asset-photo-hand-more):hover {
+  pointer-events: auto;
   background: rgb(247 240 237);
   border: 3px solid rgb(255 250 248 / 92%);
   border-radius: .72rem;
@@ -467,18 +481,23 @@
   overflow: hidden;
   padding: 0;
   position: relative;
-  transform: translateY(var(--photo-card-arc)) rotate(var(--photo-card-angle)) scale(1);
+  transform: translateY(calc(var(--photo-card-arc) + var(--dock-lift, 0px))) rotate(var(--dock-angle, var(--photo-card-angle))) scale(var(--dock-scale, 1));
   transform-origin: bottom center;
-  transition: transform 260ms cubic-bezier(.22, 1, .36, 1), box-shadow 220ms ease, filter 220ms ease;
+  transition: transform 140ms cubic-bezier(.2, .7, .3, 1), box-shadow 160ms ease;
+  filter: none;
+  z-index: auto;
   width: 10rem;
 }
 
-.asset-photo-hand > button:first-child { margin-left: 0; }
+.asset-photo-hand > button:first-child,
+.asset-photo-hand > button:first-child:hover { margin-left: 0; }
 
 .asset-photo-hand > button:not(.asset-photo-hand-more) img {
+  backface-visibility: hidden;
   display: block;
   height: 100%;
   object-fit: cover;
+  transform: translateZ(0);
   width: 100%;
 }
 
@@ -490,7 +509,6 @@
   place-items: center;
 }
 
-.asset-photo-hand > button:not(.asset-photo-hand-more):hover,
 .asset-photo-hand > button:not(.asset-photo-hand-more):focus-visible {
   box-shadow: 0 1rem 2rem rgb(13 10 10 / 35%);
   filter: brightness(1.04);
@@ -500,7 +518,9 @@
   z-index: 8;
 }
 
-.asset-photo-hand > button:first-child:hover,
+.asset-photo-hand > button:not(.asset-photo-hand-more).is-hovered { z-index: 8; }
+
+.asset-photo-hand > button:first-child.is-hovered,
 .asset-photo-hand > button:first-child:focus-visible { margin-left: 0; }
 
 .asset-photo-hand > button.is-selected,
@@ -515,8 +535,74 @@
 
 .asset-photo-hand > button:first-child.is-selected { margin-left: 0; }
 
+.asset-photo-picker-backdrop.is-managing .asset-photo-hand:not(.has-selection) > button {
+  cursor: grab;
+  touch-action: none;
+}
+
+.asset-photo-picker-backdrop.is-managing .asset-photo-hand:not(.has-selection) > button:focus {
+  outline: 2px solid rgb(255 132 102 / 96%);
+  outline-offset: 3px;
+}
+
+.asset-photo-picker-backdrop.is-managing .asset-photo-hand:not(.has-selection) > button:active { cursor: grabbing; }
+
+.asset-photo-hand > button.is-dragging-origin,
+.asset-photo-hand > button.is-dragging-origin:hover,
+.asset-photo-hand > button.is-dragging-origin.is-hovered,
+.asset-photo-hand > button.is-dragging-origin:focus-visible {
+  box-shadow: none;
+  filter: grayscale(.25) brightness(.82);
+  margin: 0 0 0 -4.4rem;
+  opacity: 0;
+  outline: none;
+  transform: translateY(var(--photo-card-arc)) rotate(var(--photo-card-angle)) scale(1);
+  transition: none;
+  z-index: auto;
+}
+
+.asset-photo-hand > button:first-child.is-dragging-origin,
+.asset-photo-hand > button:first-child.is-dragging-origin:hover,
+.asset-photo-hand > button:first-child.is-dragging-origin.is-hovered,
+.asset-photo-hand > button:first-child.is-dragging-origin:focus-visible { margin-left: 0; }
+
+.asset-photo-drag-ghost {
+  backface-visibility: hidden;
+  background: rgb(247 240 237);
+  border: 3px solid rgb(255 250 248 / 96%);
+  border-radius: .72rem;
+  box-shadow: 0 1.5rem 3rem rgb(13 10 10 / 46%), 0 0 0 2px var(--color-accent);
+  overflow: hidden;
+  pointer-events: none;
+  position: fixed;
+  left: 0;
+  top: 0;
+  transform-origin: center;
+  will-change: transform;
+  z-index: 92;
+}
+
+.asset-photo-drag-ghost img {
+  backface-visibility: hidden;
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
 .asset-photo-hand > button.is-manager-selected:not(.is-dealt) {
   box-shadow: 0 .8rem 1.5rem rgb(13 10 10 / 32%), 0 0 0 2px var(--color-accent);
+}
+
+.asset-photo-hand > button.is-manager-selected.is-dragging-origin:not(.is-dealt) {
+  box-shadow: none;
+}
+
+/* Sorting owns horizontal translation; hover cannot change a card's target. */
+.asset-photo-hand.is-sorting-hand > button:not(.is-dealt) {
+  transform: translateY(var(--photo-card-arc)) rotate(var(--photo-card-angle)) scale(1);
+  filter: none;
+  outline: none;
 }
 
 .asset-photo-hand > button.is-dealt,
@@ -560,15 +646,8 @@
 
 /* Preserve hover while a card rises, including when the pointer starts at its lower edge. */
 .asset-photo-hand > button::after {
-  content: "";
-  position: absolute;
-  right: 0;
-  bottom: -4.5rem;
-  left: 0;
-  height: 5.75rem;
-  background: transparent;
-  pointer-events: auto;
-  transform: translateY(0);
+  content: none;
+  pointer-events: none;
 }
 
 .asset-photo-hand > button {
@@ -579,16 +658,16 @@
   border-radius: inherit;
 }
 
-.asset-photo-hand > button:not(.is-dealt):hover::after,
+.asset-photo-hand > button:not(.is-dealt).is-hovered::after,
 .asset-photo-hand > button:not(.is-dealt):focus-visible::after {
   transform: translateY(2.35rem);
 }
 
 .asset-photo-hand > button:not(.is-dealt) {
-  transition-delay: 90ms;
+  transition-delay: 0ms;
 }
 
-.asset-photo-hand > button:not(.is-dealt):hover,
+.asset-photo-hand > button:not(.is-dealt).is-hovered,
 .asset-photo-hand > button:not(.is-dealt):focus-visible {
   transition-delay: 0ms;
 }
@@ -698,15 +777,21 @@
     margin-left: -3rem;
     width: 7.5rem;
   }
+  .asset-photo-hand > button:not(.asset-photo-hand-more).is-hovered,
   .asset-photo-hand > button:not(.asset-photo-hand-more):hover,
   .asset-photo-hand > button:not(.asset-photo-hand-more):focus-visible,
   .asset-photo-hand > button.is-selected,
   .asset-photo-hand > button.is-selected:hover,
-  .asset-photo-hand > button.is-selected:focus-visible { margin-left: -3rem; }
+  .asset-photo-hand > button.is-selected:focus-visible,
+  .asset-photo-hand > button.is-dragging-origin,
+  .asset-photo-hand > button.is-dragging-origin:hover,
+  .asset-photo-hand > button.is-dragging-origin.is-hovered { margin-left: -3rem; }
   .asset-photo-hand > button:first-child,
   .asset-photo-hand > button:first-child:hover,
+  .asset-photo-hand > button:first-child.is-hovered,
   .asset-photo-hand > button:first-child:focus-visible,
-  .asset-photo-hand > button:first-child.is-selected { margin-left: 0; }
+  .asset-photo-hand > button:first-child.is-selected,
+  .asset-photo-hand > button:first-child.is-dragging-origin { margin-left: 0; }
   .asset-photo-picker-hint { text-align: center; width: calc(100% - 2rem); }
   .asset-photo-nav { height: 2.5rem; width: 2.5rem; }
   .asset-photo-nav.is-previous { left: .6rem; }
@@ -718,5 +803,5 @@
   .asset-photo-manager,
   .asset-photo-selected,
   .asset-photo-return,
-  .asset-photo-hand > button:not(.asset-photo-hand-more) { animation: none; }
+  .asset-photo-hand > button:not(.asset-photo-hand-more) { animation: none; transition: none; }
 }

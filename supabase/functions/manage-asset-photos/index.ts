@@ -123,7 +123,7 @@ Deno.serve(async (req) => {
       const { data: photo, error } = await admin.from("asset_photos").insert({
         asset_identity_id: identityId, object_key: objectKey, original_filename: file.name,
         content_type: file.type, file_size: file.size, category, created_by: user.id,
-      }).select("id, original_filename, content_type, file_size, category, created_by, created_at").single();
+      }).select("id, original_filename, content_type, file_size, category, display_order, created_by, created_at").single();
       if (error) throw error;
       return reply(req, { photo });
     }
@@ -131,11 +131,32 @@ Deno.serve(async (req) => {
     if (action === "list") {
       const { data, error } = await admin
         .from("asset_photos")
-        .select("id, original_filename, content_type, file_size, category, created_by, created_at")
+        .select("id, original_filename, content_type, file_size, category, display_order, created_by, created_at")
         .eq("asset_identity_id", identityId)
+        .order("display_order", { ascending: true })
         .order("created_at", { ascending: false });
       if (error) throw error;
       return reply(req, { photos: data ?? [] });
+    }
+
+    if (action === "reorder") {
+      const photoIds = Array.isArray(body?.photoIds) ? body.photoIds.map(cleanText).filter(Boolean) : [];
+      if (!photoIds.length || photoIds.length > maxPhotosPerAsset || new Set(photoIds).size !== photoIds.length) {
+        return reply(req, { error: "照片排序資料不完整，請重新整理後再試。" }, 400);
+      }
+      const { data: currentPhotos, error: currentError } = await admin
+        .from("asset_photos").select("id").eq("asset_identity_id", identityId);
+      if (currentError) throw currentError;
+      const currentIds = new Set((currentPhotos ?? []).map((photo) => photo.id));
+      if (currentIds.size !== photoIds.length || photoIds.some((photoId) => !currentIds.has(photoId))) {
+        return reply(req, { error: "照片清單已變更，請重新整理後再排序。" }, 409);
+      }
+      const { error: reorderError } = await admin.rpc("reorder_asset_photos", {
+        p_asset_identity_id: identityId,
+        p_photo_ids: photoIds,
+      });
+      if (reorderError) throw reorderError;
+      return reply(req, { ok: true });
     }
 
     if (action === "create_download") {
@@ -187,7 +208,7 @@ Deno.serve(async (req) => {
       const { data: photo, error } = await admin.from("asset_photos").insert({
         asset_identity_id: identityId, object_key: objectKey, original_filename: originalFilename,
         content_type: contentType, file_size: objectSize, category, created_by: user.id,
-      }).select("id, original_filename, content_type, file_size, category, created_by, created_at").single();
+      }).select("id, original_filename, content_type, file_size, category, display_order, created_by, created_at").single();
       if (error) throw error;
       return reply(req, { photo });
     }
