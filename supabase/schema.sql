@@ -126,14 +126,8 @@ alter table public.asset_collaboration_events enable row level security;
 alter table public.asset_photos enable row level security;
 alter table public.asset_identity_exceptions enable row level security;
 
-create policy "active users read permitted inventory" on public.asset_records for select to authenticated using (
-  is_current and exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.status = 'active') and (
-    exists (select 1 from public.user_roles r where r.user_id = (select auth.uid()) and r.role = 'admin')
-    or (exists (select 1 from public.user_roles r where r.user_id = (select auth.uid()) and r.role = 'custodian')
-      and exists (select 1 from public.user_custodians c where c.user_id = (select auth.uid()) and c.custodian_code = asset_records.custodian_code))
-    or (exists (select 1 from public.user_roles r where r.user_id = (select auth.uid()) and r.role = 'chief')
-      and exists (select 1 from public.user_units u where u.user_id = (select auth.uid()) and u.unit_code = asset_records.unit_code))
-  )
+create policy "active users read inventory" on public.asset_records for select to authenticated using (
+  is_current and exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.status = 'active')
 );
 create policy "admins read import history" on public.imports for select to authenticated using (
   exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.status = 'active')

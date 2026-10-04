@@ -50,7 +50,7 @@ function objectUrl(endpoint: string, bucket: string, key: string, expiresIn?: nu
   return `${endpoint}/${bucket}/${safeKey}${expiry}`;
 }
 
-async function authorizeIdentity(admin: ReturnType<typeof createClient>, userId: string, identityId: string) {
+async function authorizeIdentity(admin: ReturnType<typeof createClient>, userId: string, identityId: string, readOnly = false) {
   const [
     { data: profile },
     { data: roles },
@@ -68,7 +68,7 @@ async function authorizeIdentity(admin: ReturnType<typeof createClient>, userId:
   if (!profile || profile.status !== "active") throw new Error("帳號尚未啟用。");
   if (!asset) throw new Error("找不到目前可存取的財物資料。");
   const roleSet = new Set((roles ?? []).map((row) => row.role));
-  const allowed = roleSet.has("admin") ||
+  const allowed = readOnly || roleSet.has("admin") ||
     (roleSet.has("custodian") && (custodians ?? []).some((row) => row.custodian_code === asset.custodian_code)) ||
     (roleSet.has("chief") && (units ?? []).some((row) => row.unit_code === asset.unit_code));
   if (!allowed) throw new Error("你沒有存取此財物照片的權限。");
@@ -96,7 +96,7 @@ Deno.serve(async (req) => {
     const identityId = field("identityId");
     if (!identityId) return reply(req, { error: "缺少財物識別碼。" }, 400);
     const admin = createClient(supabaseUrl, serviceRoleKey);
-    const permission = await authorizeIdentity(admin, user.id, identityId);
+    const permission = await authorizeIdentity(admin, user.id, identityId, action === "list" || action === "create_download");
 
     // The browser uploads through this function so the private R2 bucket does not
     // need to expose a CORS policy to each application origin.

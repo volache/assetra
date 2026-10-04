@@ -19,7 +19,9 @@ export function AssetQuery({
   focusTask,
   imports,
   onTaskFocusHandled,
+  user,
 }) {
+  const defaultFilterApplied = useRef(false);
   const [term, setTerm] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
   const [aiReport, setAiReport] = useState(null);
@@ -145,6 +147,20 @@ export function AssetQuery({
     setCurrentPage(1);
     setExpandedId(null);
   }, [appliedTerm, source, ...filterFields.map(([key]) => filters[key])]);
+  useEffect(() => {
+    if (defaultFilterApplied.current) return;
+    if (focusTask?.identityId) {
+      defaultFilterApplied.current = true;
+      return;
+    }
+    const codes = user?.custodianCodes || [];
+    if (!codes.length || !assets.length) return;
+    defaultFilterApplied.current = true;
+    const own = assets.find(
+      (asset) => asset.custodianName && codes.includes(asset.custodianCode),
+    );
+    if (own) setFilters((current) => ({ ...current, custodianName: own.custodianName }));
+  }, [assets, focusTask?.identityId, user]);
   useEffect(() => {
     if (!focusTask?.identityId) return;
     const asset = assets.find((item) => item.identityId === focusTask.identityId);

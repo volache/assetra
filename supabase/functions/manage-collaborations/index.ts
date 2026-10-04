@@ -32,6 +32,7 @@ async function authorizeIdentity(
   admin: ReturnType<typeof createClient>,
   userId: string,
   identityId: string,
+  readOnly = false,
 ) {
   const [
     { data: profile },
@@ -64,6 +65,7 @@ async function authorizeIdentity(
   if (!asset) throw new Error("找不到目前可協作的財物資料。");
   const roleSet = new Set((roles ?? []).map((row) => row.role));
   const allowed =
+    readOnly ||
     roleSet.has("admin") ||
     (roleSet.has("custodian") &&
       (custodians ?? []).some(
@@ -320,20 +322,14 @@ Deno.serve(async (req) => {
     const action = text(body.action || "list");
     const admin = createClient(supabaseUrl, serviceRoleKey);
 
-    // These two read paths are deliberately handled before the single-asset
-    // authorization below.  They still derive their result from the caller's
-    // custodian/unit scope, so the service-role client never exposes a global
-    // collaboration list to an ordinary user.
+    // "summaries" is readable by any active user; "list_tasks" stays limited
+    // to the caller's custodian/unit scope so ordinary users get no global task list.
     if (action === "summaries") {
       const requestedIds = Array.isArray(body.identityIds)
         ? body.identityIds.map(text).filter(Boolean).slice(0, 100)
         : [];
-      const viewer = await viewerContext(admin, user.id);
-      const accessible = await accessibleAssets(admin, viewer);
-      const allowedIds = new Set(
-        accessible.map((asset) => asset.identity_id).filter(Boolean),
-      );
-      const identityIds = requestedIds.filter((id) => allowedIds.has(id));
+      await viewerContext(admin, user.id);
+      const identityIds = requestedIds;
       return new Response(
         JSON.stringify({ summaries: await summariesForIdentities(admin, identityIds) }),
         { headers: corsHeaders(req) },
@@ -358,6 +354,7 @@ Deno.serve(async (req) => {
       admin,
       user.id,
       identityId,
+      action === "list",
     );
 
     if (action === "create") {

@@ -42,7 +42,7 @@ function HomeMetrics({
         <div>
           <p className="eyebrow">ROLE-BASED VIEW</p>
           <h1>你好，{user.name}</h1>
-          <p>這裡只顯示你目前角色可查看與處理的資料。</p>
+          <p>你可以查詢全部財物，處理與管理則依你的角色授權。</p>
         </div>
         <button
           className="button button-secondary"
@@ -57,13 +57,7 @@ function HomeMetrics({
           <strong aria-label={`${visible.length.toLocaleString()} 筆`}>
             {assetCount.toLocaleString()} <small>筆</small>
           </strong>
-          <p>
-            {canAdmin
-              ? "目前已匯入的全部清冊資料。"
-              : canChief
-                ? "包含你所屬單位與你個人保管的資料。"
-                : "依保管人代碼篩選。"}
-          </p>
+          <p>目前已匯入的全部清冊資料。</p>
         </article>
         <article className="bento-cell bento-value">
           <p className="eyebrow">淨值合計</p>

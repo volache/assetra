@@ -41,17 +41,6 @@ const Organization = lazy(() =>
 );
 const PersonalSettings = lazy(() => import("../features/settings/PersonalSettings").then(({ PersonalSettings }) => ({ default: PersonalSettings })));
 
-function allowedAssets(assets, user) {
-  if (user.roles.includes("admin")) return assets;
-  return assets.filter(
-    (asset) =>
-      (user.roles.includes("custodian") &&
-        user.custodianCodes?.includes(asset.custodianCode)) ||
-      (user.roles.includes("chief") &&
-        user.unitCodes?.includes(asset.unitCode)),
-  );
-}
-
 export function Portal({
   entering,
   leaving,
@@ -71,14 +60,14 @@ export function Portal({
   const canChief = user.roles.includes("chief");
   const visible = useMemo(
     () =>
-      allowedAssets(store.assets, user).map((asset) => ({
+      store.assets.map((asset) => ({
         ...asset,
         rawCustodianName: asset.custodianName,
         custodianName:
           store.custodianProfiles?.[asset.custodianCode]?.displayName ||
           asset.custodianName,
       })),
-    [store.assets, store.custodianProfiles, user],
+    [store.assets, store.custodianProfiles],
   );
   const previousPage = useRef(page);
   const isPageSwitch = previousPage.current !== page;
@@ -162,6 +151,7 @@ export function Portal({
             {page === "query" && (
               <AssetQuery
                 assets={visible}
+                user={user}
                 focusTask={taskFocus}
                 imports={store.imports}
                 onTaskFocusHandled={onTaskFocusHandled}
