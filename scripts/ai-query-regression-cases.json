@@ -1,5 +1,5 @@
 [
-  { "name": "人員名稱解析", "query": "詣程的財產", "expected": { "kind": "entity", "field": "custodian", "value": "蕭詣程", "count": 470 } },
+  { "name": "人員名稱解析", "query": "詣程的財產", "expected": { "intent": "lookup", "kind": "entity", "field": "custodian", "value": "蕭詣程", "count": 470 } },
   { "name": "多人 OR 查詢", "query": "徐忠輝和陳建銘的財產", "expected": { "groups": 2, "fields": ["custodian"], "count": 203 } },
   { "name": "唯一名稱補全", "query": "滅火器", "expected": { "kind": "entity", "field": "name", "resolvedValue": "滅火器﹙機﹚", "count": 5 } },
   { "name": "複合財產編號範圍", "query": "財產編號從 5010106-0003-0000284 到 290 的財產", "expected": { "kind": "identifier_range", "field": "asset_identifier", "from": "5010106-0003-0000284", "to": "5010106-0003-0000290", "count": 7 } },
@@ -7,5 +7,7 @@
   { "name": "實體排除條件", "query": "詣程在汙水場以外的財產", "expected": { "kind": "entity", "field": "location", "operator": "not", "resolvedValue": "汙水處理廠" } },
   { "name": "折舊數值比較", "query": "折舊超過 10 萬的財產", "expected": { "kind": "number", "field": "depreciation", "operator": ">", "value": 100000 } },
   { "name": "年限比較", "query": "年限不超過 5 年的財產", "expected": { "kind": "number", "field": "useful_life", "operator": "<=", "value": 5 } },
-  { "name": "已達年限", "query": "玲玲已達年限的財產", "expected": { "kind": "service_life_status", "field": "service_life_expired", "operator": "expired" } }
+  { "name": "已達年限", "query": "玲玲已達年限的財產", "expected": { "intent": "lookup", "kind": "service_life_status", "field": "service_life_expired", "operator": "expired" } },
+  { "name": "欄位列舉分析", "query": "消防班有哪些保管人", "expected": { "intent": "analysis", "analysis": { "type": "group", "groupBy": "custodian" } } },
+  { "name": "多欄位歧義追問", "query": "消防班的財產", "expected": { "intent": "clarify", "options": 2 } }
 ]

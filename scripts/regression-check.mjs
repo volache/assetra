@@ -80,20 +80,22 @@ function checkFeatureContracts() {
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /ai_search_terms/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /compileGroup/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /formatChineseTypography/);
-  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /clarificationFor/);
+  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /intent: "lookup" \| "analysis" \| "clarify"/);
+  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /saveClarification/);
+  assert.doesNotMatch(read("supabase/functions/semantic-asset-query/index.ts"), /clarificationFor/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /operator === "contains"/);
-  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /欄位:~文字/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /runAnalysis/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /analysisPlan/);
-  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /intent: "lookup" \| "analysis"/);
-  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /你必須先自行判斷 intent/);
+  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /你要自行判斷使用者真正要完成的工作/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /analysisPlan = planned\.analysis/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /資料品質檢查/);
   assert.match(read("supabase/functions/import-inventory/index.ts"), /財產大類/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /from === to/);
   assert.match(read("src/features/inventory/AssetQuery.jsx"), /想再確認一下/);
   assert.match(read("src/features/inventory/AssetQuery.jsx"), /智慧查詢/);
-  assert.match(read("src/features/inventory/AssetQuery.jsx"), /分析結果/);
+  assert.match(read("src/features/inventory/AssetQuery.jsx"), /智慧查詢結果/);
+  assert.match(read("src/features/inventory/AssetQuery.jsx"), /分析摘要/);
+  assert.match(read("src/features/inventory/AssetQuery.jsx"), /推理模型/);
   assert.match(read("supabase/migrations/20261004140000_add_ai_query_clarifications.sql"), /expires_at/);
   assert.match(read("supabase/migrations/20261004150000_add_ai_analysis_capabilities.sql"), /analysis/);
   assert.match(read("supabase/migrations/20261004160000_add_major_class_and_data_quality_analysis.sql"), /asset_major_class/);
@@ -105,7 +107,7 @@ function checkFeatureContracts() {
 
 function checkAiQueryRegressionCases() {
   const cases = JSON.parse(readFileSync(resolve(root, "scripts/ai-query-regression-cases.json"), "utf8"));
-  assert.equal(cases.length, 9);
+  assert.equal(cases.length, 11);
   assert.deepEqual(cases.slice(0, 4).map((item) => item.expected.count), [470, 203, 5, 7]);
   const byName = new Map(cases.map((item) => [item.name, item.expected]));
   assert.equal(byName.get("複合財產編號範圍").kind, "identifier_range");
@@ -114,6 +116,9 @@ function checkAiQueryRegressionCases() {
   assert.equal(byName.get("折舊數值比較").field, "depreciation");
   assert.equal(byName.get("年限比較").field, "useful_life");
   assert.equal(byName.get("已達年限").field, "service_life_expired");
+  assert.equal(byName.get("人員名稱解析").intent, "lookup");
+  assert.equal(byName.get("欄位列舉分析").intent, "analysis");
+  assert.equal(byName.get("多欄位歧義追問").intent, "clarify");
 }
 
 function checkInventoryBehavior() {
