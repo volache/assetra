@@ -12,7 +12,7 @@ const server = await createServer({
       if (id.replaceAll('\\', '/').endsWith('/features/photos/api.js')) return `
         const photos = Array.from({length:7}, (_,i)=>({id:String(i),category:'general',original_filename:'Photo '+i}));
         export async function requestAssetPhoto(body) {
-          if(body.action==='list') return {photos};
+          if(body.action==='list') { await new Promise(resolve=>setTimeout(resolve,180)); return {photos}; }
           if(body.action==='create_download') return {url:'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900"><rect width="600" height="900" fill="hsl('+Number(body.photoId)*45+' 35% 60%)"/><text x="240" y="450" font-size="100">'+body.photoId+'</text></svg>')};
           window.__photoWrites=(window.__photoWrites||0)+1; return {};
         }`;
@@ -23,9 +23,12 @@ const server = await createServer({
         res.end(await vite.transformIndexHtml('/__photo-hand',`<html><body><div id="root"></div><script type="module">
           import React from 'react';
           import {createRoot} from 'react-dom/client';
+          import {flushSync} from 'react-dom';
           import {AssetPhotoPicker} from '/src/features/photos/AssetPhotoPicker.jsx';
           import '/src/styles.css';
-          createRoot(document.getElementById('root')).render(React.createElement(AssetPhotoPicker,{asset:{identityId:'fixture',name:'Animation check'},onClose:()=>{}}));
+          const root=createRoot(document.getElementById('root'));
+          window.__renderPhotoAsset=(identity)=>flushSync(()=>root.render(React.createElement(AssetPhotoPicker,{asset:identity?{identityId:identity,name:'Animation check'}:null,onClose:()=>window.__renderPhotoAsset(null)})));
+          window.__renderPhotoAsset('fixture');
         </script></body></html>`));
       });
     },
@@ -40,6 +43,8 @@ try {
   await page.goto('http://127.0.0.1:5187/__photo-hand');
   const hand=page.locator('.asset-photo-hand');
   await hand.locator('button').first().waitFor();
+  const entrance=await hand.locator('button').evaluateAll(cs=>cs.map(c=>c.getAnimations().find(a=>a.effect.getKeyframes().some(k=>k.opacity==='0'))?.effect.getTiming().delay));
+  assert.deepEqual(entrance,[0,55,110,165,220,275,330],'One left-to-right entrance with staggered delays');
   await page.getByRole('button',{name:'管理照片',exact:true}).click();
   await page.mouse.move(100,300);
   await page.waitForTimeout(250);
@@ -93,6 +98,18 @@ try {
   assert.equal(weights.filter(weight=>weight<0).length,1,'Only the hovered card lifts; neighbours keep the symmetric fan');
   await page.getByRole('button',{name:'完成並儲存',exact:true}).click();
   assert.equal(await page.evaluate(()=>window.__photoWrites||0),1,'Done saves the draft exactly once');
+  for (const identity of [null,'fixture','different-asset']) {
+    const opening=await page.evaluate(id=>{
+      window.__renderPhotoAsset(id);
+      return {cards:document.querySelectorAll('[data-photo-card-id]').length,loading:!!document.querySelector('.asset-photo-picker-loading')};
+    },identity);
+    assert.equal(opening.cards,0,'First frame never shows photos from the previous session');
+    assert.equal(opening.loading,!!identity,'A new session starts with loading');
+    if (identity) {
+      await hand.locator('button').first().waitFor();
+      assert.equal(await hand.locator('button').evaluateAll(cs=>cs.filter(c=>c.getAnimations().some(a=>a.effect.getKeyframes().some(k=>k.opacity==='0'))).length),7,'Reopening plays entrance once for every card');
+    }
+  }
   assert.deepEqual(errors,[]);
   console.log('Photo hand browser checks passed: both reorder directions, invisible source, boundary jitter, deferred saving, lower-preview click.');
 } finally {

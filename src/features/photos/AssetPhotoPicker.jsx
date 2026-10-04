@@ -40,6 +40,11 @@ function TrashIcon() {
 }
 
 export function AssetPhotoPicker({ asset, onChanged, onClose }) {
+  // Closing unmounts the session; switching assets cannot paint previous photos.
+  return asset ? <AssetPhotoPickerSession key={asset.identityId} asset={asset} onChanged={onChanged} onClose={onClose} /> : null;
+}
+
+function AssetPhotoPickerSession({ asset, onChanged, onClose }) {
   const [photos, setPhotos] = useState([]);
   const [urls, setUrls] = useState({});
   const [selectedId, setSelectedId] = useState(null);
@@ -81,6 +86,12 @@ export function AssetPhotoPicker({ asset, onChanged, onClose }) {
   const flipAnimationsRef = useRef(new Map());
   const hoverFrameRef = useRef(null);
   const pointerRef = useRef(null);
+  const entranceAnimationsRef = useRef(new Set());
+
+  const finishEntrance = () => {
+    entranceAnimationsRef.current.forEach((animation) => animation.cancel());
+    entranceAnimationsRef.current.clear();
+  };
 
   const requestClose = () => {
     if (closing) return;
@@ -100,6 +111,7 @@ export function AssetPhotoPicker({ asset, onChanged, onClose }) {
   };
 
   const enterManagement = () => {
+    finishEntrance();
     window.clearTimeout(managerTimerRef.current);
     const initialFocusId = selectedId || photosRef.current[0]?.id;
     managementOrderRef.current = [...photosRef.current];
@@ -142,7 +154,7 @@ export function AssetPhotoPicker({ asset, onChanged, onClose }) {
     const translateY = transform && transform !== "none" ? new DOMMatrixReadOnly(transform).m42 : 0;
     return { angle: card.style.getPropertyValue("--photo-card-angle") || "0deg", left: rect.left, top: rect.top - translateY, width: rect.width, height: rect.height };
   };
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -153,6 +165,11 @@ export function AssetPhotoPicker({ asset, onChanged, onClose }) {
       .then(async (data) => {
         const records = data.photos || [];
         const signed = await Promise.all(records.map(async (photo) => [photo.id, (await requestAssetPhoto({ action: "create_download", identityId: asset.identityId, photoId: photo.id })).url]));
+        await Promise.all(signed.map(async ([, url]) => {
+          const image = new Image();
+          image.src = url;
+          try { await image.decode(); } catch { /* A failed image must not block the viewer. */ }
+        }));
         if (cancelled) return;
         setPhotos(records); setUrls(Object.fromEntries(signed));
       })
@@ -162,6 +179,21 @@ export function AssetPhotoPicker({ asset, onChanged, onClose }) {
   }, [asset?.identityId]);
 
   useEffect(() => { photosRef.current = photos; }, [photos]);
+
+  useLayoutEffect(() => {
+    if (loading || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return undefined;
+    // One entrance per loaded session. Sort indices and hover never replay it.
+    cardRefs.current.forEach((card, id) => {
+      const index = photos.findIndex((photo) => photo.id === id);
+      const animation = card.animate([
+        { opacity: 0, translate: "-16px 64px" },
+        { opacity: 1, translate: "0 0" },
+      ], { duration: 420, delay: index * 55, easing: "cubic-bezier(.22, 1, .36, 1)", fill: "backwards" });
+      entranceAnimationsRef.current.add(animation);
+      animation.onfinish = () => entranceAnimationsRef.current.delete(animation);
+    });
+    return finishEntrance;
+  }, [loading]);
 
   useLayoutEffect(() => {
     const before = pendingFlipRef.current;
@@ -345,6 +377,7 @@ export function AssetPhotoPicker({ asset, onChanged, onClose }) {
     return records;
   };
   const applyPhotoOrder = (nextPhotos) => {
+    finishEntrance();
     // Capture layout + the current FLIP displacement, excluding lift/rotation.
     pendingFlipRef.current = new Map(Array.from(cardRefs.current.entries()).map(([photoId, card]) => {
       const translate = parseFloat(getComputedStyle(card).translate) || 0;
@@ -391,6 +424,7 @@ export function AssetPhotoPicker({ asset, onChanged, onClose }) {
   };
   const beginCardDrag = (event, photo) => {
     if (!managing || selectedId || uploading || sorting || event.button !== 0) return;
+    finishEntrance();
     const rect = event.currentTarget.getBoundingClientRect();
     const handRect = handRef.current?.getBoundingClientRect();
     dragSessionRef.current = {
@@ -517,6 +551,7 @@ export function AssetPhotoPicker({ asset, onChanged, onClose }) {
     const inBounds = event.clientX >= first.left - 12 && event.clientX <= last.left + last.card.offsetWidth + 12 && event.clientY >= top && event.clientY <= handRect.bottom;
     const overControls = event.target?.closest?.(".asset-photo-manager, .asset-photo-selected, .asset-photo-picker-manage, .asset-photo-picker-close");
     if (!inBounds || overControls) { resetHover(); if (selectedId && handOpen) setHandOpen(false); return; }
+    finishEntrance();
     if (hand.contains(document.activeElement)) document.activeElement.blur();
     if (selectedId && !handOpen) setHandOpen(true);
     const closest = slots.reduce((best, slot) => Math.abs(slot.center - event.clientX) < Math.abs(best.center - event.clientX) ? slot : best);
@@ -610,7 +645,7 @@ export function AssetPhotoPicker({ asset, onChanged, onClose }) {
         {photos.length > 1 && <button aria-label="下一張照片" className="asset-photo-nav is-next" onClick={() => showAdjacentPhoto(1)} type="button">›</button>}
         <figcaption>{categoryLabels[selected.category] || "現況"} · {photos.findIndex((photo) => photo.id === selected.id) + 1}／{photos.length} · 點擊照片收回</figcaption>
       </figure>}
-      <div aria-label="選擇照片" className={`asset-photo-hand ${dragState ? "is-sorting-hand" : ""} ${selected ? "has-selection" : ""} ${handOpen ? "is-open" : "is-collapsed"}`} onBlur={(event) => { if (selected && !event.currentTarget.contains(event.relatedTarget)) setHandOpen(false); }} onFocus={() => setHandOpen(true)} onPointerMove={moveCardDrag} onPointerUp={finishCardDrag} onPointerCancel={(event) => finishCardDrag(event, true)} ref={handRef} role="list">
+      <div aria-label="選擇照片" className={`asset-photo-hand ${dragState ? "is-sorting-hand" : ""} ${selected ? "has-selection" : ""} ${handOpen ? "is-open" : "is-collapsed"}`} onBlur={(event) => { if (selected && !event.currentTarget.contains(event.relatedTarget)) setHandOpen(false); }} onFocus={() => { finishEntrance(); setHandOpen(true); }} onPointerMove={moveCardDrag} onPointerUp={finishCardDrag} onPointerCancel={(event) => finishCardDrag(event, true)} ref={handRef} role="list">
         {photos.map((photo, index) => {
           const offset = index - ((photos.length - 1) / 2);
           const angle = Math.max(-8, Math.min(8, offset * 1.8));
