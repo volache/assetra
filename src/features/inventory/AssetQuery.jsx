@@ -271,6 +271,8 @@ export function AssetQuery({
     setRuleMenuOpen(false);
   }
   function applyAiResult(result, fallbackQuestion) {
+    setFilters(Object.fromEntries(filterFields.map(([key]) => [key, ""])));
+    setSource("all");
     setAiAssetIds(new Set(result.displayIdentityIds || result.assetIdentityIds || [])); setAppliedTerm(""); setAiClarification(null); setClarificationText(""); setAiAnalysis(result.analysis || null);
     setAiReport({ question: result.question || fallbackQuestion, modelVersion: result.modelVersion || null, summary: result.summary, explanation: result.explanation, analysisDescription: result.analysisDescription, conditionGroups: result.conditionGroups || [], scopeCount: result.scopeCount, trace: result.trace || [] });
   }
