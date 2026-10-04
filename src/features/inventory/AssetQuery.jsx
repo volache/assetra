@@ -575,7 +575,10 @@ export function AssetQuery({
                           >
                             {expandedId === a.id ? "收合" : "展開"}
                           </button>
-                          {a.identityId && <button className="row-action asset-photo-action" onClick={() => setPhotoPickerAsset(a)} type="button">照片</button>}
+                          {a.identityId && (() => {
+                            const photoCount = collaborationSummaries[a.identityId]?.photoCount || 0;
+                            return <button aria-label={`照片${photoCount ? `，共 ${photoCount} 張` : ""}`} className="row-action asset-photo-action" onClick={() => setPhotoPickerAsset(a)} type="button">照片{photoCount ? <span className="collaboration-count-badge">{photoCount}</span> : null}</button>;
+                          })()}
                           {a.identityId && (() => {
                           const summary = collaborationSummaries[a.identityId];
                           const total =
@@ -773,7 +776,18 @@ export function AssetQuery({
           setCollaborationAsset(null);
         }}
       />
-      <AssetPhotoPicker asset={photoPickerAsset} onClose={() => setPhotoPickerAsset(null)} />
+      <AssetPhotoPicker
+        asset={photoPickerAsset}
+        onChanged={(photoCount) => {
+          const identityId = photoPickerAsset?.identityId;
+          if (!identityId) return;
+          setCollaborationSummaries((current) => ({
+            ...current,
+            [identityId]: { ...(current[identityId] || {}), identityId, photoCount },
+          }));
+        }}
+        onClose={() => setPhotoPickerAsset(null)}
+      />
     </section>
   );
 }

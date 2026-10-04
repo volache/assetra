@@ -56,9 +56,11 @@
 .collaboration-summary-button strong { color: var(--color-muted); font-size: var(--text-xs); }
 .collaboration-summary-button.has-open-items { border-inline-start: .23rem solid var(--color-accent); }
 .collaboration-summary-button.has-open-items strong { color: var(--color-accent-deep); }
-.asset-row-actions { align-items: center; display: flex; gap: .4rem; white-space: nowrap; }
+.asset-row-actions { align-items: center; display: flex; gap: .08rem; white-space: nowrap; }
+.asset-row-actions .row-action { padding: .35rem .28rem; }
 .asset-collaboration-action { margin: 0; }
 .collaboration-count-badge { align-items: center; background: var(--color-accent); border-radius: var(--radius-pill); color: var(--color-paper); display: inline-flex; font-family: var(--font-mono); font-size: .68rem; justify-content: center; line-height: 1; margin-inline-start: .35rem; min-width: 1.25rem; padding: .2rem .35rem; }
+.asset-row-actions .collaboration-count-badge { font-size: .6rem; margin-inline-start: .16rem; min-width: 1rem; padding: .13rem .25rem; transform: translateY(-.16rem); }
 .collaboration-drawer-backdrop { align-items: stretch; animation: collaboration-backdrop-in 220ms var(--ease-out) both; background: color-mix(in srgb, var(--color-ink) 28%, transparent); display: flex; inset: 0; justify-content: end; position: fixed; z-index: 30; }
 .collaboration-drawer { animation: collaboration-drawer-in 260ms var(--ease-out) both; background: var(--color-paper-2); border-inline-start: 1px solid var(--color-rule); box-shadow: -1.1rem 0 2.6rem color-mix(in srgb, var(--color-ink) 22%, transparent); display: flex; flex-direction: column; height: 100dvh; max-width: 34rem; overflow: hidden; width: min(100%, 34rem); }
 .collaboration-drawer-backdrop.is-closing { animation: collaboration-backdrop-out 220ms var(--ease-out) both; }

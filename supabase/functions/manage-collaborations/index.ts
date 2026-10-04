@@ -140,23 +140,42 @@ async function summariesForIdentities(
   identityIds: string[],
 ) {
   if (!identityIds.length) return [];
-  const { data, error } = await admin
-    .from("asset_collaborations")
-    .select("asset_identity_id, kind, status, updated_at")
-    .in("asset_identity_id", identityIds)
-    .neq("kind", "note")
-    .in("status", ["open", "in_progress"])
-    .order("updated_at", { ascending: false });
+  const [collaborationResult, photoResult] = await Promise.all([
+    admin
+      .from("asset_collaborations")
+      .select("asset_identity_id, kind, status, updated_at")
+      .in("asset_identity_id", identityIds)
+      .neq("kind", "note")
+      .in("status", ["open", "in_progress"])
+      .order("updated_at", { ascending: false }),
+    admin
+      .from("asset_photos")
+      .select("asset_identity_id")
+      .in("asset_identity_id", identityIds),
+  ]);
+  const { data, error } = collaborationResult;
+  const { data: photos, error: photoError } = photoResult;
   if (error) throw error;
+  if (photoError) throw photoError;
   const grouped = new Map<
     string,
-    { identityId: string; openCount: number; inProgressCount: number; updatedAt: string | null }
+    { identityId: string; openCount: number; inProgressCount: number; photoCount: number; updatedAt: string | null }
   >();
+  for (const identityId of identityIds) {
+    grouped.set(identityId, {
+      identityId,
+      openCount: 0,
+      inProgressCount: 0,
+      photoCount: 0,
+      updatedAt: null,
+    });
+  }
   for (const row of data ?? []) {
     const current = grouped.get(row.asset_identity_id) ?? {
       identityId: row.asset_identity_id,
       openCount: 0,
       inProgressCount: 0,
+      photoCount: 0,
       updatedAt: null,
     };
     if (row.status === "in_progress") current.inProgressCount += 1;
@@ -164,6 +183,10 @@ async function summariesForIdentities(
     if (!current.updatedAt || row.updated_at > current.updatedAt)
       current.updatedAt = row.updated_at;
     grouped.set(row.asset_identity_id, current);
+  }
+  for (const photo of photos ?? []) {
+    const current = grouped.get(photo.asset_identity_id);
+    if (current) current.photoCount += 1;
   }
   return [...grouped.values()];
 }

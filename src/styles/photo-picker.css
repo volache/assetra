@@ -21,6 +21,11 @@
   position: absolute;
 }
 
+.asset-photo-picker-backdrop.is-closing {
+  animation: photo-stage-leave 210ms ease-in forwards;
+  pointer-events: none;
+}
+
 .asset-photo-picker-caption {
   backdrop-filter: blur(12px);
   background: rgb(31 27 27 / 44%);
@@ -72,6 +77,237 @@
   transform: scale(1.06);
 }
 
+.asset-photo-picker-manage {
+  align-items: center;
+  backdrop-filter: blur(12px);
+  background: rgb(31 27 27 / 46%);
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: var(--radius-pill);
+  color: rgb(255 255 255 / 86%);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  gap: .42rem;
+  min-height: 2.5rem;
+  padding: .45rem .85rem;
+  position: absolute;
+  right: 4.35rem;
+  top: 1.1rem;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+  z-index: 5;
+}
+
+.asset-photo-picker-manage svg,
+.asset-photo-manager-primary svg,
+.asset-photo-manager-danger svg,
+.asset-photo-empty-action svg {
+  fill: none;
+  height: 1.05rem;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+  width: 1.05rem;
+}
+
+.asset-photo-picker-manage svg { transition: transform 220ms cubic-bezier(.22, 1, .36, 1); }
+.asset-photo-picker-manage.is-active svg { transform: rotate(-8deg) scale(1.08); }
+
+.asset-photo-manage-label {
+  animation: photo-manage-label-swap 180ms cubic-bezier(.22, 1, .36, 1);
+  display: inline-block;
+}
+
+.asset-photo-picker-manage:hover,
+.asset-photo-picker-manage:focus-visible,
+.asset-photo-picker-manage.is-active {
+  background: rgb(255 255 255 / 90%);
+  border-color: transparent;
+  color: var(--color-ink);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.asset-photo-manager {
+  align-items: stretch;
+  animation: photo-manager-enter 260ms cubic-bezier(.22, 1, .36, 1);
+  backdrop-filter: blur(18px) saturate(.85);
+  background: rgb(40 34 33 / 72%);
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 1rem;
+  box-shadow: 0 1rem 2.8rem rgb(10 8 8 / 24%);
+  color: white;
+  display: flex;
+  flex-direction: column;
+  gap: .7rem;
+  max-height: calc(100dvh - 6rem);
+  min-height: 0;
+  padding: 1rem;
+  position: absolute;
+  right: 1.1rem;
+  top: 4.35rem;
+  transform: none;
+  transition: opacity 210ms ease, transform 240ms cubic-bezier(.4, 0, .2, 1);
+  width: 15rem;
+  z-index: 6;
+}
+
+.asset-photo-manager.is-leaving {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(.85rem) scale(.975);
+}
+
+.asset-photo-current-details {
+  display: grid;
+  gap: .42rem;
+  min-width: 0;
+}
+
+.asset-photo-current-details > span {
+  color: rgb(255 255 255 / 56%);
+  font-size: var(--text-xs);
+}
+
+.asset-photo-current-details > strong {
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-photo-current-details > p {
+  color: rgb(255 255 255 / 54%);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  margin: 0;
+}
+
+
+.asset-photo-manager-summary {
+  align-items: center;
+  border-bottom: 1px solid rgb(255 255 255 / 12%);
+  display: flex;
+  justify-content: space-between;
+  padding: 0 .1rem .75rem;
+  white-space: nowrap;
+}
+
+.asset-photo-manager-summary strong { font-size: var(--text-sm); }
+.asset-photo-manager-summary span { color: rgb(255 255 255 / 56%); font-family: var(--font-mono); font-size: var(--text-xs); }
+
+.asset-photo-manager-label {
+  color: rgb(255 255 255 / 48%);
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  margin: .05rem .1rem -.25rem;
+}
+
+.asset-photo-category-pills {
+  display: grid;
+  gap: .35rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.asset-photo-category-pills button {
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-pill);
+  color: rgb(255 255 255 / 62%);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-xs);
+  min-height: 2.15rem;
+  padding: .42rem .55rem;
+  text-align: center;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.asset-photo-category-pills button:hover,
+.asset-photo-category-pills button:focus-visible { background: rgb(255 255 255 / 10%); color: white; outline: none; }
+.asset-photo-category-pills button.is-active { background: rgb(255 255 255 / 92%); color: var(--color-ink); }
+
+.asset-photo-manager-actions,
+.asset-photo-manager-confirm {
+  align-items: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+}
+
+.asset-photo-manager-actions {
+  border-top: 1px solid rgb(255 255 255 / 12%);
+  margin-top: .1rem;
+  padding-top: .75rem;
+}
+
+.asset-photo-manager-primary,
+.asset-photo-manager-danger,
+.asset-photo-empty-action,
+.asset-photo-manager-confirm button {
+  align-items: center;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  gap: .4rem;
+  justify-content: center;
+  min-height: 2.35rem;
+  padding: .44rem .72rem;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.asset-photo-manager-primary {
+  background: var(--color-accent);
+  border: 1px solid var(--color-accent);
+  color: var(--color-ink);
+}
+
+.asset-photo-manager-danger {
+  background: transparent;
+  border: 1px solid rgb(255 255 255 / 18%);
+  color: rgb(255 220 214);
+}
+
+.asset-photo-manager-primary:hover:not(:disabled),
+.asset-photo-manager-primary:focus-visible { filter: brightness(1.08); outline: none; transform: none; }
+.asset-photo-manager-danger:hover:not(:disabled),
+.asset-photo-manager-danger:focus-visible { filter: brightness(1.08); outline: none; transform: translateY(-1px); }
+.asset-photo-manager button:disabled { cursor: not-allowed; opacity: .48; }
+
+.asset-photo-manager-confirm {
+  background: rgb(116 36 27 / 32%);
+  border-radius: var(--radius-pill);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: .55rem;
+}
+
+.asset-photo-manager-confirm span { color: rgb(255 225 220); font-size: var(--text-xs); grid-column: 1 / -1; text-align: center; white-space: nowrap; }
+.asset-photo-manager-confirm button { background: rgb(255 255 255 / 8%); border: 0; color: white; min-height: 2rem; padding: .3rem .58rem; }
+.asset-photo-manager-confirm button:last-child { background: rgb(232 105 83); color: var(--color-ink); }
+
+.asset-photo-manager > p {
+  background: rgb(255 255 255 / 9%);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  margin: 0;
+  max-width: 16rem;
+  overflow: hidden;
+  padding: .42rem .65rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-photo-manager > p.is-error { color: rgb(255 203 193); }
+.asset-photo-manager > p.is-success { color: rgb(214 241 220); }
+
 .asset-photo-picker-hint {
   color: rgb(255 255 255 / 70%);
   font-size: var(--text-sm);
@@ -119,6 +355,21 @@
   max-height: 100%;
   max-width: 100%;
   padding: 0;
+}
+
+.asset-photo-return.is-switch-target {
+  animation: none;
+}
+
+.asset-photo-switch-ghost {
+  box-shadow: 0 1.5rem 4rem rgb(13 10 10 / 38%);
+  margin: 0;
+  max-height: none;
+  max-width: none;
+  pointer-events: none;
+  position: fixed;
+  will-change: opacity, transform;
+  z-index: 84;
 }
 
 .asset-photo-return:focus-visible {
@@ -264,6 +515,10 @@
 
 .asset-photo-hand > button:first-child.is-selected { margin-left: 0; }
 
+.asset-photo-hand > button.is-manager-selected:not(.is-dealt) {
+  box-shadow: 0 .8rem 1.5rem rgb(13 10 10 / 32%), 0 0 0 2px var(--color-accent);
+}
+
 .asset-photo-hand > button.is-dealt,
 .asset-photo-hand > button.is-dealt:hover,
 .asset-photo-hand > button.is-dealt:focus-visible {
@@ -297,6 +552,10 @@
     translateY(calc(var(--photo-card-arc) + 11rem))
     rotate(var(--photo-card-angle))
     scale(1);
+}
+
+.asset-photo-hand.has-selection.is-collapsed > button.is-measuring {
+  transform: translateY(var(--photo-card-arc)) rotate(var(--photo-card-angle)) scale(1);
 }
 
 /* Preserve hover while a card rises, including when the pointer starts at its lower edge. */
@@ -357,9 +616,25 @@
 .asset-photo-picker-empty p { color: rgb(255 255 255 / 68%); margin: 0; }
 .asset-photo-picker-loading { align-items: center; justify-items: center; min-width: 14rem; }
 
+.asset-photo-empty-action {
+  background: white;
+  border: 0;
+  color: var(--color-ink);
+  justify-self: center;
+  margin-top: .35rem;
+}
+
+.asset-photo-empty-action:hover,
+.asset-photo-empty-action:focus-visible { filter: brightness(1.06); outline: none; transform: none; }
+
 @keyframes photo-stage-enter {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+@keyframes photo-stage-leave {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 @keyframes photo-card-deal {
@@ -377,7 +652,32 @@
   to { opacity: 1; transform: translateX(0) scale(1); }
 }
 
+@keyframes photo-manager-enter {
+  from { opacity: 0; transform: translateX(.85rem) scale(.98); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+@keyframes photo-manage-label-swap {
+  from { opacity: 0; transform: translateY(.22rem); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 @media (max-width: 48rem) {
+  .asset-photo-picker-caption { left: 1rem; max-width: calc(100vw - 11.5rem); transform: none; }
+  .asset-photo-picker-manage { font-size: 0; padding-inline: .72rem; right: 4.15rem; }
+  .asset-photo-picker-manage svg { height: 1.15rem; width: 1.15rem; }
+  .asset-photo-manager {
+    align-items: stretch;
+    left: auto;
+    max-width: none;
+    right: .75rem;
+    top: 4.15rem;
+    transform: none;
+    width: min(11.5rem, calc(100vw - 1.5rem));
+  }
+  .asset-photo-manager.is-leaving { transform: translateX(.85rem) scale(.975); }
+  .asset-photo-category-pills { grid-template-columns: 1fr; }
+  .asset-photo-manager > p { max-width: none; }
   .asset-photo-selected { inset: 3.1rem 0 6.25rem; padding: .65rem .75rem; }
   .asset-photo-selected img { max-height: min(78dvh, 39rem); max-width: calc(100vw - 1.5rem); }
   .asset-photo-hand {
@@ -415,6 +715,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .asset-photo-picker-backdrop,
+  .asset-photo-manager,
   .asset-photo-selected,
   .asset-photo-return,
   .asset-photo-hand > button:not(.asset-photo-hand-more) { animation: none; }
