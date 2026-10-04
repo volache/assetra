@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { assetMajorClass, money, serviceLifeExpired, usedDuration } from "../../lib/formatters";
 import { CollaborationDrawer } from "../collaboration/CollaborationDrawer";
 import { requestCollaboration } from "../collaboration/api";
+import { AssetPhotoPicker } from "../photos/AssetPhotoPicker";
 import { FilterCombo, HighlightText, SearchRuleMenu } from "./QueryControls";
 import { CapsuleSpinner, useFeedback } from "../../components/FeedbackCenter";
 import { supabase } from "../../supabase";
@@ -38,6 +39,7 @@ export function AssetQuery({
   const [collaborationSummaries, setCollaborationSummaries] = useState({});
   const [collaborationAsset, setCollaborationAsset] = useState(null);
   const [collaborationFocusId, setCollaborationFocusId] = useState(null);
+  const [photoPickerAsset, setPhotoPickerAsset] = useState(null);
   const [compactFilters, setCompactFilters] = useState(false);
   const [compactFilterExpanded, setCompactFilterExpanded] = useState(false);
   const [openFilterId, setOpenFilterId] = useState(null);
@@ -573,6 +575,7 @@ export function AssetQuery({
                           >
                             {expandedId === a.id ? "收合" : "展開"}
                           </button>
+                          {a.identityId && <button className="row-action asset-photo-action" onClick={() => setPhotoPickerAsset(a)} type="button">照片</button>}
                           {a.identityId && (() => {
                           const summary = collaborationSummaries[a.identityId];
                           const total =
@@ -770,6 +773,7 @@ export function AssetQuery({
           setCollaborationAsset(null);
         }}
       />
+      <AssetPhotoPicker asset={photoPickerAsset} onClose={() => setPhotoPickerAsset(null)} />
     </section>
   );
 }
