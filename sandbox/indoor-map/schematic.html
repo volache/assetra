@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>室內簡約地圖</title>
+<link rel="stylesheet" href="schematic.css">
+</head>
+<body>
+<header>
+  <h1>室內地圖</h1>
+  <nav id="tabs" aria-label="建築與樓層"></nav>
+  <div class="search">
+    <input id="q" type="search" placeholder="搜尋空間、代碼或財物名稱" autocomplete="off">
+    <ul id="results" hidden></ul>
+  </div>
+</header>
+<div class="layout">
+  <main id="stage">
+    <div id="map" aria-label="樓層平面圖"></div>
+    <button id="fit" title="回到完整視角">⤢</button>
+    <div id="legend"></div>
+  </main>
+  <aside id="panel"></aside>
+</div>
+<script type="module" src="schematic.js"></script>
+</body>
+</html>
