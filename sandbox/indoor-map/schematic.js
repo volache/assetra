@@ -1,7 +1,7 @@
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const KIND = { dorm: "宿舍房間", public: "公共區域", laundry: "洗衣區", special: "多房間宿舍",
-  recreation: "康樂空間", room: "空間", toilet: "廁所" };
+  recreation: "康樂空間", room: "空間", toilet: "廁所", garage: "車庫", other: "其他" };
 
 const state = { index: [], metas: new Map(), floor: null, code: null, vb: null, home: null, svg: null };
 
@@ -82,7 +82,8 @@ function renderPanel() {
   $("#panel").innerHTML = `
     <button class="back" data-back>← ${esc(meta.building)} ${esc(meta.floor)} 全部空間</button>
     <h2>${esc(room.name)}</h2>
-    <div class="sub">${esc(room.code.replace("*", ""))} · ${KIND[room.kind] ?? "空間"} · 約 ${room.areaM2} m²</div>
+    <div class="sub">${esc(room.code.replace("*", "").replace(/^_.*/, "—"))} · ${KIND[room.kind] ?? "空間"} · 約 ${room.areaM2} m²</div>
+    ${room.provisional ? `<div class="warn">位置待確認：地圖上的位置是暫定的</div>` : ""}
     <div class="stats"><div class="stat"><b>${room.count}</b><span>財物（件）</span></div>
       <div class="stat"><b>${room.items.length}</b><span>品項</span></div></div>
     ${units.length ? `<h3>使用單位</h3><div class="chips">${units.map(([u, n]) =>

@@ -1,0 +1,494 @@
+{
+ "building": "消防站",
+ "unit": "cm",
+ "floors": [
+  {
+   "id": "fire-1f",
+   "name": "1F",
+   "spaces": [
+    {
+     "kind": "room",
+     "short": null,
+     "rects": [
+      [
+       9803,
+       7645,
+       10390,
+       8272
+      ]
+     ],
+     "code": "*B101",
+     "provisional": true
+    },
+    {
+     "kind": "room",
+     "short": null,
+     "rects": [
+      [
+       10390,
+       7645,
+       10940,
+       8272
+      ]
+     ],
+     "code": "*B102",
+     "provisional": true
+    },
+    {
+     "kind": "room",
+     "short": null,
+     "rects": [
+      [
+       10940,
+       7645,
+       11490,
+       8272
+      ]
+     ],
+     "code": "*B103",
+     "provisional": true
+    },
+    {
+     "kind": "room",
+     "short": null,
+     "rects": [
+      [
+       11490,
+       7645,
+       12040,
+       8272
+      ]
+     ],
+     "code": "*B104",
+     "provisional": true
+    },
+    {
+     "kind": "room",
+     "short": null,
+     "rects": [
+      [
+       12040,
+       7645,
+       12590,
+       8272
+      ]
+     ],
+     "code": "*B105",
+     "provisional": true
+    },
+    {
+     "kind": "room",
+     "short": null,
+     "rects": [
+      [
+       12590,
+       7645,
+       13177,
+       8272
+      ]
+     ],
+     "code": "*B106",
+     "provisional": true
+    },
+    {
+     "kind": "room",
+     "short": null,
+     "rects": [
+      [
+       13487,
+       7645,
+       14277,
+       8272
+      ]
+     ],
+     "code": "*B107",
+     "provisional": true
+    },
+    {
+     "kind": "room",
+     "short": null,
+     "rects": [
+      [
+       9803,
+       8480,
+       10292,
+       9122
+      ]
+     ],
+     "code": "*B108",
+     "provisional": true
+    },
+    {
+     "kind": "room",
+     "short": null,
+     "rects": [
+      [
+       9803,
+       9122,
+       10292,
+       9765
+      ]
+     ],
+     "code": "*B109",
+     "provisional": true
+    },
+    {
+     "kind": "room",
+     "short": null,
+     "rects": [
+      [
+       13696,
+       8480,
+       14277,
+       8825
+      ]
+     ],
+     "code": "*B110",
+     "provisional": true
+    },
+    {
+     "kind": "room",
+     "short": null,
+     "rects": [
+      [
+       10292,
+       8480,
+       11254,
+       9765
+      ]
+     ],
+     "code": "*B111",
+     "provisional": true
+    },
+    {
+     "kind": "room",
+     "short": null,
+     "rects": [
+      [
+       11254,
+       8480,
+       12215,
+       9765
+      ]
+     ],
+     "code": "*B112",
+     "provisional": true
+    },
+    {
+     "kind": "room",
+     "short": null,
+     "rects": [
+      [
+       12215,
+       8480,
+       13177,
+       9765
+      ]
+     ],
+     "code": "*B113",
+     "provisional": true
+    },
+    {
+     "kind": "garage",
+     "short": null,
+     "rects": [
+      [
+       14285,
+       7645,
+       15350,
+       8700
+      ]
+     ],
+     "code": "*BG02",
+     "provisional": true
+    },
+    {
+     "kind": "garage",
+     "short": null,
+     "rects": [
+      [
+       14285,
+       8700,
+       15350,
+       9765
+      ]
+     ],
+     "code": "*BG01",
+     "provisional": true
+    },
+    {
+     "kind": "other",
+     "short": "走廊",
+     "rects": [
+      [
+       9803,
+       8272,
+       14277,
+       8480
+      ]
+     ],
+     "name": "走廊"
+    },
+    {
+     "kind": "other",
+     "short": "梯間",
+     "rects": [
+      [
+       13177,
+       7645,
+       13487,
+       8272
+      ]
+     ],
+     "name": "梯間"
+    },
+    {
+     "kind": "other",
+     "short": "",
+     "rects": [
+      [
+       13177,
+       8825,
+       14277,
+       9765
+      ],
+      [
+       13177,
+       8480,
+       13696,
+       8825
+      ]
+     ],
+     "name": "其他（未標示）"
+    }
+   ]
+  },
+  {
+   "id": "fire-2f",
+   "name": "2F",
+   "spaces": [
+    {
+     "kind": "room",
+     "short": null,
+     "rects": [
+      [
+       2233,
+       2835,
+       2813,
+       3460
+      ]
+     ],
+     "code": "*B206"
+    },
+    {
+     "kind": "room",
+     "short": null,
+     "rects": [
+      [
+       2813,
+       2835,
+       3363,
+       3460
+      ]
+     ],
+     "code": "*B207"
+    },
+    {
+     "kind": "room",
+     "short": null,
+     "rects": [
+      [
+       3363,
+       2835,
+       3913,
+       3460
+      ]
+     ],
+     "code": "*B208"
+    },
+    {
+     "kind": "room",
+     "short": null,
+     "rects": [
+      [
+       3913,
+       2835,
+       4463,
+       3460
+      ]
+     ],
+     "code": "*B209"
+    },
+    {
+     "kind": "room",
+     "short": null,
+     "rects": [
+      [
+       4463,
+       2835,
+       5013,
+       3460
+      ]
+     ],
+     "code": "*B210"
+    },
+    {
+     "kind": "room",
+     "short": null,
+     "rects": [
+      [
+       5013,
+       2835,
+       5600,
+       3460
+      ]
+     ],
+     "code": "*B211"
+    },
+    {
+     "kind": "toilet",
+     "short": null,
+     "rects": [
+      [
+       5913,
+       2835,
+       6306,
+       3460
+      ]
+     ],
+     "code": "*B212",
+     "provisional": true
+    },
+    {
+     "kind": "recreation",
+     "short": null,
+     "rects": [
+      [
+       6306,
+       2835,
+       6700,
+       3460
+      ]
+     ],
+     "code": "*B205",
+     "provisional": true
+    },
+    {
+     "kind": "room",
+     "short": null,
+     "rects": [
+      [
+       2233,
+       3470,
+       3357,
+       4190
+      ]
+     ],
+     "code": "*B201",
+     "provisional": true
+    },
+    {
+     "kind": "room",
+     "short": null,
+     "rects": [
+      [
+       2233,
+       4190,
+       3357,
+       4950
+      ]
+     ],
+     "code": "*B202",
+     "provisional": true
+    },
+    {
+     "kind": "room",
+     "short": null,
+     "rects": [
+      [
+       5603,
+       3470,
+       6700,
+       4312
+      ]
+     ],
+     "code": "*B203",
+     "provisional": true
+    },
+    {
+     "kind": "room",
+     "short": null,
+     "rects": [
+      [
+       5603,
+       4312,
+       6700,
+       4950
+      ]
+     ],
+     "code": "*B204",
+     "provisional": true
+    },
+    {
+     "kind": "other",
+     "short": "梯間",
+     "rects": [
+      [
+       5600,
+       2835,
+       5913,
+       3460
+      ]
+     ],
+     "name": "梯間"
+    },
+    {
+     "kind": "other",
+     "short": "走廊",
+     "rects": [
+      [
+       3357,
+       3470,
+       5603,
+       3880
+      ]
+     ],
+     "name": "走廊"
+    },
+    {
+     "kind": "other",
+     "short": "挑空",
+     "rects": [
+      [
+       3357,
+       3880,
+       5603,
+       4950
+      ]
+     ],
+     "name": "挑空（車庫上方）"
+    }
+   ]
+  },
+  {
+   "id": "fire-3f",
+   "name": "頂樓",
+   "spaces": [
+    {
+     "kind": "room",
+     "short": null,
+     "rects": [
+      [
+       5603,
+       3470,
+       6700,
+       4312
+      ]
+     ],
+     "code": "*B301",
+     "provisional": true
+    }
+   ]
+  }
+ ]
+}

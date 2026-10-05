@@ -2,14 +2,14 @@
   --bg: #eef0f3; --panel: #fff; --ink: #2a303a; --muted: #7a8493; --line: #dde1e7;
   --wall: #8c95a3; --accent: #2f6fed;
   --k-dorm: #f9fafb; --k-public: #e4e7ec; --k-laundry: #f7eccd; --k-special: #eadff2;
-  --k-recreation: #d9eedc; --k-room: #f9fafb; --k-toilet: #dbeaf5;
+  --k-recreation: #d9eedc; --k-room: #f9fafb; --k-toilet: #dbeaf5; --k-other: #eef0f3; --k-garage: #e9e2d3;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #14181e; --panel: #1c222a; --ink: #e6eaef; --muted: #8e99a8; --line: #2c343f;
     --wall: #5b6575; --accent: #6b9bff;
     --k-dorm: #2b3441; --k-public: #232a34; --k-laundry: #4a4430; --k-special: #3d3349;
-    --k-recreation: #2e4535; --k-room: #2b3441; --k-toilet: #28404f;
+    --k-recreation: #2e4535; --k-room: #2b3441; --k-toilet: #28404f; --k-other: #1f252d; --k-garage: #3b3629;
   }
 }
 * { box-sizing: border-box; }
@@ -71,6 +71,12 @@ svg .kind-laundry path { fill: var(--k-laundry); }
 svg .kind-special path { fill: var(--k-special); }
 svg .kind-recreation path { fill: var(--k-recreation); }
 svg .kind-toilet path { fill: var(--k-toilet); }
+svg .kind-other path { fill: var(--k-other); }
+svg .kind-garage path { fill: var(--k-garage); }
+svg .prov path { stroke: var(--accent); stroke-width: 12; stroke-dasharray: 70 45; }
+.warn { display: inline-block; margin: 0 0 10px; padding: 3px 10px; border-radius: 8px; font-size: 12px;
+  background: #f59e0b26; color: #b45309; }
+@media (prefers-color-scheme: dark) { .warn { color: #fbbf24; } }
 svg .space { cursor: pointer; }
 svg .space:hover path { fill: color-mix(in srgb, var(--accent) 22%, var(--panel)); }
 svg .space.sel path { fill: color-mix(in srgb, var(--accent) 38%, var(--panel)); }

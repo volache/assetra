@@ -14,6 +14,7 @@ Output (sandbox/indoor-map/data/schematic/):
   index.json        all buildings / floors for the viewer
 """
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -57,29 +58,31 @@ def build(src_path):
     OUT.mkdir(parents=True, exist_ok=True)
     index = []
     for fl in src["floors"]:
-        geoms = {s["code"]: shapes(s) for s in fl["spaces"]}
+        for n, s in enumerate(fl["spaces"]):
+            s.setdefault("id", s.get("code") or f"_{fl['id']}-{n}")
+        geoms = {s["id"]: shapes(s) for s in fl["spaces"]}
         footprint = unary_union(list(geoms.values())).buffer(WALL / 2, join_style=2)
         minx, miny, maxx, maxy = footprint.bounds
         pad = 150
         vb = [minx - pad, -(maxy + pad), maxx - minx + 2 * pad, maxy - miny + 2 * pad]
         body, rooms = [], []
         for s in fl["spaces"]:
-            g = geoms[s["code"]].buffer(-WALL / 2, join_style=2)
-            loc = locs.get(s["code"], {})
-            name = loc.get("name", s["code"])
+            g = geoms[s["id"]].buffer(-WALL / 2, join_style=2)
+            loc = locs.get(s.get("code"), {})
+            name = loc.get("name") or s.get("name") or s["id"]
             pt, big = label_point(g)
             minside = min(big.bounds[2] - big.bounds[0], big.bounds[3] - big.bounds[1])
             size = max(45.0, min(105.0, minside / 4.2))
             count = loc.get("count", 0)
-            short = s.get("short") or name
+            short = s.get("short") or re.sub(r"^(消防班[123]F|消防班)", "", name) or name
             body.append(
-                f'<g class="space kind-{s["kind"]}" data-code="{s["code"]}">'
+                f'<g class="space kind-{s["kind"]}{" prov" if s.get("provisional") else ""}" data-code="{s["id"]}">'
                 f'<path d="{path_d(g)}"/>'
                 f'<text x="{pt.x:.0f}" y="{-pt.y:.0f}" font-size="{size:.0f}" class="nm">{escape(short)}</text>'
                 + (f'<text x="{pt.x:.0f}" y="{-pt.y + size * 1.25:.0f}" font-size="{size * .72:.0f}" class="ct">{count} 件</text>'
                    if count else "")
                 + "</g>")
-            rooms.append({"code": s["code"], "name": name, "short": short, "kind": s["kind"],
+            rooms.append({"code": s["id"], "name": name, "provisional": bool(s.get("provisional")), "short": short, "kind": s["kind"],
                           "count": count, "units": loc.get("units", {}), "items": loc.get("items", []),
                           "areaM2": round(g.area / 10000, 1)})
         svg = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vb[0]:.0f} {vb[1]:.0f} {vb[2]:.0f} {vb[3]:.0f}">'
