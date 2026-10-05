@@ -1,0 +1,23 @@
+{
+  "source": "汙水處理廠.dxf",
+  "encoding": "cp950",
+  "unit": "cm",
+  "minLength": 2.0,
+  "snap": 0.5,
+  "padding": 150,
+  "layers": {
+    "wall":      { "label": "牆（RC）", "from": ["RC"] },
+    "door":      { "label": "門", "from": ["DOOR"] },
+    "fixture":   { "label": "衛浴", "from": ["TOILET", "DTOILET"] },
+    "equipment": { "label": "設備／水池", "from": ["THIN", "PLANT"] },
+    "beam":      { "label": "梁（結構）", "from": ["BEAM"], "visible": false }
+  },
+  "labels": {
+    "label": "房名／房號",
+    "from": ["TEXT"],
+    "exclude": ["^GL-", "^\\(TYP", "^柱心$", "^[上下]$", "^\\d$", "^\\s*$"]
+  },
+  "plans": [
+    { "id": "sewage-plant-b1", "name": "污水處理廠 地下一層", "crop": [1000, 1000, 6800, 4800] }
+  ]
+}

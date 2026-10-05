@@ -1,0 +1,128 @@
+{
+  "source": "宿舍三樓及四樓.dxf",
+  "encoding": "cp950",
+  "unit": "cm",
+  "minLength": 2.0,
+  "snap": 0.5,
+  "padding": 200,
+  "dropProjectionLines": 1500,
+  "layers": {
+    "wall": {
+      "label": "牆／外殼",
+      "from": [
+        "WALL",
+        "WALL2",
+        "1-S"
+      ],
+      "dropTypes": [
+        "CIRCLE"
+      ]
+    },
+    "column": {
+      "label": "柱",
+      "from": [
+        "COLUMN"
+      ]
+    },
+    "door": {
+      "label": "門",
+      "from": [
+        "DOOR",
+        "DE-DOOR"
+      ],
+      "dropTypes": [
+        "CIRCLE"
+      ]
+    },
+    "window": {
+      "label": "窗",
+      "from": [
+        "WINDOW",
+        "WINDOWP"
+      ],
+      "dropTypes": [
+        "CIRCLE"
+      ]
+    },
+    "stair": {
+      "label": "樓梯／坡道",
+      "from": [
+        "PAINT",
+        "STAIR"
+      ]
+    },
+    "fixture": {
+      "label": "衛浴設備",
+      "from": [
+        "TOILET",
+        "DTOILET"
+      ]
+    },
+    "furniture": {
+      "label": "家具／其他",
+      "from": [
+        "FURNITURE",
+        "MPFIXTUR",
+        "0",
+        "1-TO"
+      ],
+      "visible": false
+    }
+  },
+  "labels": {
+    "label": "房名／房號",
+    "from": [
+      "1-W",
+      "TEXT",
+      "WALL"
+    ],
+    "exclude": [
+      "^[DWAC]\\d*$",
+      "^[A-Z]?\\d{1,2}$",
+      "^[上下]\\d*$",
+      "^\\d+(\\.\\d+)?m"
+    ]
+  },
+  "plans": [
+    {
+      "id": "dorm-3f",
+      "name": "宿舍 三樓",
+      "crop": [
+        1500,
+        2000,
+        7500,
+        7400
+      ]
+    },
+    {
+      "id": "dorm-4f",
+      "name": "宿舍 四樓",
+      "crop": [
+        9500,
+        2000,
+        15600,
+        7400
+      ]
+    },
+    {
+      "id": "dorm-roof-annex",
+      "name": "宿舍 屋突一層",
+      "crop": [
+        5800,
+        8700,
+        9200,
+        10600
+      ]
+    },
+    {
+      "id": "dorm-roof",
+      "name": "宿舍 屋頂",
+      "crop": [
+        9800,
+        8700,
+        12200,
+        10600
+      ]
+    }
+  ]
+}

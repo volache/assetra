@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>室內電子地圖 Sandbox</title>
+<link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+<aside id="side">
+  <h1>室內電子地圖 <small>sandbox</small></h1>
+  <label>樓層圖
+    <select id="plan"></select>
+  </label>
+  <section>
+    <h2>圖層</h2>
+    <div id="layers"></div>
+  </section>
+  <section>
+    <h2>清理報告</h2>
+    <dl id="report"></dl>
+  </section>
+  <p class="hint">滾輪縮放・拖曳平移・雙擊重設</p>
+</aside>
+<main id="stage"><div id="status">載入中…</div></main>
+<script type="module" src="viewer.js"></script>
+</body>
+</html>

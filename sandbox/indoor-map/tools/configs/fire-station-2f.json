@@ -1,0 +1,80 @@
+{
+  "source": "消防站二樓.dxf",
+  "encoding": "cp950",
+  "unit": "cm",
+  "minLength": 2.0,
+  "snap": 0.5,
+  "padding": 200,
+  "layers": {
+    "wall": {
+      "label": "牆",
+      "from": [
+        "WALL"
+      ]
+    },
+    "door": {
+      "label": "門",
+      "from": [
+        "DOOR",
+        "1-DOOR",
+        "DE-DOOR"
+      ]
+    },
+    "window": {
+      "label": "窗",
+      "from": [
+        "WINDOW"
+      ]
+    },
+    "column": {
+      "label": "柱",
+      "from": [
+        "COLUMN"
+      ]
+    },
+    "stair": {
+      "label": "樓梯",
+      "from": [
+        "PAINT"
+      ]
+    },
+    "bay": {
+      "label": "凸窗弧線",
+      "from": [
+        "TO"
+      ]
+    },
+    "outline": {
+      "label": "樓板外緣／開口",
+      "from": [
+        "0"
+      ]
+    },
+    "beam": {
+      "label": "梁（結構）",
+      "from": [
+        "BEAM"
+      ],
+      "visible": false
+    },
+    "slab": {
+      "label": "樓板細線（結構）",
+      "from": [
+        "REF"
+      ],
+      "visible": false
+    }
+  },
+  "plans": [
+    {
+      "id": "fire-station-2f",
+      "name": "消防站 二樓",
+      "crop": [
+        2000,
+        2600,
+        8100,
+        5300
+      ]
+    }
+  ]
+}

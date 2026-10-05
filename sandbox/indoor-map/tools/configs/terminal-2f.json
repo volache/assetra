@@ -1,0 +1,76 @@
+{
+  "source": "航廈二樓不含外部.dxf",
+  "encoding": "cp950",
+  "unit": "cm",
+  "minLength": 3.0,
+  "snap": 0.5,
+  "padding": 300,
+  "geometryLayers": [
+    "2F建築"
+  ],
+  "layers": {
+    "wall": {
+      "label": "牆（雙線）",
+      "from": []
+    },
+    "stair": {
+      "label": "階梯／電扶梯／格柵",
+      "from": [
+        "STAIR"
+      ]
+    },
+    "column": {
+      "label": "柱",
+      "from": []
+    },
+    "door": {
+      "label": "門",
+      "from": [
+        "DOOR",
+        "1-DOOR"
+      ]
+    },
+    "outline": {
+      "label": "輪廓／長線",
+      "from": []
+    },
+    "fixture": {
+      "label": "衛浴／設備／家具",
+      "from": [
+        "DTOILET",
+        "TOILET"
+      ]
+    },
+    "detail": {
+      "label": "細部（填充線、階梯線）",
+      "from": [],
+      "drop": true
+    }
+  },
+  "labels": {
+    "label": "房名／房號",
+    "from": [
+      "2F建築"
+    ],
+    "exclude": [
+      "^\\(\\d+\\)$",
+      "^\\d{1,2}$",
+      "^[\\d.]+m$",
+      "^A=",
+      "^[上下]\\S{0,3}$",
+      "^DN$"
+    ]
+  },
+  "plans": [
+    {
+      "id": "terminal-2f",
+      "name": "航廈 二樓（不含外部）",
+      "crop": [
+        4500,
+        11500,
+        41000,
+        24500
+      ]
+    }
+  ]
+}
