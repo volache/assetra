@@ -12,10 +12,13 @@ export function FilterCombo({
   open,
   onChange,
   onOpenChange,
+  showAllOptions = false,
+  menuPlacement = "below",
 }) {
   const rootRef = useRef(null);
-  const suggestions = options
-    .filter((option) => normalized(option).includes(normalized(value)))
+  const suggestions = (showAllOptions
+    ? options
+    : options.filter((option) => normalized(option).includes(normalized(value))))
     .slice(0, 100);
   useEffect(() => {
     if (!open) return undefined;
@@ -62,7 +65,7 @@ export function FilterCombo({
           <span aria-hidden="true" />
         </button>
         {open && (
-          <span className="combo-menu" id={`${id}-options`} role="listbox">
+          <span className={`combo-menu ${menuPlacement === "above" ? "combo-menu-above" : ""}`} id={`${id}-options`} role="listbox">
             {suggestions.length ? (
               suggestions.map((option) => (
                 <button

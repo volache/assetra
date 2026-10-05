@@ -14,12 +14,38 @@ function WindowIcon({ name }) {
 
 export function CollaborationDrawer({ asset, focusCollaborationId, onClose, onChanged }) {
   const drawerRef = useRef(null);
+  const notebookRef = useRef(null);
+  const restoreComposer = useRef(false);
+  const windowTimer = useRef(null);
+  const [windowTransitioning, setWindowTransitioning] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [dock, setDock] = useState("right");
   const [drag, setDrag] = useState(null);
   const [isReleasing, setIsReleasing] = useState(false);
   const [minimized, setMinimized] = useState(false);
-  useEffect(() => { setIsClosing(false); setMinimized(false); }, [asset?.identityId]);
+  const [composerState, setComposerState] = useState({ open: false, closing: false });
+  useEffect(() => { window.clearTimeout(windowTimer.current); restoreComposer.current = false; setWindowTransitioning(false); setIsClosing(false); setMinimized(false); setComposerState({ open: false, closing: false }); }, [asset?.identityId]);
+  useEffect(() => () => window.clearTimeout(windowTimer.current), []);
+  const toggleMinimized = () => {
+    if (windowTransitioning || composerState.closing) return;
+    setWindowTransitioning(true);
+    if (minimized) {
+      setMinimized(false);
+      windowTimer.current = window.setTimeout(() => {
+        if (restoreComposer.current) notebookRef.current?.restore();
+        restoreComposer.current = false;
+        setWindowTransitioning(false);
+      }, 130);
+    } else {
+      restoreComposer.current = composerState.open;
+      const minimize = () => {
+        setMinimized(true);
+        windowTimer.current = window.setTimeout(() => setWindowTransitioning(false), 130);
+      };
+      if (composerState.open) notebookRef.current?.collapse(minimize);
+      else minimize();
+    }
+  };
   if (!asset?.identityId) return null;
   const title = [asset.assetNo, asset.serialNo].filter(Boolean).join("-");
   const startDrag = (event) => {
@@ -62,7 +88,7 @@ export function CollaborationDrawer({ asset, focusCollaborationId, onClose, onCh
     >
       <aside
         aria-label="協作追蹤"
-        className={`collaboration-drawer is-dock-${dock} ${drag ? "is-dragging" : ""} ${isReleasing ? "is-releasing" : ""} ${minimized ? "is-minimized" : ""}`}
+        className={`collaboration-drawer is-dock-${dock} ${drag ? "is-dragging" : ""} ${isReleasing ? "is-releasing" : ""} ${minimized ? "is-minimized" : ""} ${composerState.open ? "is-composing" : ""} ${composerState.closing ? "is-composer-closing" : ""}`}
         onAnimationEnd={(event) => {
           if (isClosing && event.target === event.currentTarget) onClose();
         }}
@@ -74,15 +100,17 @@ export function CollaborationDrawer({ asset, focusCollaborationId, onClose, onCh
           <div className="collaboration-drawer-title"><div><p className="eyebrow">協作追蹤</p><h2>{asset.name || "財物協作追蹤"}</h2><p>{title || "此財物"}</p></div></div>
           <div className="collaboration-drawer-controls">
             <button aria-label={dock === "right" ? "移至左側" : "移至右側"} onClick={() => moveDock(dock === "right" ? "left" : "right")} title={dock === "right" ? "移至左側" : "移至右側"} type="button"><WindowIcon name={dock === "right" ? "dockLeft" : "dockRight"} /></button>
-            <button aria-expanded={!minimized} aria-label={minimized ? "展開協作追蹤" : "縮小協作追蹤"} onClick={() => setMinimized((current) => !current)} title={minimized ? "展開" : "縮小"} type="button"><WindowIcon name={minimized ? "expand" : "minimize"} /></button>
+            <button aria-expanded={!minimized} aria-label={minimized ? "展開協作追蹤" : "縮小協作追蹤"} disabled={windowTransitioning || composerState.closing} onClick={toggleMinimized} title={minimized ? "展開" : "縮小"} type="button"><WindowIcon name={minimized ? "expand" : "minimize"} /></button>
             <button aria-label="關閉協作追蹤" onClick={() => { if (!isClosing) setIsClosing(true); }} title="關閉" type="button"><WindowIcon name="close" /></button>
           </div>
         </header>
         <CollaborationNotebook
+          ref={notebookRef}
           autoLoad
           focusCollaborationId={focusCollaborationId}
           identityId={asset.identityId}
           onChanged={onChanged}
+          onComposerChange={setComposerState}
         />
       </aside>
     </div>
