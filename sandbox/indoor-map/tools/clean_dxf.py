@@ -23,6 +23,7 @@ from pathlib import Path
 import ezdxf
 
 from geom_classify import classify
+from rooms import build as build_rooms
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -210,8 +211,9 @@ def clean_plan(doc_items, cfg, plan, layer_of):
     return out, labels, report
 
 
-def write_plan(cfg, plan, out, labels, report, src):
+def write_plan(cfg, plan, out, labels, report, src, rooms=(), bridges=None):
     allpts = [pt for polys in out.values() for pts, _ in polys for pt in pts]
+    allpts += [pt for r in rooms for ring in r["polygon"] for pt in ring]
     minx, maxx = min(x for x, _ in allpts), max(x for x, _ in allpts)
     miny, maxy = min(y for _, y in allpts), max(y for _, y in allpts)
     pad = cfg.get("padding", 200)
@@ -224,8 +226,16 @@ def write_plan(cfg, plan, out, labels, report, src):
         return " ".join(parts)
 
     order = list(cfg["layers"].keys())
-    groups = [f'<g id="{s}" class="layer layer-{s}"><path d="{path_d(out[s])}"/></g>'
-              for s in order if s in out]
+    groups = []
+    if rooms:
+        rp = []
+        for r in rooms:
+            d = " ".join("M" + " L".join(f"{x:.1f} {-y:.1f}" for x, y in ring) + " Z" for ring in r["polygon"])
+            rp.append(f'<path class="room" data-id="{r["id"]}" data-name="{escape(r["name"])}" '
+                      f'data-number="{r["number"] or ""}" data-area="{r["area"]}" d="{d}"/>')
+        groups.append(f'<g id="room" class="layer layer-room">{"".join(rp)}</g>')
+    groups += [f'<g id="{s}" class="layer layer-{s}"><path d="{path_d(out[s])}"/></g>'
+               for s in order if s in out]
     if labels:
         texts = []
         for lb in labels:
@@ -236,15 +246,19 @@ def write_plan(cfg, plan, out, labels, report, src):
     svg = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vb[0]:.1f} {vb[1]:.1f} '
            f'{vb[2]:.1f} {vb[3]:.1f}" data-id="{plan["id"]}">' + "".join(groups) + "</svg>")
 
-    layers_meta = [{"id": s, "label": cfg["layers"][s].get("label", s),
-                    "visible": cfg["layers"][s].get("visible", True),
-                    "count": report["kept"][s]} for s in order if s in out]
+    layers_meta = []
+    if rooms:
+        layers_meta.append({"id": "room", "label": "房間範圍", "visible": True, "count": len(rooms)})
+    layers_meta += [{"id": s, "label": cfg["layers"][s].get("label", s),
+                     "visible": cfg["layers"][s].get("visible", True),
+                     "count": report["kept"][s]} for s in order if s in out]
     if labels:
         layers_meta.append({"id": "label", "label": cfg.get("labels", {}).get("label", "文字標籤"),
                             "visible": True, "count": len(labels)})
     meta = {
         "id": plan["id"], "name": plan["name"], "unit": cfg.get("unit", "cm"),
         "source": cfg["source"], "viewBox": vb, "layers": layers_meta, "labels": labels,
+        "rooms": list(rooms), "bridges": bridges or {"door": [], "gap": []},
         "report": {**{k: v for k, v in report.items() if k not in ("unmapped", "kept")},
                    "unmappedInCrop": dict(report["unmapped"]), "kept": dict(report["kept"]),
                    "labels": len(labels), "svgBytes": len(svg.encode("utf-8")),
@@ -274,11 +288,17 @@ def clean(cfg_path):
 
     for plan in cfg["plans"]:
         out, labels, report = clean_plan(items, cfg, plan, layer_of)
-        meta = write_plan(cfg, plan, out, labels, report, src)
+        rooms, bridges = [], None
+        if "rooms" in cfg:
+            # room mode: keep only room polygons + simplified walls + labels
+            rooms, walls, bridges = build_rooms(items, cfg, plan, labels, in_window, centroid)
+            out = {"wall": [(w, False) for w in walls]}
+            report["kept"] = Counter({"wall": len(walls)})
+        meta = write_plan(cfg, plan, out, labels, report, src, rooms, bridges)
         r = meta["report"]
         print(f"[{plan['id']}] {plan['name']}: kept={sum(r['kept'].values())} labels={r['labels']} "
               f"outside={r['outsideCrop']} dup={r['duplicate']} type={r['droppedByType']} "
-              f"noise={r['droppedAsNoise']} proj={r['projectionLines']} "
+              f"noise={r['droppedAsNoise']} proj={r['projectionLines']} rooms={len(rooms)} "
               f"svg={r['svgBytes'] // 1024}KB (src {r['sourceBytes'] // 1024}KB)")
         print("   kept:", r["kept"], "| unmapped in crop:", r["unmappedInCrop"])
 

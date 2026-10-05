@@ -12,17 +12,60 @@
   <label>樓層圖
     <select id="plan"></select>
   </label>
+
   <section>
-    <h2>圖層</h2>
+    <h2>編輯工具</h2>
+    <div class="tools">
+      <button data-tool="select" title="V">選取</button>
+      <button data-tool="cut" title="C">點擊切房間</button>
+      <button data-tool="draw" title="P">畫多邊形</button>
+      <button data-tool="closer" title="L">封口線</button>
+    </div>
+    <p id="tool-tip" class="hint"></p>
+    <div class="row">
+      <button id="btn-undo" disabled>復原 (Ctrl+Z)</button>
+      <label class="chk"><input type="checkbox" id="chk-bridges" checked> 套用自動封口</label>
+    </div>
+  </section>
+
+  <section id="room-edit" hidden>
+    <h2>選取的房間</h2>
+    <label>名稱 <input id="f-name" type="text" placeholder="例如：宿舍"></label>
+    <label>房號 <input id="f-number" type="text" placeholder="例如：1002"></label>
+    <div class="row"><span>面積 <b id="f-area"></b></span><button id="btn-delete" class="danger">刪除</button></div>
+  </section>
+
+  <section>
+    <h2>房間 <span class="badge" id="room-count">0</span></h2>
+    <ul id="room-list" class="list"></ul>
+  </section>
+
+  <section>
+    <h2>找不到房間的房名 <span class="badge warn" id="orphan-count">0</span></h2>
+    <ul id="orphan-list" class="list small"></ul>
+  </section>
+
+  <section>
+    <h2>儲存</h2>
+    <div class="row">
+      <button id="btn-export">匯出 JSON</button>
+      <label class="btn">匯入<input id="file-import" type="file" accept="application/json" hidden></label>
+      <button id="btn-reset">重設</button>
+    </div>
+    <p class="hint">編修會自動存在這個瀏覽器（localStorage）。</p>
+  </section>
+
+  <details>
+    <summary>圖層</summary>
     <div id="layers"></div>
-  </section>
-  <section>
-    <h2>清理報告</h2>
+  </details>
+  <details>
+    <summary>清理報告</summary>
     <dl id="report"></dl>
-  </section>
-  <p class="hint">滾輪縮放・拖曳平移・雙擊重設</p>
+  </details>
+  <p class="hint">滾輪縮放・拖曳平移・雙擊重設視角</p>
 </aside>
-<main id="stage"><div id="status">載入中…</div></main>
+<main id="stage"><div id="status">載入中…</div><div id="toast"></div></main>
 <script type="module" src="viewer.js"></script>
 </body>
 </html>
