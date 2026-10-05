@@ -43,6 +43,13 @@ export function collaborationKindIsTask(kind) {
 
 export function collaborationStatusLabel(status) {
   if (status === "resolved") return "已完成";
+  if (status === "cancelled") return "已撤回";
   if (status === "in_progress") return "處理中";
   return "待處理";
 }
+
+export const collaborationProgressSteps = [
+  ["open", "待處理"],
+  ["in_progress", "處理中"],
+  ["resolved", "已完成"],
+];

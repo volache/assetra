@@ -28,17 +28,17 @@ const message = (error: unknown) =>
       ? String(error.message)
       : "無法處理協作紀錄。";
 
+// Any active user may read and contribute notes or requests on any asset: the
+// information this tool gathers is scattered across handlers, not only the
+// current custodian.  Handling a request stays an administrator action.
 async function authorizeIdentity(
   admin: ReturnType<typeof createClient>,
   userId: string,
   identityId: string,
-  readOnly = false,
 ) {
   const [
     { data: profile },
     { data: roles },
-    { data: custodians },
-    { data: units },
     { data: asset, error: assetError },
   ] = await Promise.all([
     admin
@@ -48,13 +48,8 @@ async function authorizeIdentity(
       .maybeSingle(),
     admin.from("user_roles").select("role").eq("user_id", userId),
     admin
-      .from("user_custodians")
-      .select("custodian_code")
-      .eq("user_id", userId),
-    admin.from("user_units").select("unit_code").eq("user_id", userId),
-    admin
       .from("asset_records")
-      .select("identity_id, custodian_code, unit_code")
+      .select("identity_id")
       .eq("identity_id", identityId)
       .eq("is_current", true)
       .maybeSingle(),
@@ -64,16 +59,6 @@ async function authorizeIdentity(
     throw new Error("帳號尚未啟用。");
   if (!asset) throw new Error("找不到目前可協作的財物資料。");
   const roleSet = new Set((roles ?? []).map((row) => row.role));
-  const allowed =
-    readOnly ||
-    roleSet.has("admin") ||
-    (roleSet.has("custodian") &&
-      (custodians ?? []).some(
-        (row) => row.custodian_code === asset.custodian_code,
-      )) ||
-    (roleSet.has("chief") &&
-      (units ?? []).some((row) => row.unit_code === asset.unit_code));
-  if (!allowed) throw new Error("你沒有處理此財物協作紀錄的權限。");
   return { profile, isAdmin: roleSet.has("admin") };
 }
 
@@ -103,6 +88,7 @@ async function viewerContext(
     throw new Error("帳號尚未啟用。");
   const roleSet = new Set((roles ?? []).map((row) => row.role));
   return {
+    userId,
     profile,
     isAdmin: roleSet.has("admin"),
     custodianCodes: new Set((custodians ?? []).map((row) => row.custodian_code)),
@@ -123,18 +109,26 @@ function canAccessAsset(
   );
 }
 
-async function accessibleAssets(
+// Resolve only the assets a result set refers to; an unbounded read of the
+// whole inventory would silently stop at the API's row limit.
+async function assetsForIdentities(
   admin: ReturnType<typeof createClient>,
-  viewer: Awaited<ReturnType<typeof viewerContext>>,
+  identityIds: string[],
 ) {
-  const { data, error } = await admin
-    .from("asset_records")
-    .select(
-      "identity_id, asset_no, serial_no, name, source_type, custodian_code, unit_code, unit_name",
-    )
-    .eq("is_current", true);
-  if (error) throw error;
-  return (data ?? []).filter((asset) => canAccessAsset(viewer, asset));
+  const byIdentity = new Map<string, Record<string, string | null>>();
+  const unique = [...new Set(identityIds)];
+  for (let start = 0; start < unique.length; start += 200) {
+    const { data, error } = await admin
+      .from("asset_records")
+      .select(
+        "identity_id, asset_no, serial_no, name, source_type, custodian_code, custodian_name, unit_code, unit_name, location_name",
+      )
+      .eq("is_current", true)
+      .in("identity_id", unique.slice(start, start + 200));
+    if (error) throw error;
+    for (const asset of data ?? []) byIdentity.set(asset.identity_id, asset);
+  }
+  return byIdentity;
 }
 
 async function summariesForIdentities(
@@ -193,40 +187,98 @@ async function summariesForIdentities(
   return [...grouped.values()];
 }
 
-async function taskListForViewer(
+async function noteListForViewer(
   admin: ReturnType<typeof createClient>,
-  viewer: Awaited<ReturnType<typeof viewerContext>>,
-  status: string,
 ) {
-  const assets = await accessibleAssets(admin, viewer);
-  if (!assets.length) return [];
-  const { data: collaborations, error } = await admin
+  const { data: notes, error } = await admin
     .from("asset_collaborations")
-    .select("id, asset_identity_id, kind, status, body, created_by, created_at, updated_at")
-    .neq("kind", "note")
-    .in(
-      "status",
-      status === "all" ? ["open", "in_progress", "resolved"] : [status],
-    )
-    .order("updated_at", { ascending: false })
-    .limit(500);
+    .select("id, asset_identity_id, body, details, created_by, created_at, updated_at")
+    .eq("kind", "note")
+    .order("created_at", { ascending: false })
+    .limit(1000);
   if (error) throw error;
-  const assetByIdentity = new Map(
-    assets.map((asset) => [asset.identity_id, asset]),
+  const assetByIdentity = await assetsForIdentities(
+    admin,
+    (notes ?? []).map((row) => row.asset_identity_id),
   );
   const creatorIds = [
-    ...new Set((collaborations ?? []).map((row) => row.created_by).filter(Boolean)),
+    ...new Set((notes ?? []).map((row) => row.created_by).filter(Boolean)),
   ];
   const { data: profiles, error: profileError } = creatorIds.length
     ? await admin.from("profiles").select("id, display_name").in("id", creatorIds)
     : { data: [], error: null };
   if (profileError) throw profileError;
   const names = new Map((profiles ?? []).map((row) => [row.id, row.display_name]));
-  return (collaborations ?? []).flatMap((row) => {
+  return (notes ?? []).flatMap((row) => {
     const asset = assetByIdentity.get(row.asset_identity_id);
     if (!asset) return [];
     return [{
-      ...row,
+      id: row.id,
+      body: row.body,
+      category: row.details?.noteCategory ?? "general",
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      created_by_name: names.get(row.created_by) ?? "系統",
+      asset: {
+        identityId: row.asset_identity_id,
+        assetNo: asset.asset_no,
+        serialNo: asset.serial_no,
+        name: asset.name,
+        sourceType: asset.source_type,
+        custodianName: asset.custodian_name,
+        unitName: asset.unit_name,
+        locationName: asset.location_name,
+      },
+    }];
+  });
+}
+
+async function taskListForViewer(
+  admin: ReturnType<typeof createClient>,
+  viewer: Awaited<ReturnType<typeof viewerContext>>,
+  status: string,
+) {
+  const { data: collaborations, error } = await admin
+    .from("asset_collaborations")
+    .select("id, asset_identity_id, kind, status, body, details, created_by, created_at, updated_at")
+    .neq("kind", "note")
+    .in(
+      "status",
+      status === "all"
+        ? ["open", "in_progress", "resolved", "cancelled"]
+        : [status],
+    )
+    .order("updated_at", { ascending: false })
+    .limit(1000);
+  if (error) throw error;
+  const assetByIdentity = await assetsForIdentities(
+    admin,
+    (collaborations ?? []).map((row) => row.asset_identity_id),
+  );
+  const visibleRows = (collaborations ?? []).filter((row) => {
+    const asset = assetByIdentity.get(row.asset_identity_id);
+    return (
+      asset &&
+      (viewer.isAdmin ||
+        row.created_by === viewer.userId ||
+        canAccessAsset(viewer, asset))
+    );
+  });
+  const creatorIds = [
+    ...new Set(visibleRows.map((row) => row.created_by).filter(Boolean)),
+  ];
+  const { data: profiles, error: profileError } = creatorIds.length
+    ? await admin.from("profiles").select("id, display_name").in("id", creatorIds)
+    : { data: [], error: null };
+  if (profileError) throw profileError;
+  const names = new Map((profiles ?? []).map((row) => [row.id, row.display_name]));
+  return visibleRows.map((row) => {
+    const asset = assetByIdentity.get(row.asset_identity_id)!;
+    const { details, ...task } = row;
+    return {
+      ...task,
+      mine: row.created_by === viewer.userId,
+      resolution: details?.resolution ?? null,
       created_by_name: names.get(row.created_by) ?? "系統",
       asset: {
         identityId: row.asset_identity_id,
@@ -235,10 +287,11 @@ async function taskListForViewer(
         name: asset.name,
         sourceType: asset.source_type,
         custodianCode: asset.custodian_code,
+        custodianName: asset.custodian_name,
         unitCode: asset.unit_code,
         unitName: asset.unit_name,
       },
-    }];
+    };
   });
 }
 
@@ -322,8 +375,16 @@ Deno.serve(async (req) => {
     const action = text(body.action || "list");
     const admin = createClient(supabaseUrl, serviceRoleKey);
 
-    // "summaries" is readable by any active user; "list_tasks" stays limited
-    // to the caller's custodian/unit scope so ordinary users get no global task list.
+    // Summaries and notes are readable by any active user.  The request list is
+    // limited to the caller's own requests and the assets in their custodian or
+    // unit scope; administrators see every request.
+    if (action === "list_notes") {
+      await viewerContext(admin, user.id);
+      return new Response(
+        JSON.stringify({ notes: await noteListForViewer(admin) }),
+        { headers: corsHeaders(req) },
+      );
+    }
     if (action === "summaries") {
       const requestedIds = Array.isArray(body.identityIds)
         ? body.identityIds.map(text).filter(Boolean).slice(0, 100)
@@ -336,7 +397,7 @@ Deno.serve(async (req) => {
       );
     }
     if (action === "list_tasks") {
-      const status = ["all", "open", "in_progress", "resolved"].includes(text(body.status))
+      const status = ["all", "open", "in_progress", "resolved", "cancelled"].includes(text(body.status))
         ? text(body.status)
         : "all";
       const viewer = await viewerContext(admin, user.id);
@@ -354,7 +415,6 @@ Deno.serve(async (req) => {
       admin,
       user.id,
       identityId,
-      action === "list",
     );
 
     if (action === "create") {
@@ -430,43 +490,60 @@ Deno.serve(async (req) => {
         .update({ updated_by: user.id, updated_at: new Date().toISOString() })
         .eq("id", collaborationId);
       if (updateError) throw updateError;
-    } else if (action === "resolve") {
+    } else if (["start", "resolve", "cancel"].includes(action)) {
+      // A request is an application to the administrator; the real change is made
+      // in the legacy system, and this record keeps the status and the outcome.
       const collaborationId = text(body.collaborationId);
       if (!collaborationId) throw new Error("缺少協作紀錄。");
       const { data: collaboration, error } = await admin
         .from("asset_collaborations")
-        .select("id, created_by, kind, status")
+        .select("id, created_by, kind, status, details")
         .eq("id", collaborationId)
         .eq("asset_identity_id", identityId)
         .maybeSingle();
       if (error) throw error;
       if (!collaboration) throw new Error("找不到此協作紀錄。");
       if (collaboration.kind === "note")
-        throw new Error("一般筆記不需要完成處理。");
-      if (!isAdmin && collaboration.created_by !== user.id)
-        throw new Error("只有建立者或系統管理員可以結案。");
-      if (collaboration.status !== "resolved") {
-        const now = new Date().toISOString();
-        const { error: updateError } = await admin
-          .from("asset_collaborations")
-          .update({
-            status: "resolved",
-            updated_by: user.id,
-            updated_at: now,
-            resolved_by: user.id,
-            resolved_at: now,
-          })
-          .eq("id", collaborationId);
-        if (updateError) throw updateError;
-        const { error: eventError } = await admin
-          .from("asset_collaboration_events")
-          .insert({
-            collaboration_id: collaborationId,
-            event_type: "resolved",
-            actor_id: user.id,
-          });
-        if (eventError) throw eventError;
+        throw new Error("一般筆記不需要處理進度。");
+      if (collaboration.status === "resolved" || collaboration.status === "cancelled")
+        throw new Error("此處理事項已結案。");
+      if (action === "cancel") {
+        if (!isAdmin && collaboration.created_by !== user.id)
+          throw new Error("只有提出者或系統管理員可以撤回處理事項。");
+      } else if (!isAdmin) {
+        throw new Error("只有系統管理員可以處理申請。");
       }
+      const resultNote = text(body.body);
+      if (action === "resolve" && !resultNote)
+        throw new Error("請填寫處理結果，讓提出者知道如何處理。");
+      if (resultNote.length > 2000)
+        throw new Error("處理結果不可超過 2,000 字。");
+      if (action === "start" && collaboration.status === "in_progress")
+        throw new Error("此處理事項已在處理中。");
+      const now = new Date().toISOString();
+      const patch: Record<string, unknown> = { updated_by: user.id, updated_at: now };
+      if (action === "start") patch.status = "in_progress";
+      if (action === "resolve") {
+        patch.status = "resolved";
+        patch.resolved_by = user.id;
+        patch.resolved_at = now;
+        patch.details = { ...(collaboration.details ?? {}), resolution: resultNote };
+      }
+      if (action === "cancel") patch.status = "cancelled";
+      const { error: updateError } = await admin
+        .from("asset_collaborations")
+        .update(patch)
+        .eq("id", collaborationId);
+      if (updateError) throw updateError;
+      const { error: eventError } = await admin
+        .from("asset_collaboration_events")
+        .insert({
+          collaboration_id: collaborationId,
+          event_type: { start: "started", resolve: "resolved", cancel: "cancelled" }[action],
+          payload: resultNote ? { body: resultNote } : {},
+          actor_id: user.id,
+        });
+      if (eventError) throw eventError;
     } else if (action !== "list") {
       throw new Error("不支援的協作操作。");
     }
