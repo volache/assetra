@@ -23,7 +23,7 @@ from pathlib import Path
 import ezdxf
 
 from geom_classify import classify
-from rooms import build as build_rooms
+from rooms import build as build_rooms, build_classified
 from solid import solidify
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -206,9 +206,12 @@ def clean_plan(doc_items, cfg, plan, layer_of):
             else:
                 emit(sem, p, pts, closed)
 
+    classes = {}
     if pending:
-        for i, sem in classify(pending).items():
+        classes = classify(pending)
+        for i, sem in classes.items():
             emit(sem, *pending[i])
+    report["_geo"] = (pending, classes)
     return out, labels, report
 
 
@@ -300,7 +303,11 @@ def clean(cfg_path):
     for plan in cfg["plans"]:
         out, labels, report = clean_plan(items, cfg, plan, layer_of)
         rooms, bridges = [], None
-        if "rooms" in cfg:
+        pending, classes = report.pop("_geo")
+        if cfg.get("rooms", {}).get("mode") == "classified":
+            # keep the cleaned drawing; add auto-detected room polygons for the schematic step
+            rooms, _walls, bridges = build_classified(pending, classes, cfg, plan, labels)
+        elif "rooms" in cfg:
             # room mode: keep only room polygons + simplified walls + labels
             rooms, walls, bridges = build_rooms(items, cfg, plan, labels, in_window, centroid)
             out = {"wall": [(w, False) for w in walls]}

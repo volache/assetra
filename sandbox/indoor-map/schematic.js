@@ -84,6 +84,7 @@ function renderPanel() {
     <h2>${esc(room.name)}</h2>
     <div class="sub">${esc(room.code.replace("*", "").replace(/^_.*/, "—"))} · ${KIND[room.kind] ?? "空間"} · 約 ${room.areaM2} m²</div>
     ${room.provisional ? `<div class="warn">位置待確認：地圖上的位置是暫定的</div>` : ""}
+    ${room.note ? `<div class="sub">${esc(room.note)}</div>` : ""}
     <div class="stats"><div class="stat"><b>${room.count}</b><span>財物（件）</span></div>
       <div class="stat"><b>${room.items.length}</b><span>品項</span></div></div>
     ${units.length ? `<h3>使用單位</h3><div class="chips">${units.map(([u, n]) =>

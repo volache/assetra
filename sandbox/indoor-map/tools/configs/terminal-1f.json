@@ -79,5 +79,11 @@
         "column"
       ]
     }
+  },
+  "rooms": {
+    "mode": "classified",
+    "closeGap": 3,
+    "minWidth": 100,
+    "minArea": 30000
   }
 }

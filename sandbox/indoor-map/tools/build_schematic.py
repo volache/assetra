@@ -52,16 +52,35 @@ def escape(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def unplaced_floor(src, locs, cols=6, w=900, h=520, gap=70):
+    """Tile grid for locations that could not be positioned on a plan."""
+    codes = sorted(src["unplaced"], key=lambda c: (locs.get(c, {}).get("floor", ""), c))
+    spaces = []
+    for n, code in enumerate(codes):
+        loc = locs.get(code, {})
+        col, row = n % cols, n // cols
+        x0, y0 = col * (w + gap), -(row + 1) * (h + gap)
+        name = loc.get("name", code)
+        kind = "toilet" if loc.get("kind") == "toilet" else "room"
+        spaces.append({"code": code, "kind": kind, "short": name, "rects": [[x0, y0, x0 + w, y0 + h]],
+                       "labelSize": max(40, min(70, 600 // max(len(name), 1) + 8)),
+                       "note": f"{loc.get('floor', '?')} · 尚未標示位置"})
+    return {"id": f"{src['floors'][0]['id'].split('-')[0]}-unplaced", "name": "未定位", "spaces": spaces}
+
+
 def build(src_path):
     src = json.loads(Path(src_path).read_text(encoding="utf-8"))
     locs = {x["code"]: x for x in json.loads((BASE / "data" / "locations.json").read_text(encoding="utf-8"))}
     OUT.mkdir(parents=True, exist_ok=True)
+    if src.get("unplaced"):
+        src["floors"].append(unplaced_floor(src, locs))
     index = []
     for fl in src["floors"]:
         for n, s in enumerate(fl["spaces"]):
             s.setdefault("id", s.get("code") or f"_{fl['id']}-{n}")
         geoms = {s["id"]: shapes(s) for s in fl["spaces"]}
-        footprint = unary_union(list(geoms.values())).buffer(WALL / 2, join_style=2)
+        base = unary_union([Polygon(r) for r in fl["footprint"]]) if fl.get("footprint") else None
+        footprint = unary_union(list(geoms.values()) + ([base] if base is not None else [])).buffer(WALL / 2, join_style=2)
         minx, miny, maxx, maxy = footprint.bounds
         pad = 150
         vb = [minx - pad, -(maxy + pad), maxx - minx + 2 * pad, maxy - miny + 2 * pad]
@@ -74,7 +93,7 @@ def build(src_path):
             minside = min(big.bounds[2] - big.bounds[0], big.bounds[3] - big.bounds[1])
             size = s.get("labelSize") or max(45.0, min(105.0, minside / 4.2))
             count = loc.get("count", 0)
-            short = s.get("short") or re.sub(r"^(消防班[123]F|消防班)", "", name) or name
+            short = s.get("short") or re.sub(r"^(消防班[123]F|消防班|[123]F)", "", name) or name
             body.append(
                 f'<g class="space kind-{s["kind"]}{" prov" if s.get("provisional") else ""}" data-code="{s["id"]}">'
                 f'<path d="{path_d(g)}"/>'
@@ -82,7 +101,7 @@ def build(src_path):
                 + (f'<text x="{pt.x:.0f}" y="{-pt.y + size * 1.25:.0f}" font-size="{size * .72:.0f}" class="ct">{count} 件</text>'
                    if count else "")
                 + "</g>")
-            rooms.append({"code": s["id"], "name": name, "provisional": bool(s.get("provisional")), "short": short, "kind": s["kind"],
+            rooms.append({"note": s.get("note", ""), "code": s["id"], "name": name, "provisional": bool(s.get("provisional")), "short": short, "kind": s["kind"],
                           "count": count, "units": loc.get("units", {}), "items": loc.get("items", []),
                           "areaM2": round(g.area / 10000, 1)})
         guides = "".join(
@@ -94,7 +113,9 @@ def build(src_path):
         if guides:
             body.append(f'<g class="guides">{guides}</g>')
         svg = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vb[0]:.0f} {vb[1]:.0f} {vb[2]:.0f} {vb[3]:.0f}">'
-               f'<path class="wall" d="{path_d(footprint)}"/>' + "".join(body) + "</svg>")
+               f'<path class="wall" d="{path_d(footprint)}"/>'
+               + (f'<path class="floor" d="{path_d(base.buffer(-WALL / 2, join_style=2))}"/>' if base is not None else "")
+               + "".join(body) + "</svg>")
         (OUT / f"{fl['id']}.svg").write_text(svg, encoding="utf-8")
         meta = {"id": fl["id"], "building": src["building"], "floor": fl["name"], "unit": src["unit"],
                 "viewBox": vb, "rooms": rooms}

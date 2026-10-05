@@ -133,6 +133,10 @@ def build(items, cfg, plan, labels, in_window, centroid):
     barrier = [b for b in barrier
                if len(b) != 2 or tuple((round(q[0]), round(q[1])) for q in b) not in leaf_pts]
 
+    return _rooms_from(barrier, bridges, labels, rc, gap)
+
+
+def _rooms_from(barrier, bridges, labels, rc, gap):
     lines = [LineString(b) for b in barrier if len(b) >= 2] + [LineString(b) for b in bridges]
     extra = _gap_bridges(lines, rc.get("snapGap", 30.0), rc.get("doorGap", 130.0))
     lines += [LineString(b) for b in extra]
@@ -167,3 +171,23 @@ def build(items, cfg, plan, labels, in_window, centroid):
             "polygon": [list(poly.exterior.coords)] + [list(i.coords) for i in poly.interiors],
         })
     return out, barrier, {"door": bridges, "gap": extra}
+
+
+def build_classified(pending, classes, cfg, plan, labels):
+    """Rooms for drawings whose geometry was classified by shape (geom_classify):
+    walls + columns bound rooms, door arcs are closed with their threshold line."""
+    rc = cfg["rooms"]
+    gap = rc.get("closeGap", 3.0)
+    barrier, arcs, leaves = [], [], []
+    for i, (p, pts, closed) in enumerate(pending):
+        cls = classes.get(i)
+        t = p.dxftype()
+        if cls in ("wall", "column"):
+            barrier.append(pts + ([pts[0]] if closed else []))
+        elif cls == "door":
+            if t == "ARC":
+                arcs.append(p)
+            elif t == "LINE":
+                leaves.append((len(leaves), p))
+    bridges, used = _door_bridges(arcs, leaves)
+    return _rooms_from(barrier, bridges, labels, rc, gap)
