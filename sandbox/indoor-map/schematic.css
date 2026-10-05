@@ -78,6 +78,9 @@ svg .prov path { stroke: var(--accent); stroke-width: 12; stroke-dasharray: 70 4
   background: #f59e0b26; color: #b45309; }
 @media (prefers-color-scheme: dark) { .warn { color: #fbbf24; } }
 svg .space { cursor: pointer; }
+svg .guides { pointer-events: none; }
+svg .guides rect { fill: none; stroke: var(--wall); stroke-width: 9; opacity: .55; }
+svg .guides text { fill: var(--muted); font-weight: 400; stroke: none; }
 svg .space:hover path { fill: color-mix(in srgb, var(--accent) 22%, var(--panel)); }
 svg .space.sel path { fill: color-mix(in srgb, var(--accent) 38%, var(--panel)); }
 svg .space.dim path { opacity: .35; }

@@ -72,7 +72,7 @@ def build(src_path):
             name = loc.get("name") or s.get("name") or s["id"]
             pt, big = label_point(g)
             minside = min(big.bounds[2] - big.bounds[0], big.bounds[3] - big.bounds[1])
-            size = max(45.0, min(105.0, minside / 4.2))
+            size = s.get("labelSize") or max(45.0, min(105.0, minside / 4.2))
             count = loc.get("count", 0)
             short = s.get("short") or re.sub(r"^(消防班[123]F|消防班)", "", name) or name
             body.append(
@@ -85,6 +85,14 @@ def build(src_path):
             rooms.append({"code": s["id"], "name": name, "provisional": bool(s.get("provisional")), "short": short, "kind": s["kind"],
                           "count": count, "units": loc.get("units", {}), "items": loc.get("items", []),
                           "areaM2": round(g.area / 10000, 1)})
+        guides = "".join(
+            f'<rect x="{g["rect"][0]}" y="{-g["rect"][3]}" width="{g["rect"][2] - g["rect"][0]}" '
+            f'height="{g["rect"][3] - g["rect"][1]}"/>'
+            + (f'<text x="{(g["rect"][0] + g["rect"][2]) / 2:.0f}" y="{-(g["rect"][1] + g["rect"][3]) / 2:.0f}" '
+               f'font-size="{g.get("size", 70)}">{escape(g["label"])}</text>' if g.get("label") else "")
+            for g in fl.get("guides", []))
+        if guides:
+            body.append(f'<g class="guides">{guides}</g>')
         svg = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vb[0]:.0f} {vb[1]:.0f} {vb[2]:.0f} {vb[3]:.0f}">'
                f'<path class="wall" d="{path_d(footprint)}"/>' + "".join(body) + "</svg>")
         (OUT / f"{fl['id']}.svg").write_text(svg, encoding="utf-8")
