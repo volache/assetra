@@ -579,12 +579,17 @@ export function GeographicAssets() {
   const [landPropertiesError, setLandPropertiesError] = useState("");
   const lands = useMemo(
     () =>
-      landProperties.features.map((feature, index) => {
+      landProperties.features.map((feature) => {
         const basic = feature.properties?.basic_info || {};
-        const property = feature.properties?.property_info || {};
-        const propertyNumber =
-          property.property_number ||
-          `${basic.section_code}-${basic.land_number}-${index}`;
+        const linkedAssets = feature.properties?.linked_assets || [];
+        // Read the old view shape only until the relationship migration is
+        // deployed; the new view supplies all inventory fields via the link.
+        const legacyAsset = feature.properties?.property_info || {};
+        const primaryAsset =
+          linkedAssets.find((asset) => asset.relationship_type === "associated") ||
+          linkedAssets[0] ||
+          legacyAsset;
+        const propertyNumber = primaryAsset.property_number || "—";
         const number = landAssetNumberParts(propertyNumber);
         return {
           announcedLandPrice: Number(basic.announced_land_price) || 0,
@@ -597,8 +602,8 @@ export function GeographicAssets() {
             : number.primary,
           landNumber: basic.land_number || "—",
           landUseType: basic.land_use_type || "—",
-          name: property.property_name || "未命名土地",
-          price: Number(property.property_value) || 0,
+          name: primaryAsset.property_name || "未關聯財產",
+          price: Number(primaryAsset.property_value) || 0,
           relatedBuildingNumbers:
             feature.properties?.related_building_numbers?.join("、") || "—",
           section: basic.section_name || "未分類段",
@@ -643,6 +648,10 @@ export function GeographicAssets() {
   const mapContainerRef = useRef(null);
   const mapPanelRef = useRef(null);
   const mapRef = useRef(null);
+  // Changing the basemap or 3D configuration recreates the Mapbox map. Keep
+  // the camera outside that lifecycle so those controls do not reset the view.
+  const mapViewRef = useRef(null);
+  const hasInitialMapFitRef = useRef(false);
   const mapToken = import.meta.env.VITE_MAPBOX_TOKEN;
   useEffect(() => {
     if (!ownershipUploadSummary) return undefined;
@@ -904,7 +913,7 @@ export function GeographicAssets() {
     mapboxgl.accessToken = mapToken;
     let flyInTimer;
     const map = new mapboxgl.Map({
-      center: [120.95, 23.7],
+      ...(mapViewRef.current || { center: [120.95, 23.7], zoom: 6.2 }),
       config: { basemap: { show3dObjects: is3D } },
       container: mapContainerRef.current,
       fitBoundsOptions: { padding: 64 },
@@ -913,7 +922,6 @@ export function GeographicAssets() {
         [123, 26],
       ],
       style: mapStyleUrl,
-      zoom: 6.2,
     });
     mapRef.current = map;
     map.addControl(
@@ -934,15 +942,18 @@ export function GeographicAssets() {
         source: "land-properties",
         type: "line",
       });
-      flyInTimer = window.setTimeout(
-        () =>
-          map.fitBounds(fullBounds, {
-            duration: 2200,
-            essential: true,
-            padding: 64,
-          }),
-        420,
-      );
+      if (!hasInitialMapFitRef.current && fullBounds) {
+        hasInitialMapFitRef.current = true;
+        flyInTimer = window.setTimeout(
+          () =>
+            map.fitBounds(fullBounds, {
+              duration: 2200,
+              essential: true,
+              padding: 64,
+            }),
+          420,
+        );
+      }
       map.on("click", "land-fill", (event) => {
         const id = event.features?.[0]?.properties?.geoId;
         if (id) setSelectedId(id);
@@ -960,6 +971,13 @@ export function GeographicAssets() {
     });
     return () => {
       window.clearTimeout(flyInTimer);
+      const center = map.getCenter();
+      mapViewRef.current = {
+        bearing: map.getBearing(),
+        center: [center.lng, center.lat],
+        pitch: map.getPitch(),
+        zoom: map.getZoom(),
+      };
       map.remove();
       mapRef.current = null;
     };
