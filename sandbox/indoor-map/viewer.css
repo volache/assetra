@@ -99,3 +99,7 @@ summary { cursor: pointer; font-size: 12px; color: var(--muted); letter-spacing:
 #edit-overlay .snap { fill: none; stroke: #16a34a; stroke-width: 2; vector-effect: non-scaling-stroke; }
 #edit-overlay .bridge { stroke: #06b6d4; stroke-width: 1.5; stroke-dasharray: 3 3; opacity: .8; vector-effect: non-scaling-stroke; }
 #edit-overlay .bridge.door { stroke: #22c55e; }
+
+/* solid (filled) wall / beam shapes */
+.layer.layer-solid path { fill: var(--wall); stroke: none; }
+.layer.layer-solid.layer-beam path { fill: var(--beam); }

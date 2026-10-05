@@ -114,5 +114,12 @@
     "closeGap": 3,
     "minWidth": 50,
     "minArea": 15000
+  },
+  "solid": {
+    "groups": {
+      "wall": [
+        "wall"
+      ]
+    }
   }
 }

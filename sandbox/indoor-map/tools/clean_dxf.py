@@ -24,6 +24,7 @@ import ezdxf
 
 from geom_classify import classify
 from rooms import build as build_rooms
+from solid import solidify
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -211,9 +212,11 @@ def clean_plan(doc_items, cfg, plan, layer_of):
     return out, labels, report
 
 
-def write_plan(cfg, plan, out, labels, report, src, rooms=(), bridges=None):
+def write_plan(cfg, plan, out, labels, report, src, rooms=(), bridges=None, solids=None):
     allpts = [pt for polys in out.values() for pts, _ in polys for pt in pts]
     allpts += [pt for r in rooms for ring in r["polygon"] for pt in ring]
+    solids = solids or {}
+    allpts += [pt for polys in solids.values() for poly in polys for ring in poly for pt in ring]
     minx, maxx = min(x for x, _ in allpts), max(x for x, _ in allpts)
     miny, maxy = min(y for _, y in allpts), max(y for _, y in allpts)
     pad = cfg.get("padding", 200)
@@ -234,8 +237,16 @@ def write_plan(cfg, plan, out, labels, report, src, rooms=(), bridges=None):
             rp.append(f'<path class="room" data-id="{r["id"]}" data-name="{escape(r["name"])}" '
                       f'data-number="{r["number"] or ""}" data-area="{r["area"]}" d="{d}"/>')
         groups.append(f'<g id="room" class="layer layer-room">{"".join(rp)}</g>')
-    groups += [f'<g id="{s}" class="layer layer-{s}"><path d="{path_d(out[s])}"/></g>'
-               for s in order if s in out]
+    def solid_d(polys):
+        return " ".join("M" + " L".join(f"{x:.1f} {-y:.1f}" for x, y in ring) + " Z"
+                        for poly in polys for ring in poly)
+
+    for s in order:
+        if s in solids:
+            groups.append(f'<g id="{s}" class="layer layer-{s} layer-solid">'
+                          f'<path fill-rule="evenodd" d="{solid_d(solids[s])}"/></g>')
+        elif s in out:
+            groups.append(f'<g id="{s}" class="layer layer-{s}"><path d="{path_d(out[s])}"/></g>')
     if labels:
         texts = []
         for lb in labels:
@@ -251,7 +262,7 @@ def write_plan(cfg, plan, out, labels, report, src, rooms=(), bridges=None):
         layers_meta.append({"id": "room", "label": "房間範圍", "visible": True, "count": len(rooms)})
     layers_meta += [{"id": s, "label": cfg["layers"][s].get("label", s),
                      "visible": cfg["layers"][s].get("visible", True),
-                     "count": report["kept"][s]} for s in order if s in out]
+                     "count": report["kept"][s]} for s in order if s in out or s in solids]
     if labels:
         layers_meta.append({"id": "label", "label": cfg.get("labels", {}).get("label", "文字標籤"),
                             "visible": True, "count": len(labels)})
@@ -294,7 +305,15 @@ def clean(cfg_path):
             rooms, walls, bridges = build_rooms(items, cfg, plan, labels, in_window, centroid)
             out = {"wall": [(w, False) for w in walls]}
             report["kept"] = Counter({"wall": len(walls)})
-        meta = write_plan(cfg, plan, out, labels, report, src, rooms, bridges)
+        solids = {}
+        for gid, members in cfg.get("solid", {}).get("groups", {}).items():
+            lines = [ln for m in members for ln in out.pop(m, [])]
+            if lines:
+                solids[gid] = solidify(lines, **cfg["solid"].get("params", {}))
+                for m in members:
+                    report["kept"].pop(m, None)
+                report["kept"][gid] = len(solids[gid])
+        meta = write_plan(cfg, plan, out, labels, report, src, rooms, bridges, solids)
         r = meta["report"]
         print(f"[{plan['id']}] {plan['name']}: kept={sum(r['kept'].values())} labels={r['labels']} "
               f"outside={r['outsideCrop']} dup={r['duplicate']} type={r['droppedByType']} "

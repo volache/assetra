@@ -76,5 +76,17 @@
         5300
       ]
     }
-  ]
+  ],
+  "solid": {
+    "groups": {
+      "wall": [
+        "wall",
+        "column",
+        "window"
+      ],
+      "beam": [
+        "beam"
+      ]
+    }
+  }
 }

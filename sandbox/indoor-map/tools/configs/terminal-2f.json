@@ -72,5 +72,13 @@
         24500
       ]
     }
-  ]
+  ],
+  "solid": {
+    "groups": {
+      "wall": [
+        "wall",
+        "column"
+      ]
+    }
+  }
 }

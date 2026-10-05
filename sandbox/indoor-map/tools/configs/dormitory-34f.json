@@ -124,5 +124,14 @@
         10600
       ]
     }
-  ]
+  ],
+  "solid": {
+    "groups": {
+      "wall": [
+        "wall",
+        "column",
+        "window"
+      ]
+    }
+  }
 }
