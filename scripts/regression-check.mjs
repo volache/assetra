@@ -38,7 +38,7 @@ function checkImports() {
   for (const file of sourceFiles) {
     const content = readFileSync(file, "utf8");
     for (const match of content.matchAll(importPattern)) {
-      const specifier = match[1];
+      const specifier = match[1].replace(/\?(?:url|raw)$/, "");
       if (specifier.startsWith(".") && !resolveRelativeImport(file, specifier)) {
         throw new Error(`找不到相對匯入：${file} → ${specifier}`);
       }

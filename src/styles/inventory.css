@@ -67,3 +67,6 @@ mark { background: oklch(88% .11 86 / .55); border-radius: .2rem; color: inherit
 .result-summary .page-size { margin-inline-start: auto; }
 
 
+
+.export-inventory { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-sm); margin-inline-start: auto; }
+.export-inventory select { background: var(--color-paper); border: 1px solid var(--color-rule); border-radius: var(--radius-sm); color: var(--color-ink-2); font-size: var(--text-xs); min-height: 2.25rem; max-width: 16rem; padding: .25rem 1.8rem .25rem .5rem; }

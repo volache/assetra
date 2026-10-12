@@ -3,6 +3,7 @@ import { assetMajorClass, money, serviceLifeExpired, usedDuration } from "../../
 import { CollaborationDrawer } from "../collaboration/CollaborationDrawer";
 import { requestCollaboration } from "../collaboration/api";
 import { AssetPhotoPicker } from "../photos/AssetPhotoPicker";
+import { ExportInventoryControl } from "./ExportInventoryControl";
 import { FilterCombo, HighlightText, SearchRuleMenu } from "./QueryControls";
 import { CapsuleSpinner, useFeedback } from "../../components/FeedbackCenter";
 import { supabase } from "../../supabase";
@@ -481,6 +482,18 @@ export function AssetQuery({
           查詢結果：<strong>{rows.length.toLocaleString()}</strong> 筆
         </p>
         {imports[0] && <p className="latest-data">資料更新：{imports[0].at}</p>}
+        <ExportInventoryControl
+          assets={assets}
+          preferredCode={
+            assets.find(
+              (asset) =>
+                filters.custodianName &&
+                asset.custodianName === filters.custodianName,
+            )?.custodianCode ||
+            user?.custodianCodes?.[0] ||
+            ""
+          }
+        />
         {rows.length > pageSize && (
           <label className="page-size">
             每頁
