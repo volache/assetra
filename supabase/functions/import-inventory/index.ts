@@ -51,6 +51,7 @@ function normalizeRecord(value: Record<string, unknown>) {
     acquired_at: toIsoDate(value.acquiredAt),
     unit_code: asText(value.unitCode),
     unit_name: asText(value.unitName),
+    use_unit_code: asText(value.useUnitCode),
     use_unit_name: asText(value.useUnitName),
     location_code: asText(value.locationCode),
     location_name: asText(value.locationName),
@@ -74,7 +75,7 @@ function normalizeRecord(value: Record<string, unknown>) {
 }
 
 const identityOf = (record: Record<string, unknown>) => `${record.category_type_code}\u0000${record.asset_no}\u0000${record.serial_no}`;
-const compareFields = ['name', 'old_no', 'acquired_at', 'unit_code', 'unit_name', 'use_unit_name', 'location_code', 'location_name', 'custodian_code', 'custodian_name', 'user_code', 'user_name', 'quantity', 'measure_unit', 'original_value', 'depreciation', 'net_value', 'useful_life', 'category_name', 'category_type', 'model', 'brand', 'notes', 'status'];
+const compareFields = ['name', 'old_no', 'acquired_at', 'unit_code', 'unit_name', 'use_unit_code', 'use_unit_name', 'location_code', 'location_name', 'custodian_code', 'custodian_name', 'user_code', 'user_name', 'quantity', 'measure_unit', 'original_value', 'depreciation', 'net_value', 'useful_life', 'category_name', 'category_type', 'model', 'brand', 'notes', 'status'];
 const sameRecord = (left: Record<string, unknown>, right: Record<string, unknown>) => compareFields.every((field) => String(left[field] ?? '') === String(right[field] ?? ''));
 
 async function loadCurrentRecords(client: ReturnType<typeof createClient>, sourceType: 'asset' | 'item') {

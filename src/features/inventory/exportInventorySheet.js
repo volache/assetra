@@ -1,7 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import fontUrl from "../../assets/fonts/NotoSansTC-Regular-subset.ttf?url";
-import { usedDuration } from "../../lib/formatters";
+import { assetMajorClass, usedDuration } from "../../lib/formatters";
 
 const AGENCY = "交通部民用航空局花蓮航空站";
 const IN_USE = "使用中";
@@ -15,16 +15,21 @@ const SIGNATURES = [
   "機關首長",
 ];
 const SHEET_LABEL = { asset: "財產", item: "物品" };
-const MAJOR_CLASS = {
-  1: "土地",
-  2: "房屋建築及設備",
-  3: "機械及設備",
-  4: "交通及運輸設備",
-  5: "雜項設備",
-  6: "雜項設備",
+const CLASS_ORDER = [
+  "土地",
+  "土地改良物",
+  "房屋建築及設備",
+  "機械及設備",
+  "交通及運輸設備",
+  "什項設備",
+  "非消耗品",
+];
+const classRank = (name) => {
+  const index = CLASS_ORDER.indexOf(name);
+  return index === -1 ? CLASS_ORDER.length : index;
 };
 
-const page = { width: 297, height: 210, side: 8, top: 29, bottom: 27 };
+const page = { width: 297, height: 210, side: 8, top: 25, bottom: 10 };
 const collator = new Intl.Collator("zh-Hant", { numeric: true, sensitivity: "base" });
 
 let fontPromise;
@@ -48,45 +53,98 @@ function loadFontBase64() {
   return fontPromise;
 }
 
-export function formatAssetNo(assetNo) {
-  const [head, tail] = String(assetNo || "").trim().split("-");
-  return /^\d{7}$/.test(head) && tail
-    ? `${head[0]}-${head.slice(1, 3)}-${head.slice(3, 5)}-${head.slice(5, 7)}-${tail}`
-    : String(assetNo || "");
-}
-
-function formatCategoryCode(code) {
-  const text = String(code || "").trim();
-  return /^\d{3}$/.test(text) ? text.split("").join("-") : text;
-}
-
 function rocPrintDate(date = new Date()) {
-  return `${date.getFullYear() - 1911}年 ${String(date.getMonth() + 1).padStart(2, "0")}月 ${String(date.getDate()).padStart(2, "0")}日`;
+  return `${date.getFullYear() - 1911}年${String(date.getMonth() + 1).padStart(2, "0")}月${String(date.getDate()).padStart(2, "0")}日`;
 }
 
-function codeAndName(code, name) {
-  const cleanCode = String(code || "").replace(/^\*/, "");
-  return [cleanCode, name].filter(Boolean).join("\n");
+const cleanCode = (code) => String(code || "").replace(/^\*/, "");
+
+/** Two "code + name" lines whose names are aligned at their first character. */
+function pair(codeA, nameA, codeB, nameB) {
+  return {
+    content: "",
+    lines: [
+      { code: cleanCode(codeA), name: nameA || "" },
+      { code: cleanCode(codeB), name: nameB || "" },
+    ],
+  };
+}
+
+const FIXED_WIDTHS = { 0: 24, 2: 14, 3: 17, 4: 20, 5: 14, 6: 15, 10: 15, 11: 14 };
+const REMARK_MIN_WIDTH = 16;
+const CODE_GAP = 1.4;
+const CELL_PAD = 0.8;
+const CHECK_SIZE = 3;
+
+/** Sizes the content-driven columns so names and places do not wrap. */
+function measureLayout(doc, assets) {
+  const width = (text, size) => {
+    doc.setFontSize(size);
+    return text ? doc.getTextWidth(String(text)) : 0;
+  };
+  let nameMax = 0;
+  let locationMax = 0;
+  const merged = {
+    8: { code: 0, name: 0 },
+    9: { code: 0, name: 0 },
+  };
+  for (const asset of assets) {
+    nameMax = Math.max(nameMax, width(asset.name, 6.5), width(asset.categoryName, ALIAS_FONT_SIZE));
+    locationMax = Math.max(
+      locationMax,
+      width(cleanCode(asset.locationCode), 6.5),
+      width(asset.locationName, 6.5),
+    );
+    [
+      [8, asset.unitCode, asset.unitName],
+      [8, asset.custodianCode, asset.custodianName],
+      [9, asset.useUnitCode, asset.useUnitName],
+      [9, asset.userCode, asset.userName],
+    ].forEach(([column, code, name]) => {
+      merged[column].code = Math.max(merged[column].code, width(cleanCode(code), 6.5));
+      merged[column].name = Math.max(merged[column].name, width(name, 6.5));
+    });
+  }
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  const pad = CELL_PAD * 2 + 0.8;
+  const offsets = {
+    8: merged[8].code ? merged[8].code + CODE_GAP : 0,
+    9: merged[9].code ? merged[9].code + CODE_GAP : 0,
+  };
+  const dynamic = {
+    1: clamp(nameMax + pad, 30, 60),
+    7: clamp(locationMax + pad, 18, 36),
+    8: clamp(offsets[8] + merged[8].name + pad, 20, 44),
+    9: clamp(offsets[9] + merged[9].name + pad, 20, 44),
+  };
+  const fixed = Object.values(FIXED_WIDTHS).reduce((sum, value) => sum + value, 0);
+  const available = page.width - page.side * 2 - fixed - REMARK_MIN_WIDTH;
+  const total = Object.values(dynamic).reduce((sum, value) => sum + value, 0);
+  const scale = total > available ? available / total : 1;
+  const widths = { ...FIXED_WIDTHS };
+  for (const [column, value] of Object.entries(dynamic)) widths[column] = value * scale;
+  return { widths, offsets, nameWidth: widths[1] };
 }
 
 function toRow(asset) {
   const duration = usedDuration(asset.acquiredAt);
   return [
-    `${formatAssetNo(asset.assetNo)}\n${asset.serialNo}`,
-    asset.name,
-    asset.categoryName,
-    String(asset.acquiredAt || "").replaceAll("/", "-"),
+    `${asset.assetNo}\n${asset.serialNo}`,
+    { content: "", name: asset.name || "", alias: asset.categoryName || "" },
+    String(asset.acquiredAt || ""),
     asset.brand,
     asset.model,
-    Number(asset.quantity ?? 0).toFixed(2),
-    asset.measureUnit,
-    asset.usefulLife ?? "",
-    duration === "—" ? "" : duration.replace(/\s/g, ""),
-    codeAndName(asset.locationCode, asset.locationName),
-    codeAndName(asset.unitCode, asset.unitName),
-    codeAndName(asset.custodianCode, asset.custodianName),
-    asset.useUnitName,
-    codeAndName(asset.userCode, asset.userName),
+    `${Number(asset.quantity ?? 0).toFixed(2)}\n${asset.measureUnit || ""}`,
+    {
+      content: "",
+      life: asset.usefulLife ? `${asset.usefulLife}年` : "—",
+      used: duration.replace(/\s/g, ""),
+    },
+    [String(asset.locationCode || "").replace(/^\*/, ""), asset.locationName]
+      .filter(Boolean)
+      .join("\n"),
+    pair(asset.unitCode, asset.unitName, asset.custodianCode, asset.custodianName),
+    pair(asset.useUnitCode, asset.useUnitName, asset.userCode, asset.userName),
     "符合\n不符合",
     "補標籤",
     "",
@@ -95,38 +153,30 @@ function toRow(asset) {
 
 const HEAD = [
   "財產編號\n流水號",
-  "財產名稱",
-  "財產別名",
+  "財產名稱\n財產別名",
   "購置日期",
   "廠牌",
   "型式",
-  "數量",
-  "計量單位",
-  "使用年限",
-  "已使用年月",
+  "數量\n計量單位",
+  "使用年限\n已使用年月",
   "存置地點",
-  "保管單位",
-  "保管人",
-  "使用單位",
-  "使用人",
+  "保管單位\n保管人",
+  "使用單位\n使用人",
   "檢查情形",
   "標籤",
   "備註",
 ];
-const CHECK_COLUMNS = new Set([15, 16]);
+const CHECK_COLUMNS = new Set([10, 11]);
 
 function buildGroups(assets) {
   const buckets = new Map();
   for (const asset of assets) {
-    const number = String(asset.assetNo || "").trim();
-    const klass = number.startsWith("111")
-      ? "土地改良物"
-      : MAJOR_CLASS[number[0]] || "其他";
-    const category = `${formatCategoryCode(asset.categoryTypeCode)}\u0000${asset.categoryType}`;
-    const key = `${category}\u0001${klass}`;
+    const klass = assetMajorClass(asset.assetNo);
+    const categoryCode = String(asset.categoryTypeCode || "").trim();
+    const key = `${categoryCode}\u0000${asset.categoryType}\u0001${klass}`;
     if (!buckets.has(key)) {
       buckets.set(key, {
-        categoryCode: formatCategoryCode(asset.categoryTypeCode),
+        categoryCode,
         categoryName: asset.categoryType,
         klass,
         assets: [],
@@ -148,42 +198,44 @@ function buildGroups(assets) {
     .sort(
       (a, b) =>
         collator.compare(a.categoryCode, b.categoryCode) ||
+        classRank(a.klass) - classRank(b.klass) ||
         collator.compare(a.klass, b.klass),
     );
 }
 
 function drawPageFrame(doc, meta, total, printDate, title) {
   const center = page.width / 2;
-  doc.setFontSize(12);
+  doc.setFontSize(16);
   doc.text(`${AGENCY}${title.sourceSuffix}`, center, 10, { align: "center" });
-  doc.setFontSize(14);
+  doc.setFontSize(11);
   doc.text(`${title.label}盤點清冊`, center, 17, { align: "center" });
   doc.setFontSize(8);
-  doc.text(`印表日期：${printDate}`, page.width - page.side, 8, { align: "right" });
-  doc.text(
-    `頁次：${meta.pageNumber}　總頁數：${total}`,
-    page.width - page.side,
-    12.5,
-    { align: "right" },
-  );
-  const line = (text, x, y) => doc.text(text, x, y);
-  line(
-    `財產區分：${meta.group.categoryCode} ${meta.group.categoryName}`.trim(),
-    page.side,
-    23,
-  );
-  line(`財產大類：${meta.group.klass}`, page.side + 70, 23);
-  if (meta.first)
-    line(`財產筆數：${meta.group.assets.length}`, page.side + 120, 23);
+  doc.text(`印表日期：${printDate}`, page.side, 8);
+  doc.text(`總頁數：${total}`, page.width - page.side, 8, { align: "right" });
+  doc.text(`頁次：${meta.pageNumber}`, page.width - page.side, 12.5, { align: "right" });
+  doc.setFontSize(8);
+  const parts = [
+    `財產區分別：${meta.group.categoryCode} ${meta.group.categoryName}`.trim(),
+    `財產大類：${meta.group.klass}`,
+  ];
+  if (meta.first) parts.push(`財產筆數：${meta.group.assets.length}`);
+  let x = page.side;
+  for (const text of parts) {
+    doc.text(text, x, 22.5);
+    x += doc.getTextWidth(text) + 8;
+  }
+}
 
+const SIGNATURE_HEIGHT = 22;
+const ALIAS_FONT_SIZE = 5.5;
+const ALIAS_COLOR = 110;
+
+function drawSignatures(doc, top) {
   const boxWidth = (page.width - page.side * 2) / SIGNATURES.length;
-  const top = page.height - page.bottom + 3;
-  doc.setLineWidth(0.2);
+  doc.setFont(FONT, "normal");
+  doc.setFontSize(9);
   SIGNATURES.forEach((label, index) => {
-    const x = page.side + index * boxWidth;
-    doc.rect(x, top, boxWidth, 18);
-    doc.setFontSize(8);
-    doc.text(label, x + 2, top + 4.5);
+    doc.text(`${label}：`, page.side + index * boxWidth + 2, top + 3);
   });
 }
 
@@ -204,9 +256,17 @@ export async function buildSheet(assets, sourceType) {
   doc.setFont(FONT, "normal");
 
   const groups = buildGroups(assets);
+  const layout = measureLayout(doc, assets);
+  doc.setFontSize(6.5);
   const metaByPage = new Map();
   const printDate = rocPrintDate();
   const lineHeight = () => doc.getLineHeight() / doc.internal.scaleFactor;
+  const checkPadding = {
+    top: CELL_PAD,
+    bottom: CELL_PAD,
+    left: CELL_PAD + CHECK_SIZE + 0.8,
+    right: CELL_PAD,
+  };
 
   groups.forEach((group, index) => {
     if (index > 0) doc.addPage();
@@ -235,35 +295,105 @@ export async function buildSheet(assets, sourceType) {
         fontStyle: "normal",
       },
       columnStyles: {
-        0: { cellWidth: 24 },
-        1: { cellWidth: 24 },
-        2: { cellWidth: 20 },
-        3: { cellWidth: 14 },
-        4: { cellWidth: 15 },
-        5: { cellWidth: 18 },
-        6: { cellWidth: 8, halign: "right" },
-        7: { cellWidth: 8, halign: "center" },
-        8: { cellWidth: 8, halign: "center" },
-        9: { cellWidth: 12 },
-        10: { cellWidth: 20 },
-        11: { cellWidth: 14 },
-        12: { cellWidth: 14 },
-        13: { cellWidth: 14 },
-        14: { cellWidth: 14 },
-        15: { cellWidth: 14, cellPadding: { top: 0.8, bottom: 0.8, left: 4.4, right: 0.8 } },
-        16: { cellWidth: 12, cellPadding: { top: 0.8, bottom: 0.8, left: 4.4, right: 0.8 } },
-        17: { cellWidth: "auto" },
+        0: { cellWidth: layout.widths[0] },
+        1: { cellWidth: layout.widths[1] },
+        2: { cellWidth: layout.widths[2], halign: "center" },
+        3: { cellWidth: layout.widths[3] },
+        4: { cellWidth: layout.widths[4] },
+        5: { cellWidth: layout.widths[5], halign: "right" },
+        6: { cellWidth: layout.widths[6] },
+        7: { cellWidth: layout.widths[7] },
+        8: { cellWidth: layout.widths[8] },
+        9: { cellWidth: layout.widths[9] },
+        10: { cellWidth: layout.widths[10], cellPadding: checkPadding },
+        11: { cellWidth: layout.widths[11], cellPadding: checkPadding },
+        12: { cellWidth: "auto" },
       },
       rowPageBreak: "avoid",
+      didParseCell(data) {
+        if (data.section === "head") {
+          data.cell.styles.halign = "center";
+          return;
+        }
+        if (data.section === "body" && data.column.index === 1) {
+          const { name, alias } = data.cell.raw;
+          const width = layout.nameWidth - CELL_PAD * 2 - 0.4;
+          doc.setFontSize(6.5);
+          const nameLines = name ? doc.splitTextToSize(name, width) : [""];
+          doc.setFontSize(ALIAS_FONT_SIZE);
+          const aliasLines = alias ? doc.splitTextToSize(alias, width) : [""];
+          doc.setFontSize(6.5);
+          data.cell.nameLines = nameLines;
+          data.cell.aliasLines = aliasLines;
+          // Reserve the right height; the lines themselves are drawn in didDrawCell.
+          data.cell.text = [...nameLines, ...aliasLines];
+        }
+      },
+      willDrawCell(data) {
+        if (data.section === "body" && data.column.index === 1) data.cell.text = [];
+      },
       didDrawCell(data) {
+        if (data.section === "body" && data.column.index === 1) {
+          const { nameLines, aliasLines } = data.cell;
+          const step = lineHeight();
+          const count = nameLines.length + aliasLines.length;
+          const top = data.cell.y + (data.cell.height - count * step) / 2;
+          const x = data.cell.x + 0.8;
+          doc.setFontSize(6.5);
+          doc.setTextColor(20);
+          nameLines.forEach((line, index) => {
+            doc.text(line, x, top + (index + 0.5) * step, { baseline: "middle" });
+          });
+          doc.setFontSize(ALIAS_FONT_SIZE);
+          doc.setTextColor(ALIAS_COLOR);
+          aliasLines.forEach((line, index) => {
+            doc.text(line, x, top + (nameLines.length + index + 0.5) * step, {
+              baseline: "middle",
+            });
+          });
+          doc.setFontSize(6.5);
+          doc.setTextColor(20);
+          return;
+        }
+        if (data.section === "body" && (data.column.index === 8 || data.column.index === 9)) {
+          const step = lineHeight();
+          const top = data.cell.y + (data.cell.height - 2 * step) / 2;
+          const offset = layout.offsets[data.column.index];
+          data.cell.raw.lines.forEach(({ code, name }, index) => {
+            const y = top + (index + 0.5) * step;
+            doc.text(code, data.cell.x + CELL_PAD, y, { baseline: "middle" });
+            doc.text(name, data.cell.x + CELL_PAD + offset, y, { baseline: "middle" });
+          });
+          return;
+        }
+        if (data.section === "body" && data.column.index === 6) {
+          const { life, used } = data.cell.raw;
+          const step = lineHeight();
+          const top = data.cell.y + (data.cell.height - 2 * step) / 2;
+          const anchor = data.cell.x + 4.6;
+          const draw = (value, index) => {
+            const y = top + (index + 0.5) * step;
+            const match = String(value).match(/^(\d+)(年)(.*)$/);
+            if (!match) {
+              doc.text(String(value), anchor, y, { align: "center", baseline: "middle" });
+              return;
+            }
+            doc.text(match[1], anchor, y, { align: "right", baseline: "middle" });
+            doc.text(`年${match[3]}`, anchor, y, { baseline: "middle" });
+          };
+          draw(life, 0);
+          draw(used, 1);
+          return;
+        }
         if (data.section !== "body" || !CHECK_COLUMNS.has(data.column.index)) return;
-        const lines = data.column.index === 15 ? 2 : 1;
+        const lines = data.column.index === 10 ? 2 : 1;
         const step = lineHeight();
-        const size = 2;
+        const size = CHECK_SIZE;
+        const textTop = data.cell.y + (data.cell.height - lines * step) / 2;
         doc.setLineWidth(0.2);
         for (let i = 0; i < lines; i += 1) {
-          const y = data.cell.y + 0.8 + i * step + (step - size) / 2 + 0.15;
-          doc.rect(data.cell.x + 1.2, y, size, size);
+          const y = textTop + i * step + (step - size) / 2;
+          doc.rect(data.cell.x + CELL_PAD + 0.4, y, size, size);
         }
       },
       didDrawPage() {
@@ -272,6 +402,14 @@ export async function buildSheet(assets, sourceType) {
         first = false;
       },
     });
+    let signTop = doc.lastAutoTable.finalY + 1.6;
+    if (signTop + SIGNATURE_HEIGHT > page.height - page.bottom) {
+      doc.addPage();
+      const pageNumber = doc.getNumberOfPages();
+      metaByPage.set(pageNumber, { pageNumber, group, first: false });
+      signTop = page.top;
+    }
+    drawSignatures(doc, signTop);
   });
 
   const total = doc.getNumberOfPages();

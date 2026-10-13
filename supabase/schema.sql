@@ -43,7 +43,7 @@ create table public.asset_identities (
 create table public.asset_records (
   id uuid primary key default gen_random_uuid(), import_id uuid references public.imports(id) on delete set null, identity_id uuid not null references public.asset_identities(id) on delete restrict,
   source_type public.source_type not null, category_type_code text not null, asset_no text not null, serial_no text not null, name text not null, old_no text, acquired_at date,
-  unit_code text, unit_name text, use_unit_name text, location_code text, location_name text,
+  unit_code text, unit_name text, use_unit_code text, use_unit_name text, location_code text, location_name text,
   custodian_code text, custodian_name text, user_code text, user_name text, quantity numeric(18,3) not null default 1,
   measure_unit text, original_value numeric(18,2) not null default 0, depreciation numeric(18,2) not null default 0,
   net_value numeric(18,2) not null default 0, useful_life integer, category_name text, category_type text,

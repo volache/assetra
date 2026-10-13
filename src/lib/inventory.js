@@ -12,6 +12,7 @@ export function fromDatabaseAsset(row) {
     acquiredAt: rocDate(row.acquired_at),
     unitCode: row.unit_code || "",
     unitName: row.unit_name || "",
+    useUnitCode: row.use_unit_code || "",
     useUnitName: row.use_unit_name || "",
     locationCode: row.location_code || "",
     locationName: row.location_name || "",

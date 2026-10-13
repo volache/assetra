@@ -75,6 +75,7 @@ export function BatchHistory({ imports, onDeleted }) {
     acquired_at: "購置日期",
     unit_code: "保管單位代碼",
     unit_name: "保管單位",
+    use_unit_code: "使用單位代碼",
     use_unit_name: "使用單位",
     location_code: "存置地點代碼",
     location_name: "存置地點",
