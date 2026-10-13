@@ -436,28 +436,71 @@ function saveBlob(blob, fileName) {
   window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
-/**
- * Exports the in-use assets kept by one custodian as one PDF per source type
- * (財產 / 物品). Returns the exported file names.
- */
-export async function exportCustodianInventorySheets(assets, custodianCode, sourceTypes = ["asset", "item"]) {
+const delay = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+/** Builds the 財產 / 物品 sheets of one custodian: [{ fileName, blob }]. */
+export async function buildCustodianSheets(assets, custodianCode, sourceTypes = ["asset", "item"]) {
   const own = assets.filter(
     (asset) => asset.custodianCode === custodianCode && asset.status === IN_USE,
   );
-  const fileNames = [];
+  const sheets = [];
   for (const sourceType of sourceTypes) {
     const rows = own.filter((asset) => asset.sourceType === sourceType);
     if (!rows.length) continue;
-    const blob = await buildSheet(rows, sourceType);
-    const name = inventorySheetFileName(
-      rows[0].unitName,
-      custodianCode,
-      rows[0].custodianName,
-      sourceType,
-    );
-    saveBlob(blob, name);
-    fileNames.push(name);
-    await new Promise((resolve) => window.setTimeout(resolve, 400));
+    sheets.push({
+      fileName: inventorySheetFileName(
+        rows[0].unitName,
+        custodianCode,
+        rows[0].custodianName,
+        sourceType,
+      ),
+      blob: await buildSheet(rows, sourceType),
+    });
   }
-  return fileNames;
+  return sheets;
+}
+
+/** Downloads one custodian's sheets as separate PDFs. Returns the file names. */
+export async function exportCustodianInventorySheets(assets, custodianCode) {
+  const sheets = await buildCustodianSheets(assets, custodianCode);
+  for (const { fileName, blob } of sheets) {
+    saveBlob(blob, fileName);
+    await delay(400);
+  }
+  return sheets.map((sheet) => sheet.fileName);
+}
+
+function rocStamp(date = new Date()) {
+  const year = String(date.getFullYear() - 1911).padStart(3, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}${month}${day}`;
+}
+
+/**
+ * Packs the sheets of many custodians into one zip and downloads it.
+ * Custodians without in-use assets are skipped and reported back.
+ */
+export async function exportInventorySheetsZip(assets, custodianCodes, onProgress) {
+  const { default: JSZip } = await import("jszip");
+  const zip = new JSZip();
+  const skipped = [];
+  let fileCount = 0;
+  for (const [index, code] of custodianCodes.entries()) {
+    onProgress?.(index, custodianCodes.length);
+    const sheets = await buildCustodianSheets(assets, code);
+    if (!sheets.length) skipped.push(code);
+    for (const { fileName, blob } of sheets) {
+      zip.file(fileName, blob);
+      fileCount += 1;
+    }
+    // Let the browser repaint between custodians so the page stays responsive.
+    await delay(0);
+  }
+  if (!fileCount) return { fileName: "", fileCount, skipped };
+  onProgress?.(custodianCodes.length, custodianCodes.length);
+  const blob = await zip.generateAsync({ type: "blob", compression: "STORE" });
+  const fileName = `盤點清冊_${rocStamp()}.zip`;
+  saveBlob(blob, fileName);
+  return { fileName, fileCount, skipped };
 }

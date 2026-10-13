@@ -33,6 +33,10 @@ export function Accounts({ store, setStore, onUsersChanged }) {
   const [userPageSize, setUserPageSize] = useState(25);
   const [message, setMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [exportState, setExportState] = useState(null);
+  const [isExportOpen, setIsExportOpen] = useState(false);
+  const [exportUnit, setExportUnit] = useState("");
+  const [exportCode, setExportCode] = useState("");
   const { notify, run } = useFeedback();
   const [compactUserFilters, setCompactUserFilters] = useState(false);
   const [compactUserFiltersOpen, setCompactUserFiltersOpen] = useState(false);
@@ -239,6 +243,69 @@ export function Accounts({ store, setStore, onUsersChanged }) {
   function runUserSearch() {
     setAppliedTerm(term.trim());
   }
+  const exportPeople = useMemo(() => {
+    const inUse = new Set(
+      store.assets
+        .filter((asset) => asset.status === "使用中" && asset.custodianCode)
+        .map((asset) => asset.custodianCode),
+    );
+    return directory.filter(
+      (person) =>
+        inUse.has(person.code) &&
+        (!exportUnit || person.units.some(([code]) => code === exportUnit)),
+    );
+  }, [directory, store.assets, exportUnit]);
+  const exportUnitOptions = [
+    { value: "", label: "全部單位" },
+    ...units.map(([value, label]) => ({ value, label: `${label}（${value}）` })),
+  ];
+  const exportPersonOptions = [
+    { value: "", label: `全部保管人（${exportPeople.length} 位，打包下載）` },
+    ...exportPeople.map((person) => ({
+      value: person.code,
+      label: `${person.code}／${person.displayName || "未提供姓名"}`,
+    })),
+  ];
+  const exportSelected = exportPeople.some((person) => person.code === exportCode)
+    ? exportCode
+    : "";
+  async function runInventoryExport() {
+    if (!exportPeople.length || exportState) return;
+    setExportState({ label: "準備中" });
+    try {
+      const sheets = await import("../inventory/exportInventorySheet");
+      if (exportSelected) {
+        const files = await sheets.exportCustodianInventorySheets(
+          store.assets,
+          exportSelected,
+        );
+        notify(
+          files.length
+            ? `已匯出 ${files.length} 份盤點清冊。`
+            : "此保管人沒有「使用中」的財物可匯出。",
+          files.length ? "success" : "error",
+        );
+      } else {
+        const codes = exportPeople.map((person) => person.code);
+        const result = await sheets.exportInventorySheetsZip(
+          store.assets,
+          codes,
+          (done, total) => setExportState({ label: `${done}／${total}` }),
+        );
+        if (!result.fileName)
+          notify("沒有「使用中」的財物可匯出。", "error");
+        else
+          notify(
+            `已打包 ${result.fileCount} 份盤點清冊：${result.fileName}`,
+          );
+      }
+      setIsExportOpen(false);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "匯出盤點清冊失敗。", "error");
+    } finally {
+      setExportState(null);
+    }
+  }
   function openCreate() {
     setEditingId(null);
     setForm(emptyForm);
@@ -349,13 +416,23 @@ export function Accounts({ store, setStore, onUsersChanged }) {
           <h1>使用者管理</h1>
           <p>帳號可自由建立；可選擇配對清冊保管人，並校正本系統的顯示名稱。</p>
         </div>
-        <button
-          className="button button-primary"
-          onClick={openCreate}
-          type="button"
-        >
-          新增使用者
-        </button>
+        <div className="page-heading-actions">
+          <button
+            aria-haspopup="dialog"
+            className="button button-secondary"
+            onClick={() => setIsExportOpen(true)}
+            type="button"
+          >
+            匯出盤點清冊
+          </button>
+          <button
+            className="button button-primary"
+            onClick={openCreate}
+            type="button"
+          >
+            新增使用者
+          </button>
+        </div>
       </div>
       <div
         aria-hidden="true"
@@ -640,6 +717,82 @@ export function Accounts({ store, setStore, onUsersChanged }) {
           <h2>找不到符合的使用者</h2>
           <p>請調整篩選條件或搜尋文字。</p>
         </div>
+      )}
+      {isExportOpen && (
+        <dialog
+          open
+          className="detail-dialog user-editor export-sheets-dialog"
+          onClick={(event) => {
+            if (event.target === event.currentTarget && !exportState)
+              setIsExportOpen(false);
+          }}
+        >
+          <div>
+            <header>
+              <div>
+                <p className="eyebrow">INVENTORY SHEETS</p>
+                <h2>匯出盤點清冊</h2>
+              </div>
+              <button
+                className="close-button"
+                disabled={Boolean(exportState)}
+                onClick={() => setIsExportOpen(false)}
+                aria-label="關閉"
+              >
+                ×
+              </button>
+            </header>
+            <div className="account-form user-account-form">
+              <p className="export-note">
+                依清冊上的保管人產生盤點清冊（僅「使用中」財物），每位保管人各一份財產清冊與物品清冊。
+                未建立使用者帳號的保管人也會一併匯出。
+              </p>
+              <div className="user-form-grid user-editor-grid">
+                <FormCombo
+                  id="export-unit"
+                  label="保管單位"
+                  value={exportUnit}
+                  options={exportUnitOptions}
+                  open={openEditorCombo === "export-unit"}
+                  onChange={setExportUnit}
+                  onOpenChange={setOpenEditorCombo}
+                />
+                <FormCombo
+                  id="export-person"
+                  label="保管人"
+                  value={exportSelected}
+                  options={exportPersonOptions}
+                  open={openEditorCombo === "export-person"}
+                  onChange={setExportCode}
+                  onOpenChange={setOpenEditorCombo}
+                />
+              </div>
+              <footer className="user-editor-actions">
+                <button
+                  className="button button-secondary"
+                  disabled={Boolean(exportState)}
+                  onClick={() => setIsExportOpen(false)}
+                  type="button"
+                >
+                  取消
+                </button>
+                <button
+                  className="button button-primary"
+                  disabled={!exportPeople.length || Boolean(exportState)}
+                  onClick={runInventoryExport}
+                  type="button"
+                >
+                  {exportState && <CapsuleSpinner compact />}
+                  {exportState
+                    ? `產生中 ${exportState.label}`
+                    : exportSelected
+                      ? "匯出盤點清冊（PDF）"
+                      : `打包匯出（${exportPeople.length} 位保管人）`}
+                </button>
+              </footer>
+            </div>
+          </div>
+        </dialog>
       )}
       {isEditorOpen && (
         <dialog
