@@ -744,7 +744,7 @@ export function Accounts({ store, setStore, onUsersChanged }) {
             </header>
             <div className="account-form user-account-form">
               <p className="export-note">
-                依清冊上的保管人產生盤點清冊（僅「使用中」財物），每位保管人各一份財產清冊與物品清冊。
+                依清冊上的保管人產生財物盤點清冊（僅「使用中」財物），每位保管人一份，財產與物品併為不同的財產大類。
                 未建立使用者帳號的保管人也會一併匯出。
               </p>
               <div className="user-form-grid user-editor-grid">
