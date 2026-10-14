@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { fromDatabaseAsset, fromDatabaseImport } from "../src/lib/inventory.js";
 import { assetMajorClass, rocDate, rocDateTime } from "../src/lib/formatters.js";
 import { matchesAdvancedSearch } from "../src/features/inventory/search.js";
+import { applyOfficialPersonnelNames } from "../src/lib/personnel.js";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const sourceRoot = resolve(root, "src");
@@ -177,9 +178,30 @@ function checkSearchBehavior() {
   assert.equal(matchesAdvancedSearch(asset, "氣囊 -王小明"), false);
 }
 
+function checkOfficialPersonnelNames() {
+  const [asset] = applyOfficialPersonnelNames(
+    [
+      {
+        custodianCode: "OP63",
+        custodianName: "楊?彬",
+        userCode: "OP63",
+        userName: "楊?彬",
+      },
+    ],
+    [{ name: "楊喆彬", status: "active", custodianCodes: ["OP63"] }],
+  );
+  assert.equal(asset.custodianName, "楊喆彬");
+  assert.equal(asset.userName, "楊喆彬");
+  assert.equal(asset.rawCustodianName, "楊?彬");
+  assert.equal(asset.rawUserName, "楊?彬");
+  assert.equal(matchesAdvancedSearch(asset, "保管人:楊?彬"), true);
+  assert.equal(matchesAdvancedSearch(asset, "使用人:楊喆彬"), true);
+}
+
 checkImports();
 checkFeatureContracts();
 checkAiQueryRegressionCases();
 checkInventoryBehavior();
 checkSearchBehavior();
+checkOfficialPersonnelNames();
 console.log(`Regression checks passed for ${sourceFiles.length} source files.`);

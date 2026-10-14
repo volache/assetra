@@ -54,7 +54,13 @@ export function AssetQuery({
       ([key]) =>
         key === omit ||
         !filters[key] ||
-        normalized(asset[key]).includes(normalized(filters[key])),
+        [
+          asset[key],
+          key === "custodianName" ? asset.rawCustodianName : "",
+          key === "userName" ? asset.rawUserName : "",
+        ].some((value) =>
+          normalized(value).includes(normalized(filters[key])),
+        ),
     );
   const sourceRows = useMemo(
     () =>

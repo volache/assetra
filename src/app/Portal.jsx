@@ -1,5 +1,6 @@
 import React, { lazy, Suspense, useEffect, useMemo, useRef } from "react";
 import { roleLabels } from "../lib/labels";
+import { applyOfficialPersonnelNames } from "../lib/personnel";
 
 const Accounts = lazy(() =>
   import("../features/accounts/Accounts").then(({ Accounts }) => ({
@@ -59,15 +60,8 @@ export function Portal({
   const canAdmin = user.roles.includes("admin");
   const canChief = user.roles.includes("chief");
   const visible = useMemo(
-    () =>
-      store.assets.map((asset) => ({
-        ...asset,
-        rawCustodianName: asset.custodianName,
-        custodianName:
-          store.custodianProfiles?.[asset.custodianCode]?.displayName ||
-          asset.custodianName,
-      })),
-    [store.assets, store.custodianProfiles],
+    () => applyOfficialPersonnelNames(store.assets, [...store.users, user]),
+    [store.assets, store.users, user],
   );
   const previousPage = useRef(page);
   const isPageSwitch = previousPage.current !== page;
@@ -170,7 +164,7 @@ export function Portal({
             {page === "geo" && canAdmin && <GeographicAssets />}
             {page === "accounts" && canAdmin && (
               <Accounts
-                store={store}
+                store={{ ...store, assets: visible }}
                 setStore={setStore}
                 onUsersChanged={refreshUsers}
               />

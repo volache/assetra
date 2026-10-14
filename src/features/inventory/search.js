@@ -144,6 +144,7 @@ function searchableValues(asset) {
     asset.rawCustodianName,
     asset.userCode,
     asset.userName,
+    asset.rawUserName,
     asset.quantity,
     asset.measureUnit,
     asset.originalValue,
@@ -179,6 +180,13 @@ function textMatches(value, needle) {
 function exactMatches(value, needle) {
   return normalized(value) === normalized(String(needle).replace(/^"|"$/g, ""));
 }
+function fieldValues(asset, field) {
+  return [
+    asset[field],
+    field === "custodianName" ? asset.rawCustodianName : "",
+    field === "userName" ? asset.rawUserName : "",
+  ];
+}
 function tokenMatches(asset, rawToken) {
   const negated = rawToken.startsWith("-");
   const token = negated ? rawToken.slice(1) : rawToken;
@@ -212,9 +220,12 @@ function tokenMatches(asset, rawToken) {
       }[operator];
   } else if (fieldSearch && searchFieldAliases[fieldSearch[1]]) {
     const value = fieldSearch[2];
-    matched = value.startsWith("~")
-      ? textMatches(asset[searchFieldAliases[fieldSearch[1]]], value.slice(1))
-      : exactMatches(asset[searchFieldAliases[fieldSearch[1]]], value);
+    const field = searchFieldAliases[fieldSearch[1]];
+    matched = fieldValues(asset, field).some((actual) =>
+      value.startsWith("~")
+        ? textMatches(actual, value.slice(1))
+        : exactMatches(actual, value),
+    );
   } else {
     matched = searchableValues(asset).some((value) =>
       textMatches(value, token),
