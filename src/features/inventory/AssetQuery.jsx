@@ -13,7 +13,7 @@ import {
   photoFilterOptions,
   matchesAdvancedSearch,
   normalizeSearchInput,
-  highlightTextForToken,
+  highlightTermsFactory,
   normalized,
   searchFieldAliases,
   searchTermWarnings,
@@ -185,35 +185,10 @@ export function AssetQuery({
         ),
     [sourceRows, filters, appliedTerm, aiAssetIds, photoFilter, collaborationFilter, flagged],
   );
-  const globalHighlightTerms = useMemo(
-    () =>
-      tokenizeSearch(appliedTerm)
-        .filter(
-          (token) =>
-            token !== "|" && !token.startsWith("-") && !token.includes(":"),
-        )
-        .map(highlightTextForToken)
-        .filter(Boolean),
-    [appliedTerm],
+  const highlightTermsFor = useMemo(
+    () => highlightTermsFactory(appliedTerm, filters),
+    [appliedTerm, filters],
   );
-  function highlightTermsFor(field) {
-    const terms = filters[field] ? [filters[field]] : [];
-    tokenizeSearch(appliedTerm)
-      .filter((token) => token !== "|" && !token.startsWith("-"))
-      .forEach((token) => {
-        const comparison = token.match(/^([^:]+):(>=|<=|>|<|=)(.+)$/);
-        if (comparison) return;
-        const fieldToken = token.match(/^([^:]+):(.+)$/);
-        if (fieldToken) {
-          if (searchFieldAliases[fieldToken[1]] === field)
-            terms.push(fieldToken[2]);
-        } else {
-          const text = highlightTextForToken(token);
-          if (text) terms.push(text);
-        }
-      });
-    return terms;
-  }
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const page = Math.min(currentPage, totalPages);
   const pageRows = rows.slice((page - 1) * pageSize, page * pageSize);
@@ -675,7 +650,27 @@ export function AssetQuery({
                 </tr>
               </thead>
               <tbody>
-                {pageRows.map((a) => (
+                {pageRows.map((a) => {
+                  const detailItems = [
+                    { label: "財產區分別", value: a.categoryType, terms: highlightTermsFor("categoryType") },
+                    { label: "類型", value: a.sourceType === "asset" ? "財產" : "物品", terms: highlightTermsFor("sourceType") },
+                    { label: "財產大類", value: assetMajorClass(a.assetNo), terms: highlightTermsFor("assetMajorClass") },
+                    { label: "保管單位", value: a.unitName, terms: highlightTermsFor("unitName") },
+                    {
+                      label: "使用單位／使用人",
+                      value: [a.useUnitName, a.userName].filter(Boolean).join("／"),
+                      terms: [...highlightTermsFor("useUnitName"), ...highlightTermsFor("userName")],
+                    },
+                    { label: "計量單位", value: a.measureUnit, terms: highlightTermsFor("measureUnit") },
+                    { label: "購置日期", value: a.acquiredAt, terms: highlightTermsFor("acquiredAt") },
+                    { label: "年限", value: a.usefulLife ? `${a.usefulLife} 年` : "—", terms: highlightTermsFor("usefulLife") },
+                    { label: "已使用", value: usedDuration(a.acquiredAt), terms: highlightTermsFor("usedDuration") },
+                    { label: "原值", value: money(a.originalValue), terms: highlightTermsFor("originalValue"), numeric: true },
+                    { label: "累折", value: money(a.depreciation), terms: highlightTermsFor("depreciation"), numeric: true },
+                    { label: "淨值", value: money(a.netValue), terms: highlightTermsFor("netValue"), numeric: true },
+                    { label: "備註", value: a.notes, terms: highlightTermsFor("notes") },
+                  ];
+                  return (
                   <React.Fragment key={a.id}>
                     <tr>
                       <td>
@@ -783,114 +778,19 @@ export function AssetQuery({
                         >
                           <div>
                             <dl>
-                              {[
-                                [
-                                  "財產區分別",
-                                  <HighlightText
-                                    value={a.categoryType}
-                                    terms={highlightTermsFor("categoryType")}
-                                  />,
-                                ],
-                                [
-                                  "類型",
-                                  <HighlightText
-                                    value={
-                                      a.sourceType === "asset" ? "財產" : "物品"
-                                    }
-                                    terms={globalHighlightTerms}
-                                  />,
-                                ],
-                                [
-                                  "財產大類",
-                                  <HighlightText
-                                    value={assetMajorClass(a.assetNo)}
-                                    terms={globalHighlightTerms}
-                                  />,
-                                ],
-                                [
-                                  "保管單位",
-                                  <HighlightText
-                                    value={a.unitName}
-                                    terms={highlightTermsFor("unitName")}
-                                  />,
-                                ],
-                                [
-                                  "使用單位／使用人",
-                                  <HighlightText
-                                    value={[a.useUnitName, a.userName]
-                                      .filter(Boolean)
-                                      .join("／")}
-                                    terms={[
-                                      ...highlightTermsFor("useUnitName"),
-                                      ...highlightTermsFor("userName"),
-                                    ]}
-                                  />,
-                                ],
-                                [
-                                  "計量單位",
-                                  <HighlightText
-                                    value={a.measureUnit}
-                                    terms={highlightTermsFor("measureUnit")}
-                                  />,
-                                ],
-                                [
-                                  "購置日期",
-                                  <HighlightText
-                                    value={a.acquiredAt}
-                                    terms={highlightTermsFor("acquiredAt")}
-                                  />,
-                                ],
-                                [
-                                  "年限",
-                                  <HighlightText
-                                    value={
-                                      a.usefulLife ? `${a.usefulLife} 年` : "—"
-                                    }
-                                    terms={highlightTermsFor("usefulLife")}
-                                  />,
-                                ],
-                                [
-                                  "已使用",
-                                  <HighlightText
-                                    value={usedDuration(a.acquiredAt)}
-                                    terms={globalHighlightTerms}
-                                  />,
-                                ],
-                                [
-                                  "原值",
-                                  <HighlightText
-                                    value={money(a.originalValue)}
-                                    terms={highlightTermsFor("originalValue")}
-                                  />,
-                                ],
-                                [
-                                  "累折",
-                                  <HighlightText
-                                    value={money(a.depreciation)}
-                                    terms={highlightTermsFor("depreciation")}
-                                  />,
-                                ],
-                                [
-                                  "淨值",
-                                  <HighlightText
-                                    value={money(a.netValue)}
-                                    terms={highlightTermsFor("netValue")}
-                                  />,
-                                ],
-                                [
-                                  "備註",
-                                  <HighlightText
-                                    value={a.notes}
-                                    terms={highlightTermsFor("notes")}
-                                  />,
-                                ],
-                              ].map(([label, value]) => (
+                              {detailItems.map((item) => (
                                 <div
-                                  className={`detail-pair ${label === "備註" ? "detail-wide" : ""}`}
-                                  key={label}
+                                  className={`detail-pair ${item.label === "備註" ? "detail-wide" : ""}`}
+                                  key={item.label}
                                 >
-                                  <span>{label}</span>
-                                  <strong>{value || "—"}</strong>
+                                  <span>{item.label}</span>
+                                  <strong>
+                                    <HighlightText
+                                      numeric={item.numeric}
+                                      terms={item.terms}
+                                      value={item.value}
+                                    />
+                                  </strong>
                                 </div>
                               ))}
                             </dl>
@@ -899,7 +799,8 @@ export function AssetQuery({
                       </td>
                     </tr>
                   </React.Fragment>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

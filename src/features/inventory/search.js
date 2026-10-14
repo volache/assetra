@@ -44,23 +44,48 @@ export const normalized = (value) => {
     text = text.split(variant).join(standard);
   return text.replace(/[臺檯汙]/g, (character) => characterFolds[character]);
 };
-// Regular expression source that matches a term in any of the folded spellings.
-export function variantRegexSource(term) {
-  const text = normalized(term);
+// Regular expression source that highlights where a search term matched, in
+// any of the folded spellings.  Follows the search rules: * is any run of
+// characters (kept short so only the matched part is marked), ? is one
+// character, and \* \? \\ are literal.  With numeric, digits may be separated
+// by thousands commas so 50000 finds 50,000.  Returns "" when nothing literal
+// is left to mark.
+export function highlightPatternSource(term, { numeric = false } = {}) {
+  const characters = [
+    ...normalized(String(term).replace(/^"|"$/g, "")),
+  ];
+  const escapeRegex = (character) =>
+    character.replace(/[.*+^${}()|[\]\\]/g, "\\$&");
   let source = "";
-  for (let index = 0; index < text.length; ) {
-    if (text.startsWith("家具", index)) {
-      source += furnitureSpellings;
+  let literals = 0;
+  for (let index = 0; index < characters.length; ) {
+    const character = characters[index];
+    const next = characters[index + 1];
+    if (character === "\\" && next !== undefined && "*?\\".includes(next)) {
+      source += escapeRegex(next);
+      literals += 1;
       index += 2;
-      continue;
+    } else if (character === "*") {
+      source += ".*?";
+      index += 1;
+    } else if (character === "?") {
+      source += ".";
+      index += 1;
+    } else if (character === "家" && next === "具") {
+      source += furnitureSpellings;
+      literals += 2;
+      index += 2;
+    } else {
+      source += foldedSpellings[character] || escapeRegex(character);
+      literals += 1;
+      if (numeric && /\d/.test(character) && /\d/.test(next || ""))
+        source += ",?";
+      index += 1;
     }
-    const character = text[index];
-    source +=
-      foldedSpellings[character] ||
-      character.replace(/[.*+^${}()|[\]\\]/g, "\\$&");
-    index += 1;
   }
-  return source;
+  // A * at either end adds nothing to mark, so only the literal core shows.
+  source = source.replace(/^(?:\.\*\?)+/, "").replace(/(?:\.\*\?)+$/, "");
+  return literals ? source : "";
 }
 export const searchFieldAliases = {
   保管單位: "unitName",
@@ -342,12 +367,6 @@ export function parseAssetNumberToken(token) {
     };
   }
   return null;
-}
-// Text to highlight in the result table for a bare token, or null.
-export function highlightTextForToken(token) {
-  const parsed = parseAssetNumberToken(token);
-  if (!parsed) return token;
-  return parsed.kind === "range" ? null : parsed.assetNo;
 }
 function assetNumberMatches(asset, parsed) {
   const assetNo = String(asset.assetNo || "").toUpperCase();
@@ -740,4 +759,50 @@ function assetNumberTypingNote(raw) {
   if (new RegExp(`^${assetNo}-\\d{0,7}$`).test(end))
     return "到該財產編號的這一件為止，起訖都包含";
   return "輸入結束的財產編號（如 5010400-0001）";
+}
+
+// Which terms mark which field of a result row, for the applied search and
+// the dropdown filters.  Returns a function: field name -> terms for
+// HighlightText.  A term is a string, or { cell: true } when the whole value
+// is what matched (comparisons, asset numbers).
+export function highlightTermsFactory(appliedTerm, filters = {}) {
+  const wholeCell = { cell: true };
+  const plan = tokenizeSearch(appliedTerm)
+    .filter((token) => token !== "|" && !token.startsWith("-"))
+    .map((token) => {
+      if (parseAssetNumberToken(token)) return { type: "assetNumber" };
+      const comparison = token.match(/^([^:]+):(>=|<=|>|<|=)(.+)$/);
+      if (comparison && searchFieldAliases[comparison[1]])
+        return { type: "comparison", field: searchFieldAliases[comparison[1]] };
+      const fieldToken = token.match(/^([^:]+):(.+)$/);
+      if (fieldToken && searchFieldAliases[fieldToken[1]])
+        return {
+          type: "field",
+          field: searchFieldAliases[fieldToken[1]],
+          value: fieldToken[2],
+        };
+      // Anything else, including an unknown "x:y", is searched as plain text.
+      return { type: "text", value: token };
+    });
+  return (field) => {
+    const terms = filters[field] ? [filters[field]] : [];
+    for (const item of plan) {
+      if (item.type === "text") {
+        terms.push(item.value);
+      } else if (item.type === "field") {
+        if (item.field === field) terms.push(item.value.replace(/^~/, ""));
+        else if (
+          field === "usedDuration" &&
+          item.field === "serviceLifeExpired" &&
+          /^true$/i.test(item.value)
+        )
+          terms.push(wholeCell);
+      } else if (item.type === "comparison") {
+        if (item.field === field) terms.push(wholeCell);
+      } else if (field === "assetNo" || field === "serialNo") {
+        terms.push(wholeCell);
+      }
+    }
+    return terms;
+  };
 }

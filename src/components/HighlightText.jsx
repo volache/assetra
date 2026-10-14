@@ -1,36 +1,47 @@
 import React from "react";
-import { normalized, variantRegexSource } from "../features/inventory/search";
+import { highlightPatternSource } from "../features/inventory/search";
 
-export function HighlightText({ value, terms }) {
-  const text = String(value || "");
-  const needles = [
+// terms are search words (strings, wildcards and \ escapes allowed) or
+// { cell: true } when the whole value is what matched, e.g. a comparison.
+function highlightPlan(terms, numeric) {
+  const sources = [
     ...new Set(
       terms
-        .map((term) =>
-          // \* \? \\ are literal characters; bare * and ? are wildcards.
-          String(term)
-            .replace(/^"|"$/g, "")
-            .replace(/\\([*?\\])/g, "\u0000$1\u0000")
-            .replace(/[?*]/g, "")
-            .replace(/\u0000(.)\u0000/g, "$1")
-            .trim(),
-        )
+        .filter((term) => typeof term === "string")
+        .map((term) => highlightPatternSource(term, { numeric }))
         .filter(Boolean),
     ),
   ].sort((a, b) => b.length - a.length);
-  if (!text || !needles.length) return text || "—";
-  const pattern = new RegExp(
-    `(${needles.map((term) => variantRegexSource(term)).join("|")})`,
-    "giu",
-  );
-  return text
-    .split(pattern)
-    .map((part, index) =>
-      normalized(part) &&
-      needles.some((term) => normalized(part) === normalized(term)) ? (
-        <mark key={index}>{part}</mark>
-      ) : (
-        part
-      ),
-    );
+  return {
+    cell: terms.some((term) => term && typeof term === "object" && term.cell),
+    pattern: sources.length
+      ? new RegExp(sources.map((source) => `(?:${source})`).join("|"), "giu")
+      : null,
+  };
+}
+
+const isMeaningful = (text) => Boolean(text) && text !== "—";
+
+export function HighlightText({ value, terms, numeric = false }) {
+  const text = String(value ?? "");
+  if (!text) return "—";
+  const { cell, pattern } = highlightPlan(terms, numeric);
+  if (cell && isMeaningful(text))
+    return <mark>{text}</mark>;
+  if (!pattern) return text;
+  const nodes = [];
+  let last = 0;
+  let match;
+  while ((match = pattern.exec(text))) {
+    if (!match[0]) {
+      pattern.lastIndex += 1;
+      continue;
+    }
+    if (match.index > last) nodes.push(text.slice(last, match.index));
+    nodes.push(<mark key={match.index}>{match[0]}</mark>);
+    last = match.index + match[0].length;
+  }
+  if (!nodes.length) return text;
+  if (last < text.length) nodes.push(text.slice(last));
+  return nodes;
 }
