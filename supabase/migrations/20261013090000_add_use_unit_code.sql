@@ -1,3 +1,6 @@
+-- Applied to the Assetra project as version 20261013155226 (name: add_use_unit_code).
+-- Version numbers are stamped when a migration is applied, so they differ from
+-- this file's prefix.  Do not re-run it against the live database.
 -- Keep the source "使用單位代碼" alongside the use unit's display name.
 alter table public.asset_records add column if not exists use_unit_code text;
 

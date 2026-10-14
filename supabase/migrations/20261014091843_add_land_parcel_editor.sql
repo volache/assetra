@@ -1,3 +1,7 @@
+-- Applied to the Assetra project as version 20261014092706 (name: add_land_parcel_editor).
+-- Version numbers are stamped when a migration is applied, so they differ from
+-- this file's prefix.  Do not re-run it against the live database.
+--
 -- A small, caller-scoped write API for the browser.  The function deliberately
 -- remains SECURITY INVOKER: the existing RLS policies on land_parcels decide
 -- who may create or change a parcel (currently active administrators only).
