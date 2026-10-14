@@ -52,8 +52,11 @@ export const searchFieldAliases = {
   數量: "quantity",
   備註: "notes",
 };
+// Each group sits in one of three columns of the rule panel.  A rule is
+// [label, text inserted].
 export const searchRuleGroups = [
   {
+    column: 0,
     title: "邏輯",
     rules: [
       ["任一符合", " | "],
@@ -62,6 +65,7 @@ export const searchRuleGroups = [
     ],
   },
   {
+    column: 0,
     title: "萬用字元",
     rules: [
       ["任意文字", "*"],
@@ -69,54 +73,80 @@ export const searchRuleGroups = [
     ],
   },
   {
-    title: "指定欄位",
+    column: 0,
+    title: "比較（數字、日期、年資）",
     rules: [
+      ["原值至少", "原值:>=50000"],
+      ["原值大於", "原值:>50000"],
+      ["原值介於", "原值:>=10000 原值:<=50000"],
+      ["累折大於", "累折:>10000"],
+      ["淨值大於", "淨值:>50000"],
+      ["淨值為 0", "淨值:=0"],
+      ["數量大於", "數量:>1"],
+      ["年限至少 10 年", "年限:>=10"],
+      ["已使用至少 5 年", "已使用:>=5年"],
+      ["已使用不到 5 年", "已使用:<5年"],
+      ["已使用恰好 5 年", "已使用:=5年"],
+      ["購置日期之後", "購置日期:>=110/01/01"],
+      ["購置日期之前", "購置日期:<110/01/01"],
+    ],
+  },
+  {
+    column: 1,
+    title: "指定欄位（完全相符）",
+    rules: [
+      ["財產編號", "財產編號:"],
+      ["流水號", "流水號:"],
       ["保管單位", "保管單位:"],
       ["保管人", "保管人:"],
       ["存置地點", "存置地點:"],
       ["財產名稱", "財產名稱:"],
       ["財產別名", "財產別名:"],
+      ["財產大類", "財產大類:"],
+      ["財產區分別", "財產區分別:"],
       ["使用現況", "使用現況:"],
+      ["使用單位", "使用單位:"],
+      ["使用人", "使用人:"],
+      ["廠牌", "廠牌:"],
+      ["型式", "型式:"],
+      ["計量單位", "計量單位:"],
+      ["備註", "備註:"],
     ],
   },
   {
-    title: "智慧查詢：包含比對",
+    column: 1,
+    title: "狀態",
+    rules: [
+      ["已達使用年限", "已達年限:true"],
+      ["尚未達使用年限", "已達年限:false"],
+    ],
+  },
+  {
+    column: 2,
+    title: "指定欄位（包含文字）",
     rules: [
       ["保管單位包含", "保管單位:~"],
       ["保管人包含", "保管人:~"],
       ["存置地點包含", "存置地點:~"],
       ["財產名稱包含", "財產名稱:~"],
+      ["財產別名包含", "財產別名:~"],
+      ["使用現況包含", "使用現況:~"],
       ["使用單位包含", "使用單位:~"],
       ["使用人包含", "使用人:~"],
       ["廠牌包含", "廠牌:~"],
       ["型式包含", "型式:~"],
+      ["備註包含", "備註:~"],
     ],
   },
   {
-    title: "其他欄位",
+    column: 2,
+    title: "編號查詢（財產編號-流水號）",
     rules: [
-      ["廠牌", "廠牌:"],
-      ["型式", "型式:"],
-      ["使用單位", "使用單位:"],
-      ["使用人", "使用人:"],
-      ["計量單位", "計量單位:"],
-      ["財產區分別", "財產區分別:"],
-      ["財產大類", "財產大類:"],
-      ["備註", "備註:"],
-    ],
-  },
-  {
-    title: "比較",
-    rules: [
-      ["已使用恰好 5 年", "已使用:=5年"],
-      ["已使用至少 5 年", "已使用:>=5年"],
-      ["年限至少 10 年", "年限:>=10"],
-      ["已達年限", "已達年限:true"],
-      ["數量大於", "數量:>1"],
-      ["原值大於", "原值:>50000"],
-      ["累折大於", "累折:>10000"],
-      ["淨值大於", "淨值:>50000"],
-      ["購置日期之後", "購置日期:>=110/01/01"],
+      ["單一件", "5010304-0004-0000120"],
+      ["流水號區間", "5010304-0004-0000120~128"],
+      ["財產編號區間", "5010304-0001~5010400-0001"],
+      ["財產編號起", "財產編號:>=5010304-0001"],
+      ["財產編號迄", "財產編號:<=5010400-0001"],
     ],
   },
 ];
@@ -191,7 +221,19 @@ function textMatches(value, needle) {
   return new RegExp(expression, "u").test(normalized(value));
 }
 function exactMatches(value, needle) {
-  return normalized(value) === normalized(String(needle).replace(/^"|"$/g, ""));
+  const query = normalized(String(needle).replace(/^"|"$/g, ""));
+  if (!/[?*]/.test(query)) return normalized(value) === query;
+  // Wildcards in a field search still have to match the whole value.
+  const expression = [...query]
+    .map((character) =>
+      character === "*"
+        ? ".*"
+        : character === "?"
+          ? "."
+          : character.replace(/[.*+^${}()|[\]\\]/g, "\\$&"),
+    )
+    .join("");
+  return new RegExp(`^${expression}$`, "u").test(normalized(value));
 }
 function fieldValues(asset, field) {
   return [
@@ -200,15 +242,86 @@ function fieldValues(asset, field) {
     field === "userName" ? asset.rawUserName : "",
   ];
 }
+// Human-friendly asset numbers typed without a field name:
+//   5010304-0004-0000120          one unit (財產編號 + 流水號)
+//   5010304-0004-0000120~128      units 120..128 of that 財產編號
+//   5010304-0001~5010400-0001     every 財產編號 from A to B, inclusive
+const assetNoPattern = "\\d{7}-[0-9A-Za-z]{4}";
+const serialFullPattern = new RegExp(`^(${assetNoPattern})-(\\d{1,7})$`);
+const serialRangePattern = new RegExp(`^(${assetNoPattern})-(\\d{1,7})~(\\d{1,7})$`);
+const assetRangePattern = new RegExp(`^(${assetNoPattern})~(${assetNoPattern})$`);
+export function parseAssetNumberToken(token) {
+  const text = String(token || "");
+  let match = text.match(serialRangePattern);
+  if (match)
+    return {
+      kind: "serial-range",
+      assetNo: match[1].toUpperCase(),
+      from: Number(match[2]),
+      to: Number(match[3]),
+    };
+  match = text.match(serialFullPattern);
+  if (match)
+    return {
+      kind: "serial",
+      assetNo: match[1].toUpperCase(),
+      serial: Number(match[2]),
+    };
+  match = text.match(assetRangePattern);
+  if (match)
+    return {
+      kind: "asset-range",
+      from: match[1].toUpperCase(),
+      to: match[2].toUpperCase(),
+    };
+  return null;
+}
+// Text to highlight in the result table for a bare token, or null.
+export function highlightTextForToken(token) {
+  const parsed = parseAssetNumberToken(token);
+  if (!parsed) return token;
+  return parsed.kind === "asset-range" ? null : parsed.assetNo;
+}
+function assetNumberMatches(asset, parsed) {
+  const assetNo = String(asset.assetNo || "").toUpperCase();
+  if (parsed.kind === "asset-range")
+    // Character-by-character order, both ends included.
+    return assetNo >= parsed.from && assetNo <= parsed.to;
+  if (assetNo !== parsed.assetNo) return false;
+  const serial = numericValue(asset.serialNo);
+  if (!Number.isFinite(serial)) return false;
+  return parsed.kind === "serial"
+    ? serial === parsed.serial
+    : serial >= parsed.from && serial <= parsed.to;
+}
 function tokenMatches(asset, rawToken) {
   const negated = rawToken.startsWith("-");
   const token = negated ? rawToken.slice(1) : rawToken;
   const comparison = token.match(/^([^:]+):(>=|<=|>|<|=)(.+)$/);
   const fieldSearch = token.match(/^([^:]+):(.+)$/);
   let matched;
-  if (comparison && searchFieldAliases[comparison[1]]) {
+  const assetNumber = parseAssetNumberToken(token);
+  if (assetNumber) {
+    matched = assetNumberMatches(asset, assetNumber);
+  } else if (comparison && searchFieldAliases[comparison[1]]) {
     const [, label, operator, expected] = comparison;
     const field = searchFieldAliases[label];
+    if (field === "assetNo") {
+      // 財產編號 compares as text, character by character.
+      const actualText = String(asset.assetNo || "").toUpperCase();
+      const targetText = String(expected).replace(/^"|"$/g, "").toUpperCase();
+      matched =
+        Boolean(actualText) &&
+        Boolean(targetText) &&
+        {
+          ">": actualText > targetText,
+          ">=": actualText >= targetText,
+          "<": actualText < targetText,
+          "<=": actualText <= targetText,
+          "=": actualText === targetText,
+        }[operator];
+      return negated ? !matched : matched;
+    }
     const actual =
       field === "acquiredAt"
         ? dateNumber(asset[field])
@@ -301,6 +414,8 @@ const suggestableFields = new Set([
   "assetMajorClass",
 ]);
 const comparableFields = new Set([
+  "assetNo",
+  "serialNo",
   "netValue",
   "originalValue",
   "depreciation",
@@ -333,52 +448,74 @@ const quoteIfNeeded = (value) =>
 
 // Suggestions for the token at the caret: field names while a plain word is
 // being typed, then real values of the chosen field after the colon.
+export const suggestionLimit = 100;
 export function suggestionsForToken(raw, distinctValues) {
+  const none = { items: [], total: 0 };
+  const helper = comparisonHelper(raw);
+  if (helper) return helper;
+  if (/^\d{7}-[0-9A-Za-z]{4}~/.test(raw))
+    return {
+      items: [],
+      total: 0,
+      note: "「~」後面填結束的財產編號，起訖都包含",
+    };
+  // A bare asset number: explain how to add the 流水號 or a range.
+  if (/^\d{7}-[0-9A-Za-z]{4}(-\d{0,7})?(~\d{0,7})?$/.test(raw))
+    return {
+      items: [],
+      total: 0,
+      note: /^\d{7}-[0-9A-Za-z]{4}$/.test(raw)
+        ? "財產編號後面接「-流水號」可查單一件（5010304-0004-0000120），再接「~128」查區間"
+        : "流水號不用補零；「~」後面填結束的流水號，起訖都包含",
+    };
   const negated = raw.startsWith("-");
   const body = negated ? raw.slice(1) : raw;
   const prefix = negated ? "-" : "";
   const colon = body.indexOf(":");
   if (colon < 0) {
-    if (!body || /["*?]/.test(body)) return [];
+    if (!body || /["*?]/.test(body)) return none;
     const typed = normalized(body);
-    return searchFieldLabels
-      .filter((label) => label.includes(typed) && label !== body)
+    const items = searchFieldLabels
+      .filter((label) => label.includes(typed))
       .sort(
         (a, b) =>
+          Number(b === typed) - Number(a === typed) ||
           Number(b.startsWith(typed)) - Number(a.startsWith(typed)) ||
           a.length - b.length,
       )
-      .slice(0, 8)
       .map((label) => ({
         kind: "field",
         label: `${label}:`,
-        hint: "指定欄位",
+        hint: label === typed ? "按 Tab 加上冒號" : "指定欄位",
         replacement: `${prefix}${label}:`,
       }));
+    return { items, total: items.length };
   }
   const label = body.slice(0, colon);
   const field = searchFieldAliases[label];
-  if (!field || !suggestableFields.has(field)) return [];
+  if (!field || !suggestableFields.has(field)) return none;
   let typedValue = body.slice(colon + 1);
-  if (/^(>=|<=|>|<|=)/.test(typedValue)) return [];
+  if (/^(>=|<=|>|<|=)/.test(typedValue)) return none;
   const contains = typedValue.startsWith("~");
   if (contains) typedValue = typedValue.slice(1);
   typedValue = typedValue.replace(/^"/, "");
   const needle = normalized(typedValue);
-  return distinctValues(field)
+  const matched = distinctValues(field)
     .filter((value) => normalized(value).includes(needle))
     .sort(
       (a, b) =>
         Number(normalized(b).startsWith(needle)) -
         Number(normalized(a).startsWith(needle)),
-    )
-    .slice(0, 8)
-    .map((value) => ({
+    );
+  return {
+    total: matched.length,
+    items: matched.slice(0, suggestionLimit).map((value) => ({
       kind: "value",
       label: value,
       hint: label,
       replacement: `${prefix}${label}:${contains ? "~" : ""}${quoteIfNeeded(value)} `,
-    }));
+    })),
+  };
 }
 
 // Mistakes that would silently return no rows.  Returns plain sentences.
@@ -390,6 +527,16 @@ export function searchTermWarnings(term) {
   for (const rawToken of tokenizeSearch(text)) {
     if (rawToken === "|") continue;
     const token = rawToken.startsWith("-") ? rawToken.slice(1) : rawToken;
+    const assetNumber = parseAssetNumberToken(token);
+    if (assetNumber) {
+      const reversed =
+        assetNumber.kind === "serial-range"
+          ? assetNumber.from > assetNumber.to
+          : assetNumber.kind === "asset-range" && assetNumber.from > assetNumber.to;
+      if (reversed)
+        warnings.push(`「${token}」的起訖順序顛倒，不會查到任何資料。`);
+      continue;
+    }
     const separator = token.indexOf(":");
     if (separator <= 0) continue;
     const label = token.slice(0, separator);
@@ -418,10 +565,101 @@ export function searchTermWarnings(term) {
     } else if (
       field !== "acquiredAt" &&
       field !== "usedDuration" &&
+      field !== "assetNo" &&
       !Number.isFinite(numericValue(value))
     ) {
       warnings.push(`「${label}」要比較數字，「${value}」不是數字。`);
     }
   }
   return [...new Set(warnings)];
+}
+
+// Split the typed text into finished tokens (shown as chips) and the token
+// still being typed.  `head` keeps its trailing separator so that
+// head + draft rebuilds the original text exactly.
+export function splitSearchTerm(term) {
+  const text = String(term || "");
+  const { start } = tokenAtCaret(text, text.length);
+  return { head: text.slice(0, start), draft: text.slice(start) };
+}
+
+const comparisonOperators = [
+  [">=", "大於或等於"],
+  [">", "大於"],
+  ["<=", "小於或等於"],
+  ["<", "小於"],
+  ["=", "等於"],
+];
+const quickValues = {
+  originalValue: [10000, 50000, 100000, 500000, 1000000],
+  depreciation: [10000, 50000, 100000, 500000, 1000000],
+  netValue: [0, 10000, 50000, 100000, 1000000],
+  quantity: [1, 2, 5, 10, 50],
+  usefulLife: [3, 5, 10, 15, 20],
+};
+const durationQuickValues = ["1年", "3年", "5年", "10年", "15年"];
+
+// Help for a comparison field the user is typing: pick the operator first,
+// then a value (quick numbers, years, or a calendar for dates).
+function comparisonHelper(raw) {
+  const negated = raw.startsWith("-");
+  const body = negated ? raw.slice(1) : raw;
+  const match = body.match(/^([^:]+):(>=|<=|>|<|=)?(.*)$/);
+  if (!match) return null;
+  const [, label, operator = "", restRaw] = match;
+  const field = searchFieldAliases[label];
+  if (!field || !comparableFields.has(field)) return null;
+  const rest = restRaw.replace(/^"|"$/g, "");
+  const prefix = `${negated ? "-" : ""}${label}:`;
+  if (!operator) {
+    // "原值:50000" is a plain exact match; only offer operators on an empty value.
+    if (rest) return null;
+    const items = comparisonOperators.map(([symbol, name]) => ({
+      kind: "operator",
+      label: `${name}（${symbol}）`,
+      hint: label,
+      replacement: `${prefix}${symbol}`,
+    }));
+    return {
+      items,
+      total: items.length,
+      note: `「${label}」要怎麼比較？`,
+    };
+  }
+  const operatorName = comparisonOperators.find(([symbol]) => symbol === operator)[1];
+  const base = `${prefix}${operator}`;
+  const add = (value, hint) => ({
+    kind: "value",
+    label: `${base}${value}`,
+    hint,
+    replacement: `${base}${value} `,
+  });
+  const items = [];
+  let note = `${label}${operatorName}…`;
+  let calendar = null;
+  if (field === "acquiredAt") {
+    note = `${label}${operatorName}：點選日期，或直接輸入 110/01/01`;
+    calendar = { prefix: base };
+    if (Number.isFinite(dateNumber(rest)) && rest) items.push(add(rest, "加入"));
+  } else if (field === "usedDuration") {
+    note = `${label}${operatorName}：輸入「5年」或「5年6月」，再按空白鍵加入`;
+    if (rest && Number.isFinite(durationMonths(rest))) items.push(add(rest, "加入"));
+    for (const value of durationQuickValues)
+      if (value !== rest) items.push(add(value, "快速填入"));
+  } else if (field === "assetNo") {
+    note = `${label}${operatorName}：輸入財產編號（如 5010304-0004），再按空白鍵加入`;
+    if (rest) items.push(add(rest, "加入"));
+  } else {
+    const unit = field === "usefulLife"
+        ? "年"
+        : field === "quantity" || field === "serialNo"
+          ? ""
+          : "元";
+    note = `${label}${operatorName}：輸入數字${unit ? `（${unit}）` : ""}，再按空白鍵加入`;
+    if (rest && Number.isFinite(numericValue(rest))) items.push(add(rest, "加入"));
+    for (const value of quickValues[field] || [])
+      if (String(value) !== rest)
+        items.push(add(String(value), value >= 10000 ? value.toLocaleString("en-US") : "快速填入"));
+  }
+  return { items, total: items.length, note, calendar };
 }

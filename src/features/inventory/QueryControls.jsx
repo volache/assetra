@@ -109,19 +109,26 @@ export function SearchRuleMenu({ open, onInsert, onToggle }) {
       {open && (
         <span className="search-rule-popover">
           <strong>搜尋規則</strong>
-          {searchRuleGroups.map((group) => (
-            <span className="search-rule-group" key={group.title}>
-              <b>{group.title}</b>
-              {group.rules.map(([label, value]) => (
-                <button
-                  key={label}
-                  onClick={() => onInsert(value)}
-                  type="button"
-                >
-                  <span>{label}</span>
-                  <code>{value || "輸入文字"}</code>
-                </button>
-              ))}
+          {[0, 1, 2].map((column) => (
+            <span className="search-rule-column" key={column}>
+              {searchRuleGroups
+                .filter((group) => group.column === column)
+                .map((group) => (
+                  <span className="search-rule-group" key={group.title}>
+                    <b>{group.title}</b>
+                    {group.rules.map(([label, value]) => (
+                      <button
+                        className={value.length > 16 ? "stacked" : ""}
+                        key={label}
+                        onClick={() => onInsert(value)}
+                        type="button"
+                      >
+                        <span>{label}</span>
+                        <code>{value || "輸入文字"}</code>
+                      </button>
+                    ))}
+                  </span>
+                ))}
             </span>
           ))}
         </span>

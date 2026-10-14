@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { assetMajorClass, money, serviceLifeExpired, usedDuration } from "../../lib/formatters";
 import { CollaborationDrawer } from "../collaboration/CollaborationDrawer";
 import { requestCollaboration } from "../collaboration/api";
@@ -13,13 +13,14 @@ import {
   photoFilterOptions,
   matchesAdvancedSearch,
   normalizeSearchInput,
+  highlightTextForToken,
   normalized,
   searchFieldAliases,
   searchTermWarnings,
-  suggestionsForToken,
-  tokenAtCaret,
   tokenizeSearch,
 } from "./search";
+import { KeywordSearchBox } from "./KeywordSearchBox";
+import { rememberSearch } from "./searchHistory";
 export function AssetQuery({
   assets,
   focusTask,
@@ -41,9 +42,6 @@ export function AssetQuery({
   const [filters, setFilters] = useState(() =>
     Object.fromEntries(filterFields.map(([key]) => [key, ""])),
   );
-  const [caret, setCaret] = useState(0);
-  const [suggestOpen, setSuggestOpen] = useState(false);
-  const [activeSuggestion, setActiveSuggestion] = useState(-1);
   const [photoFilter, setPhotoFilter] = useState("");
   const [collaborationFilter, setCollaborationFilter] = useState("");
   const [flagged, setFlagged] = useState(null);
@@ -60,7 +58,7 @@ export function AssetQuery({
   const [ruleMenuOpen, setRuleMenuOpen] = useState(false);
   const filterSentinelRef = useRef(null);
   const filterPanelRef = useRef(null);
-  const searchInputRef = useRef(null);
+  const searchBoxRef = useRef(null);
   const matches = (asset, omit = null) =>
     filterFields.every(
       ([key]) =>
@@ -101,26 +99,23 @@ export function AssetQuery({
     [assets, source],
   );
   const distinctValueCache = useMemo(() => new Map(), [sourceRows]);
-  const distinctValues = (field) => {
-    if (!distinctValueCache.has(field))
-      distinctValueCache.set(
-        field,
-        [
-          ...new Set(
-            sourceRows
-              .map((asset) => String(asset[field] || "").trim())
-              .filter(Boolean),
-          ),
-        ].sort((a, b) => a.localeCompare(b, "zh-Hant")),
-      );
-    return distinctValueCache.get(field);
-  };
-  const searchToken = tokenAtCaret(term, Math.min(caret, term.length));
-  const suggestions = useMemo(
-    () => suggestionsForToken(searchToken.raw, distinctValues),
-    [searchToken.raw, distinctValueCache],
+  const distinctValues = useCallback(
+    (field) => {
+      if (!distinctValueCache.has(field))
+        distinctValueCache.set(
+          field,
+          [
+            ...new Set(
+              sourceRows
+                .map((asset) => String(asset[field] || "").trim())
+                .filter(Boolean),
+            ),
+          ].sort((a, b) => a.localeCompare(b, "zh-Hant")),
+        );
+      return distinctValueCache.get(field);
+    },
+    [distinctValueCache, sourceRows],
   );
-  const appliedTokens = useMemo(() => tokenizeSearch(appliedTerm), [appliedTerm]);
   const termWarnings = useMemo(() => searchTermWarnings(term), [term]);
   const options = useMemo(
     () =>
@@ -192,10 +187,13 @@ export function AssetQuery({
   );
   const globalHighlightTerms = useMemo(
     () =>
-      tokenizeSearch(appliedTerm).filter(
-        (token) =>
-          token !== "|" && !token.startsWith("-") && !token.includes(":"),
-      ),
+      tokenizeSearch(appliedTerm)
+        .filter(
+          (token) =>
+            token !== "|" && !token.startsWith("-") && !token.includes(":"),
+        )
+        .map(highlightTextForToken)
+        .filter(Boolean),
     [appliedTerm],
   );
   function highlightTermsFor(field) {
@@ -209,7 +207,10 @@ export function AssetQuery({
         if (fieldToken) {
           if (searchFieldAliases[fieldToken[1]] === field)
             terms.push(fieldToken[2]);
-        } else terms.push(token);
+        } else {
+          const text = highlightTextForToken(token);
+          if (text) terms.push(text);
+        }
       });
     return terms;
   }
@@ -397,42 +398,29 @@ export function AssetQuery({
     setPhotoFilter("");
     setCollaborationFilter("");
   }
-  function removeAppliedToken(index) {
-    const cleaned = [];
-    appliedTokens.forEach((token, position) => {
-      if (position === index) return;
-      // Drop an "|" that would lead the query or follow another "|".
-      if (token === "|" && (!cleaned.length || cleaned[cleaned.length - 1] === "|")) return;
-      cleaned.push(token);
-    });
-    while (cleaned[cleaned.length - 1] === "|") cleaned.pop();
-    const next = cleaned.join(" ");
-    setTerm(next);
-    setAppliedTerm(next);
-    setCaret(next.length);
-  }
-  function acceptSuggestion(suggestion) {
-    const before = term.slice(0, searchToken.start);
-    const after = term.slice(searchToken.end);
-    const next = `${before}${suggestion.replacement}${after}`;
-    const nextCaret = (before + suggestion.replacement).length;
-    setTerm(next);
-    setCaret(nextCaret);
-    setActiveSuggestion(-1);
+  function resetAiState() {
     setAiReport(null);
     setAiAnalysis(null);
     setAiClarification(null);
     setAiAssetIds(null);
-    requestAnimationFrame(() => {
-      searchInputRef.current?.focus();
-      searchInputRef.current?.setSelectionRange(nextCaret, nextCaret);
-    });
+  }
+  function changeTerm(next) {
+    setTerm(next);
+    resetAiState();
+  }
+  // Used by chip removal and picked suggestions: search right away.
+  function applyTerm(next) {
+    setTerm(next);
+    setAppliedTerm(next.trim());
+    rememberSearch(next);
+    resetAiState();
+    setRuleMenuOpen(false);
   }
   function runSearch() {
     const normalizedTerm = normalizeSearchInput(term);
     if (normalizedTerm !== term) setTerm(normalizedTerm);
-    setSuggestOpen(false);
     setAppliedTerm(normalizedTerm.trim());
+    rememberSearch(normalizedTerm);
     setAiReport(null);
     setAiAnalysis(null);
     setAiClarification(null);
@@ -479,23 +467,8 @@ export function AssetQuery({
     setCompactFilterExpanded((open) => !open);
   }
   function insertRule(value) {
-    const input = searchInputRef.current;
-    const start = input?.selectionStart ?? term.length;
-    const end = input?.selectionEnd ?? term.length;
-    const before = term.slice(0, start);
-    const after = term.slice(end);
-    const padding =
-      before && !/\s$/.test(before) && !value.startsWith(" ") ? " " : "";
-    const next = `${before}${padding}${value}${after}`;
-    setTerm(next);
+    searchBoxRef.current?.insert(value);
     setRuleMenuOpen(false);
-    const nextCaret = (before + padding + value).length;
-    setCaret(nextCaret);
-    setSuggestOpen(true);
-    requestAnimationFrame(() => {
-      input?.focus();
-      input?.setSelectionRange(nextCaret, nextCaret);
-    });
   }
   return (
     <section className="page">
@@ -521,19 +494,20 @@ export function AssetQuery({
           >
             篩選條件{activeFilterCount ? <b>{activeFilterCount}</b> : null}
           </button>
-          <label className="compact-search">
+          <div className="compact-search">
             <span className="sr-only">全局關鍵字搜尋</span>
-            <input
-              value={term}
-              onChange={(e) => { setTerm(e.target.value); setAiReport(null); setAiAnalysis(null); setAiClarification(null); setAiAssetIds(null); }}
-              onKeyDown={(e) => {
-                if (e.key !== "Enter") return;
-                e.preventDefault();
-                if (e.ctrlKey || e.metaKey) runAiSearch(); else runSearch();
-              }}
+            <KeywordSearchBox
+              appliedTerm={appliedTerm}
+              distinctValues={distinctValues}
+              id="compact-search-input"
+              onAiSearch={runAiSearch}
+              onApply={applyTerm}
+              onSearch={runSearch}
+              onTermChange={changeTerm}
               placeholder="輸入後按 Enter 搜尋…"
+              term={term}
             />
-          </label>
+          </div>
           <button
             className="compact-clear"
             disabled={!activeFilterCount}
@@ -597,88 +571,21 @@ export function AssetQuery({
           {statusFilterSelects("")}
         </div>
         <div className="advanced-search">
-          <label className="search-field">
-            全局關鍵字搜尋
-            <input
-              ref={searchInputRef}
-              value={term}
-              onBlur={() => setTimeout(() => setSuggestOpen(false), 120)}
-              onChange={(e) => {
-                const raw = e.target.value;
-                const position = e.target.selectionStart ?? raw.length;
-                // Leave text alone while an IME composition is still open.
-                const next = e.nativeEvent.isComposing ? raw : normalizeSearchInput(raw);
-                setTerm(next);
-                setCaret(position);
-                setSuggestOpen(true);
-                setActiveSuggestion(-1);
-                setAiReport(null); setAiAnalysis(null); setAiClarification(null); setAiAssetIds(null);
-                if (next !== raw)
-                  requestAnimationFrame(() =>
-                    searchInputRef.current?.setSelectionRange(position, position),
-                  );
-              }}
-              onClick={(e) => setCaret(e.target.selectionStart ?? 0)}
-              onCompositionEnd={(e) => {
-                const next = normalizeSearchInput(e.target.value);
-                if (next !== e.target.value) setTerm(next);
-                setCaret(e.target.selectionStart ?? next.length);
-              }}
-              onFocus={() => setSuggestOpen(true)}
-              onKeyDown={(e) => {
-                const listOpen = suggestOpen && suggestions.length > 0;
-                if (listOpen && e.key === "ArrowDown") {
-                  e.preventDefault();
-                  setActiveSuggestion((index) => (index + 1) % suggestions.length);
-                  return;
-                }
-                if (listOpen && e.key === "ArrowUp") {
-                  e.preventDefault();
-                  setActiveSuggestion((index) => (index <= 0 ? suggestions.length - 1 : index - 1));
-                  return;
-                }
-                if (listOpen && e.key === "Tab" && !e.shiftKey) {
-                  e.preventDefault();
-                  acceptSuggestion(suggestions[Math.max(activeSuggestion, 0)]);
-                  return;
-                }
-                if (listOpen && e.key === "Escape") {
-                  e.preventDefault();
-                  setSuggestOpen(false);
-                  return;
-                }
-                if (e.key !== "Enter") return;
-                e.preventDefault();
-                if (listOpen && activeSuggestion >= 0) {
-                  acceptSuggestion(suggestions[activeSuggestion]);
-                  return;
-                }
-                if (e.ctrlKey || e.metaKey) runAiSearch(); else runSearch();
-              }}
-              onKeyUp={(e) => {
-                if (e.key !== "Enter") setCaret(e.target.selectionStart ?? 0);
-              }}
+          <div className="search-field">
+            <label htmlFor="global-search-input">全局關鍵字搜尋</label>
+            <KeywordSearchBox
+              appliedTerm={appliedTerm}
+              distinctValues={distinctValues}
+              id="global-search-input"
+              onAiSearch={runAiSearch}
+              onApply={applyTerm}
+              onSearch={runSearch}
+              onTermChange={changeTerm}
               placeholder="輸入關鍵字，或以自然語言描述需求"
+              ref={searchBoxRef}
+              term={term}
             />
-            {suggestOpen && suggestions.length > 0 && (
-              <span className="combo-menu search-suggestions" role="listbox">
-                {suggestions.map((suggestion, index) => (
-                  <button
-                    aria-selected={index === activeSuggestion}
-                    className={index === activeSuggestion ? "active" : ""}
-                    key={`${suggestion.kind}-${suggestion.label}`}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => acceptSuggestion(suggestion)}
-                    role="option"
-                    type="button"
-                  >
-                    <span>{suggestion.label}</span>
-                    <small>{suggestion.hint}</small>
-                  </button>
-                ))}
-              </span>
-            )}
-          </label>
+          </div>
           <div className="advanced-search-actions">
             <button aria-keyshortcuts="Control+Enter" className="button button-secondary query-action ai-query-action" disabled={aiBusy || !term.trim()} onClick={runAiSearch} type="button">{aiBusy ? <><CapsuleSpinner compact /><span>施展魔法中</span></> : <><span>智慧查詢</span><small>Ctrl + Enter</small></>}</button>
             <button
@@ -695,26 +602,6 @@ export function AssetQuery({
               open={ruleMenuOpen}
             />
           </div>
-          {appliedTokens.length > 0 && (
-            <div aria-label="目前搜尋條件" className="search-chips">
-              {appliedTokens.map((token, index) =>
-                token === "|" ? (
-                  <i className="search-chip-or" key={`or-${index}`}>或</i>
-                ) : (
-                  <span className="search-chip" key={`${index}-${token}`}>
-                    <code>{token}</code>
-                    <button
-                      aria-label={`移除條件 ${token}`}
-                      onClick={() => removeAppliedToken(index)}
-                      type="button"
-                    >
-                      ✕
-                    </button>
-                  </span>
-                ),
-              )}
-            </div>
-          )}
           {termWarnings.length > 0 && (
             <ul aria-live="polite" className="search-hints">
               {termWarnings.map((warning) => (
