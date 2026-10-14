@@ -1,24 +1,47 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  applyIdentifierSpan,
+  applySelfScope,
+  buildPlannerPrompt,
+  collaborationValues,
+  flagLabels,
+  foldText,
+  identifierRule,
+  identifierSpan,
+  photoValues,
+  refersToSelf,
+  resolveDateRange,
+  rocDate,
+  ruleValue,
+  selfLabels,
+  selfScopes,
+} from "./query-rules.ts";
 
-type CatalogField = { field_key: string; label: string; value_kind: "entity" | "number" | "identifier_range" | "date_range" | "service_life_status" | "data_quality"; column_name: string | null; operators: string[]; configuration: Record<string, unknown> };
+type Client = ReturnType<typeof createClient>;
+type CatalogField = { field_key: string; label: string; value_kind: "entity" | "number" | "identifier_range" | "date_range" | "service_life_status" | "data_quality" | "text" | "flag"; column_name: string | null; operators: string[]; configuration: Record<string, unknown> };
 type Candidate = { fieldKey: string; label: string; value: string; normalized: string; count: number };
 type Predicate = Record<string, unknown>;
 type AnalysisPlan = { type: "rank" | "aggregate" | "group" | "quality"; field?: string; aggregate?: "count" | "sum" | "average" | "min" | "max"; groupBy?: string; direction?: "asc" | "desc"; limit?: number; checks?: string[] };
 type Clarification = { prompt: string; options: Array<{ id: string; label: string; groups: Predicate[][] }> };
 type PlannedQuery = { intent: "lookup" | "analysis" | "clarify"; groups: Predicate[][]; analysis: AnalysisPlan | null; clarification: Clarification | null; modelVersion?: string | null };
-const origins = new Set(["http://localhost:5173", "http://127.0.0.1:5173"]);
-const headers = (request: Request) => ({ "Access-Control-Allow-Origin": origins.has(request.headers.get("Origin") ?? "") ? request.headers.get("Origin")! : "http://localhost:5173", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS", "Content-Type": "application/json" });
+type IndexRow = { field: string; display: string; folded: string; count: number };
+type FlagSets = { photo: Set<string>; open: Set<string>; inProgress: Set<string> };
+type FlagFilter = { field: string; value: string };
+type Ctx = { client: Client; admin: Client; index: IndexRow[]; userId: string; flags?: FlagSets; selfCodes?: string[] };
+
+const origins = new Set(["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"]);
+const headers = (request: Request) => ({ "Access-Control-Allow-Origin": origins.has(request.headers.get("Origin") ?? "") ? request.headers.get("Origin")! : "http://localhost:5173", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS", "Content-Type": "application/json", Vary: "Origin" });
 const normalize = (value: unknown) => String(value ?? "").trim().toLocaleLowerCase("zh-TW");
 const decode = (value: string) => Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
-const assetIdentifier = /^(\d{7}-\d{4})-(\d{7})$/;
-const isoDate = /^\d{4}-\d{2}-\d{2}$/;
 const resultFields = "identity_id,asset_no,serial_no,name,custodian_name,user_name,location_name,unit_name,brand,net_value";
 const formatChineseTypography = (value: unknown) => String(value ?? "")
-  .replace(/([\u3400-\u9fff])([A-Za-z0-9])/g, "$1 $2")
-  .replace(/([A-Za-z0-9])([\u3400-\u9fff])/g, "$1 $2");
+  .replace(/([㐀-鿿])([A-Za-z0-9])/g, "$1 $2")
+  .replace(/([A-Za-z0-9])([㐀-鿿])/g, "$1 $2");
 const formatCount = (value: number) => Number(value).toLocaleString("zh-TW");
 const formatAiText = (value: unknown) => formatChineseTypography(value);
+const postgrestQuoted = (value: string) => `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+const inList = (values: string[]) => `(${values.map(postgrestQuoted).join(",")})`;
 
 async function encryptionKey() {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!));
@@ -59,50 +82,93 @@ function parsePlan(parts: Array<Record<string, unknown>>): PlannedQuery {
   if (!analysis || typeof analysis !== "object" || !["rank", "aggregate", "group", "quality"].includes(String((analysis as Record<string, unknown>).type ?? ""))) throw new Error("AI 分析計畫格式錯誤。");
   return { intent, groups, analysis: analysis as AnalysisPlan, clarification: null };
 }
-async function loadCatalog(admin: ReturnType<typeof createClient>) {
+async function loadCatalog(admin: Client) {
   const { data, error } = await admin.from("ai_query_semantic_fields").select("field_key,label,value_kind,column_name,operators,configuration").eq("is_active", true).order("field_key");
   if (error) throw error;
   const catalog = (data || []) as CatalogField[];
   if (!catalog.length) throw new Error("AI 查詢語意目錄尚未初始化。");
   return catalog;
 }
+
+// ---- where the data is: the value index ----
+// ai_query_index_values holds every distinct value of each entity field with
+// its record count.  It is small (a few thousand rows), so it is read once and
+// kept for a couple of minutes; matching then happens in memory with the same
+// spelling fold the search box uses (台/臺/檯, 污/汙, 家具).
+let indexCache: { at: number; rows: IndexRow[] } | null = null;
+async function loadIndex(admin: Client) {
+  if (indexCache && Date.now() - indexCache.at < 120_000) return indexCache.rows;
+  const rows: IndexRow[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await admin.from("ai_query_index_values").select("field_name,display_value,record_count").order("field_name").order("normalized_value").range(from, from + 999);
+    if (error) throw error;
+    for (const row of data || []) rows.push({ field: row.field_name, display: row.display_value, folded: foldText(row.display_value), count: row.record_count });
+    if (!data || data.length < 1000) break;
+  }
+  indexCache = { at: Date.now(), rows };
+  return rows;
+}
+const smallDomainLimit = 60;
+// People's names are never sent as a full list; only names that match the
+// question are offered as candidates, as before.
+const personFieldKeys = new Set(["custodian", "user"]);
+function listedInFull(field: CatalogField, sizes: Map<string, number>) {
+  const size = sizes.get(field.label) || 0;
+  return size > 0 && size <= smallDomainLimit && !personFieldKeys.has(field.field_key);
+}
+function domainSizes(index: IndexRow[]) {
+  const sizes = new Map<string, number>();
+  for (const row of index) sizes.set(row.field, (sizes.get(row.field) || 0) + 1);
+  return sizes;
+}
+function smallDomainText(ctx: Ctx, catalog: CatalogField[]) {
+  const sizes = domainSizes(ctx.index);
+  const lines: string[] = [];
+  for (const field of catalog.filter((item) => item.value_kind === "entity")) {
+    if (!listedInFull(field, sizes)) continue;
+    const values = ctx.index.filter((row) => row.field === field.label).sort((left, right) => right.count - left.count);
+    lines.push(`${field.field_key}｜${field.label}｜${values.map((row) => `${row.display}(${formatCount(row.count)})`).join("、")}`);
+  }
+  return lines.join("\n");
+}
 function fragments(question: string) {
-  const text = normalize(question); const found = new Set<string>();
+  const text = foldText(question); const found = new Set<string>();
   for (let size = 2; size <= Math.min(5, text.length); size++) for (let start = 0; start + size <= text.length; start++) {
-    const piece = text.slice(start, start + size).replace(/[(),.%]/g, ""); if (piece) found.add(piece);
+    const piece = text.slice(start, start + size).replace(/[(),.%]/g, ""); if (piece.length >= 2) found.add(piece);
   }
-  return [...found].slice(0, 24);
+  return [...found].slice(0, 120);
 }
-async function findCandidates(client: ReturnType<typeof createClient>, question: string, catalog: CatalogField[]) {
+function findCandidates(ctx: Ctx, question: string, catalog: CatalogField[]) {
   const byLabel = new Map(catalog.filter((field) => field.value_kind === "entity").map((field) => [field.label, field]));
-  const filters = fragments(question).map((piece) => `normalized_value.ilike.%${piece}%`);
-  if (!filters.length) return [];
-  const { data, error } = await client.from("ai_search_terms").select("field_name,display_value,normalized_value").in("field_name", [...byLabel.keys()]).or(filters.join(",")).limit(1500);
-  if (error) throw error;
-  const grouped = new Map<string, Candidate>();
-  for (const row of data || []) {
-    const field = byLabel.get(row.field_name); if (!field) continue;
-    const key = `${field.field_key}\0${row.normalized_value}`; const item = grouped.get(key) || { fieldKey: field.field_key, label: field.label, value: row.display_value, normalized: row.normalized_value, count: 0 };
-    item.count++; grouped.set(key, item);
+  const sizes = domainSizes(ctx.index); const pieces = fragments(question);
+  const scored: Array<{ row: IndexRow; field: CatalogField; best: number }> = [];
+  for (const row of ctx.index) {
+    const field = byLabel.get(row.field);
+    if (!field || listedInFull(field, sizes)) continue;
+    let best = 0; for (const piece of pieces) if (piece.length > best && row.folded.includes(piece)) best = piece.length;
+    if (best >= 2) scored.push({ row, field, best });
   }
-  return [...grouped.values()].sort((left, right) => right.count - left.count).slice(0, 40);
+  return scored.sort((left, right) => right.best - left.best || right.row.count - left.row.count).slice(0, 60)
+    .map(({ row, field }): Candidate => ({ fieldKey: field.field_key, label: field.label, value: row.display, normalized: row.folded, count: row.count }));
 }
-async function resolveEntity(client: ReturnType<typeof createClient>, field: CatalogField, input: unknown) {
-  const requested = normalize(input); if (!requested || requested.length > 120) throw new Error(`無效的${field.label}條件。`);
-  const { data, error } = await client.from("ai_search_terms").select("display_value,normalized_value").eq("field_name", field.label).ilike("normalized_value", `%${requested}%`).limit(300);
-  if (error) throw error;
-  const values = [...new Map((data || []).map((row) => [row.normalized_value, row.display_value])).values()];
-  const exact = values.filter((value) => normalize(value) === requested); const matches = exact.length ? exact : values;
-  if (!matches.length) throw new Error(`索引未找到${field.label}：${String(input)}。`);
-  if (matches.length > 1) throw new Error(`${field.label}「${String(input)}」有 ${matches.length} 個可能值，請補充更具體的名稱。`);
-  return matches[0] as string;
-}
-async function confirmEntityContains(client: ReturnType<typeof createClient>, field: CatalogField, input: unknown) {
-  const requested = normalize(input); if (!requested || requested.length > 120) throw new Error(`無效的${field.label}條件。`);
-  const { data, error } = await client.from("ai_search_terms").select("normalized_value").eq("field_name", field.label).ilike("normalized_value", `%${requested}%`).limit(1);
-  if (error) throw error;
-  if (!data?.length) throw new Error(`索引未找到${field.label}：${String(input)}。`);
-  return String(input).trim();
+// Every indexed spelling of a value, so 櫃台 reaches 櫃臺 and 櫃檯.
+function resolveEntityValues(ctx: Ctx, field: CatalogField, input: unknown, operator: string) {
+  const needle = foldText(input); if (!needle || needle.length > 120) throw new Error(`無效的${field.label}條件。`);
+  const rows = ctx.index.filter((row) => row.field === field.label);
+  const exact = rows.filter((row) => row.folded === needle).map((row) => row.display);
+  const contains = rows.filter((row) => row.folded.includes(needle)).map((row) => row.display);
+  const choose = (values: string[], mode: "exact" | "contains") => {
+    if (values.length > 300) throw new Error(`${field.label}「${String(input)}」符合 ${values.length} 個寫法，請補充更具體的名稱。`);
+    return { values, mode };
+  };
+  if (operator === "contains") {
+    if (!contains.length) throw new Error(`索引未找到${field.label}：${String(input)}。`);
+    return choose(contains, "contains");
+  }
+  if (exact.length) return choose(exact, "exact");
+  if (contains.length === 1) return choose(contains, "exact");
+  if (contains.length > 1) return choose(contains, "contains");
+  throw new Error(`索引未找到${field.label}：${String(input)}。`);
 }
 function comparison(request: any, column: string, operator: string, value: number | string) {
   return operator === ">" ? request.gt(column, value) : operator === ">=" ? request.gte(column, value) : operator === "<" ? request.lt(column, value) : operator === "<=" ? request.lte(column, value) : request.eq(column, value);
@@ -110,75 +176,108 @@ function comparison(request: any, column: string, operator: string, value: numbe
 function taipeiToday() {
   return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei" }).format(new Date());
 }
-function subtractDate(value: string, amount: number, unit: string) {
-  const date = new Date(`${value}T00:00:00.000Z`); const day = date.getUTCDate();
-  if (unit === "day") date.setUTCDate(day - amount);
-  else if (unit === "week") date.setUTCDate(day - amount * 7);
-  else if (unit === "month") { date.setUTCDate(1); date.setUTCMonth(date.getUTCMonth() - amount); const last = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate(); date.setUTCDate(Math.min(day, last)); }
-  else if (unit === "year") { date.setUTCDate(1); date.setUTCFullYear(date.getUTCFullYear() - amount); const last = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate(); date.setUTCDate(Math.min(day, last)); }
-  else throw new Error("相對日期單位僅支援天、週、月或年。");
-  return date.toISOString().slice(0, 10);
-}
-function dateRange(predicate: Predicate) {
-  const relative = predicate.relative as Record<string, unknown> | undefined; const today = taipeiToday();
-  if (relative) {
-    const amount = Number(relative.amount); const unit = String(relative.unit ?? "");
-    if (!Number.isInteger(amount) || amount < 1 || amount > 120) throw new Error("相對日期期間必須在 1 至 120 之間。");
-    return { from: subtractDate(today, amount, unit), to: today, description: `最近${amount}${({ day: "天", week: "週", month: "個月", year: "年" } as Record<string, string>)[unit] || ""}` };
+async function flagSets(ctx: Ctx): Promise<FlagSets> {
+  if (ctx.flags) return ctx.flags;
+  const sets: FlagSets = { photo: new Set(), open: new Set(), inProgress: new Set() };
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await ctx.admin.from("asset_photos").select("asset_identity_id").order("id").range(from, from + 999);
+    if (error) throw error;
+    for (const row of data || []) sets.photo.add(row.asset_identity_id);
+    if (!data || data.length < 1000) break;
   }
-  const from = String(predicate.from ?? ""); const to = String(predicate.to ?? from);
-  if (!isoDate.test(from) || !isoDate.test(to) || from > to) throw new Error("日期範圍必須使用有效的 ISO 日期，且起日不得晚於迄日。");
-  return { from, to, description: `${from}至${to}` };
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await ctx.admin.from("asset_collaborations").select("asset_identity_id,status").neq("kind", "note").in("status", ["open", "in_progress"]).order("id").range(from, from + 999);
+    if (error) throw error;
+    for (const row of data || []) (row.status === "in_progress" ? sets.inProgress : sets.open).add(row.asset_identity_id);
+    if (!data || data.length < 1000) break;
+  }
+  return (ctx.flags = sets);
 }
-function rocDate(value: string) {
-  const [year, month, day] = value.split("-").map(Number);
-  return `${String(year - 1911).padStart(3, "0")}/${String(month).padStart(2, "0")}/${String(day).padStart(2, "0")}`;
+// The signed-in person's custodian codes come from their account mapping, never
+// from the model, so "my assets" cannot be pointed at someone else.
+async function selfCodes(ctx: Ctx) {
+  if (ctx.selfCodes) return ctx.selfCodes;
+  const { data, error } = await ctx.admin.from("user_custodians").select("custodian_code").eq("user_id", ctx.userId);
+  if (error) throw error;
+  return (ctx.selfCodes = [...new Set((data || []).map((row) => String(row.custodian_code ?? "").trim()).filter(Boolean))]);
 }
-async function compileGroup(client: ReturnType<typeof createClient>, predicates: Predicate[], catalog: Map<string, CatalogField>) {
-  let request = client.from("asset_records").select(resultFields, { count: "exact" }).eq("is_current", true); const description: string[] = []; const rules: string[] = []; let prefix: string | null = null;
+const noSelfMapping = "目前帳號尚未設定保管人對應，無法判斷「我的財產」。請先請管理員設定帳號的保管人資料。";
+function flagMatches(flag: FlagFilter, sets: FlagSets, id: string) {
+  if (flag.field === "has_photo") return flag.value === "with" ? sets.photo.has(id) : !sets.photo.has(id);
+  const open = sets.open.has(id); const progress = sets.inProgress.has(id);
+  if (flag.value === "open") return open;
+  if (flag.value === "in_progress") return progress;
+  if (flag.value === "any") return open || progress;
+  return !open && !progress;
+}
+async function compileGroup(ctx: Ctx, predicates: Predicate[], catalog: Map<string, CatalogField>) {
+  let request = ctx.client.from("asset_records").select(resultFields, { count: "exact" }).eq("is_current", true); const description: string[] = []; const rules: string[] = []; const flags: FlagFilter[] = []; const selves: string[] = [];
   for (const predicate of predicates) {
+    if (String(predicate.kind ?? "") === "self") {
+      const scope = String(predicate.as ?? "either");
+      if (!selfScopes.includes(scope)) throw new Error("「我的財產」的範圍必須是 custodian、user 或 either。");
+      const codes = await selfCodes(ctx);
+      if (!codes.length) throw new Error(noSelfMapping);
+      request = applySelfScope(request, scope, codes); description.push(selfLabels[scope]); selves.push(selfLabels[scope]);
+      continue;
+    }
     const field = catalog.get(String(predicate.field ?? ""));
     if (!field || String(predicate.kind ?? "") !== field.value_kind) throw new Error("AI 使用了無效的語意欄位或查詢方式。");
     if (field.value_kind === "entity") {
       const operator = String(predicate.operator ?? "=");
       if (!field.operators.includes(operator)) throw new Error(`${field.label}不支援此查詢運算子。`);
-      const value = operator === "contains" ? await confirmEntityContains(client, field, predicate.value) : await resolveEntity(client, field, predicate.value);
-      request = operator === "not" ? request.neq(field.column_name!, value) : operator === "contains" ? request.ilike(field.column_name!, `%${value}%`) : request.eq(field.column_name!, value);
-      description.push(operator === "not" ? `${field.label}不為${value}` : operator === "contains" ? `${field.label}包含${value}` : `${field.label}為${value}`);
-      rules.push(operator === "not" ? `-${field.label}:${value}` : operator === "contains" ? `${field.label}:~${value}` : `${field.label}:${value}`);
+      const input = String(predicate.value ?? "").trim();
+      const { values, mode } = resolveEntityValues(ctx, field, input, operator);
+      const column = field.column_name!; const asRule = mode === "contains" ? `~${ruleValue(input)}` : ruleValue(values[0]);
+      if (operator === "not") {
+        request = request.or(`${column}.is.null,${column}.not.in.${inList(values)}`);
+        description.push(mode === "contains" ? `${field.label}不包含${input}` : `${field.label}不為${values[0]}`); rules.push(`-${field.label}:${asRule}`);
+      } else {
+        request = values.length === 1 ? request.eq(column, values[0]) : request.in(column, values);
+        description.push(mode === "contains" ? `${field.label}包含${input}` : `${field.label}為${values.length > 1 ? values.join("／") : values[0]}`); rules.push(`${field.label}:${asRule}`);
+      }
     } else if (field.value_kind === "number") {
       const operator = String(predicate.operator ?? ""); const value = Number(String(predicate.value ?? "").replaceAll(",", ""));
       if (!field.operators.includes(operator) || !Number.isFinite(value)) throw new Error(`${field.label}的比較條件無效。`);
       request = comparison(request, field.column_name!, operator, value); description.push(`${field.label}${operator}${value}`);
       rules.push(`${field.label}:${operator}${value}`);
+    } else if (field.value_kind === "text") {
+      const operator = String(predicate.operator ?? "contains");
+      if (!field.operators.includes(operator)) throw new Error(`${field.label}不支援此查詢運算子。`);
+      const value = String(predicate.value ?? "").trim(); if (!value || value.length > 120) throw new Error(`無效的${field.label}條件。`);
+      const like = `%${foldText(value).replace(/[\\%_]/g, "\\$&")}%`; const column = field.column_name!;
+      request = operator === "not" ? request.or(`${column}.is.null,${column}.not.ilike.${postgrestQuoted(like)}`) : request.ilike(column, like);
+      description.push(`${field.label}${operator === "not" ? "不包含" : "包含"}${value}`); rules.push(`${operator === "not" ? "-" : ""}${field.label}:~${ruleValue(value)}`);
     } else if (field.value_kind === "identifier_range") {
-      const from = String(predicate.from ?? ""); const rawTo = String(predicate.to ?? from); const first = assetIdentifier.exec(from);
-      const to = first && /^\d{1,7}$/.test(rawTo) ? `${first[1]}-${rawTo.padStart(7, "0")}` : rawTo;
-      const last = assetIdentifier.exec(to);
-      if (!first || !last || first[1] !== last[1] || (prefix && prefix !== first[1])) throw new Error("財產編號範圍必須使用相同前段的完整 7碼-4碼-7碼格式。");
-      prefix = first[1]; request = request.eq("asset_no", first[1]).gte("serial_no", first[2]).lte("serial_no", last[2]); description.push(from === to ? `財產編號${from}` : `財產編號${from}至${to}`);
-      if (from === to) rules.push(`${field.label}:${from}`);
-      else rules.push(`${field.label}:>=${from}`, `${field.label}:<=${to}`);
+      const span = identifierSpan(predicate.from, predicate.to); const rule = identifierRule(predicate.from, predicate.to);
+      request = applyIdentifierSpan(request, span); description.push(`財產編號${rule}`); rules.push(rule);
     } else if (field.value_kind === "date_range") {
-      const range = dateRange(predicate); request = request.gte(field.column_name!, range.from).lte(field.column_name!, range.to); description.push(`${field.label}${range.description}`);
-      rules.push(`${field.label}:>=${rocDate(range.from)}`, `${field.label}:<=${rocDate(range.to)}`);
+      const range = resolveDateRange(predicate, taipeiToday());
+      if (range.from) { request = request.gte(field.column_name!, range.from); rules.push(`${field.label}:>=${rocDate(range.from)}`); }
+      if (range.to) { request = request.lte(field.column_name!, range.to); rules.push(`${field.label}:<=${rocDate(range.to)}`); }
+      description.push(`${field.label}${range.description}`);
     } else if (field.value_kind === "service_life_status") {
       if (String(predicate.operator ?? "expired") !== "expired") throw new Error("已達年限僅支援此條件。");
       request = request.not(field.column_name!, "is", null).lte(field.column_name!, taipeiToday()); description.push(field.label);
       rules.push("已達年限:true");
+    } else if (field.value_kind === "flag") {
+      const value = String(predicate.value ?? "");
+      if (!(field.field_key === "has_photo" ? photoValues : collaborationValues).includes(value)) throw new Error(`${field.label}的值無效。`);
+      flags.push({ field: field.field_key, value }); description.push(flagLabels[value]);
     } else throw new Error("資料品質欄位僅能用於分析。");
   }
-  return { request, description, rules };
+  return { request, description, rules, flags, selves };
 }
-async function executeGroup(client: ReturnType<typeof createClient>, predicates: Predicate[], catalog: Map<string, CatalogField>) {
-  const { request, description, rules } = await compileGroup(client, predicates, catalog); const identityIds: string[] = []; let totalCount = 0;
+async function executeGroup(ctx: Ctx, predicates: Predicate[], catalog: Map<string, CatalogField>) {
+  const { request, description, rules, flags, selves } = await compileGroup(ctx, predicates, catalog); let identityIds: string[] = []; let totalCount = 0;
   for (let from = 0; from <= 10000; from += 1000) {
     const { data, error, count } = await request.order("asset_no").order("serial_no").range(from, from + 999);
     if (error) throw error; if (from === 0) totalCount = count ?? 0;
     identityIds.push(...(data || []).map((row) => row.identity_id)); if (!data || data.length < 1000) break;
   }
   if (identityIds.length < totalCount) throw new Error("查詢結果超過 10,000 筆，請補充條件後再試。");
-  return { identityIds, description, rules };
+  if (flags.length) { const sets = await flagSets(ctx); identityIds = identityIds.filter((id) => flags.every((flag) => flagMatches(flag, sets, id))); }
+  return { identityIds, description, rules, flags, selves };
 }
 function supportsAnalysis(field: CatalogField, capability: string) {
   return Array.isArray(field.configuration?.analysis) && field.configuration.analysis.includes(capability);
@@ -192,7 +291,7 @@ function formatAnalysisValue(field: CatalogField, value: unknown) {
   if (field.value_kind === "number") return Number(value).toLocaleString("zh-TW", { maximumFractionDigits: 2 });
   return String(value);
 }
-async function loadAnalysisRows(client: ReturnType<typeof createClient>, identityIds: string[], columns: string[]) {
+async function loadAnalysisRows(client: Client, identityIds: string[], columns: string[]) {
   const rows: Array<Record<string, unknown>> = [];
   const selected = [...new Set(["identity_id", "asset_no", "serial_no", "name", ...columns])].join(",");
   for (let start = 0; start < identityIds.length; start += 200) {
@@ -201,7 +300,7 @@ async function loadAnalysisRows(client: ReturnType<typeof createClient>, identit
   }
   return rows;
 }
-async function runAnalysis(client: ReturnType<typeof createClient>, input: AnalysisPlan, identityIds: string[], catalog: Map<string, CatalogField>) {
+async function runAnalysis(client: Client, input: AnalysisPlan, identityIds: string[], catalog: Map<string, CatalogField>) {
   const type = input.type;
   const field = input.field ? catalog.get(input.field) : undefined;
   const aggregate = input.aggregate ?? "count";
@@ -264,11 +363,10 @@ async function runAnalysis(client: ReturnType<typeof createClient>, input: Analy
   }).sort((left, right) => Number(right.value) - Number(left.value)).slice(0, limit);
   return { kind: "group", title: `${groupField.label}${label}分布`, summary: formatAiText(`依 ${groupField.label} 分組，顯示前 ${formatCount(rows.length)} 項。`), columns: [groupField.label, label], rows: rows.map((row) => [row.key, aggregate === "count" ? formatCount(Number(row.value)) : formatAnalysisValue(field!, row.value)]) };
 }
-async function plan(apiKey: string, model: string, question: string, catalog: CatalogField[], candidates: Candidate[], validationFeedback = "") {
+async function plan(apiKey: string, model: string, question: string, catalog: CatalogField[], candidates: Candidate[], ctx: Ctx, validationFeedback = "") {
   const capabilities = catalog.map((field) => `${field.field_key}｜${field.label}｜${field.value_kind}｜查詢:${field.operators.join(",") || "entity"}｜分析:${Array.isArray(field.configuration?.analysis) ? field.configuration.analysis.join(",") : "無"}`).join("\n");
-  const facts = candidates.length ? candidates.map((item) => `${item.fieldKey}｜${item.label}｜${item.value}`).join("\n") : "（沒有名稱候選；仍可使用數值或完整財產編號。）";
-  const today = taipeiToday();
-  const prompt = `你是財產查詢與分析規劃器。理解使用者自然語言後，只輸出 JSON，不要回答筆數或加入 Markdown。\n\n語意目錄：\n${capabilities}\n\n可用索引事實（僅 entity 可使用；field 必須用 field_key）：\n${facts}\n\n你要自行判斷使用者真正要完成的工作。intent 有三種：lookup 是取回符合條件的原始財產資料；analysis 是從一組資料導出排名、統計、比較、分布、資料品質或不同欄位值；clarify 是索引事實支持兩種以上合理解讀，且沒有足夠語境選擇其中一種。不要因為資料筆數多或文字簡短而追問；能合理完成就選 lookup 或 analysis。追問時必須淺顯、只問一件事，並提供 2 到 5 個可直接執行的選項。\n\n工具協定：每個篩選都必須使用語意目錄中完全相同的 field_key 與 value_kind。entity 範例是 {"kind":"entity","field":"custodian","operator":"=","value":"蕭詣程"}；包含比對仍是 kind:"entity"、operator:"contains"；number 範例是 {"kind":"number","field":"net_value","operator":">=","value":100000}；財產編號範例是 {"kind":"identifier_range","field":"asset_identifier","from":"5010106-0003-0000284","to":"5010106-0003-0000290"}；日期範例是 {"kind":"date_range","field":"acquired_at","relative":{"amount":3,"unit":"month"}}；年限狀態範例是 {"kind":"service_life_status","field":"service_life_expired","operator":"expired"}。groups 內 all 是 AND，groups 之間是 OR。entity 的值必須取自可用索引事實。\n\nanalysis 僅能使用語意目錄所列的分析能力。rank 格式是 {"type":"rank","field":"acquired_at","direction":"asc","limit":1}；aggregate 格式是 {"type":"aggregate","field":"original_value","aggregate":"sum"}；group 格式是 {"type":"group","groupBy":"unit","aggregate":"count","limit":10}；資料品質使用 {"type":"quality","checks":[...]}.\n\nlookup 或 analysis 的 groups 必須至少一組；clarify 的頂層 groups 必須是 []，analysis 必須為 null，並於 clarification 提供 prompt 與 options；每個 option 要有 id、label、以及可執行的 groups。\n\n只回傳：{"version":1,"intent":"lookup","groups":[{"all":[...]}],"analysis":null,"clarification":null}\n\n${validationFeedback ? `前一份計畫未通過工具驗證：${validationFeedback}\n請保留正確的使用者意圖，依上述目錄與協定重新輸出完整計畫。\n\n` : ""}問題：${question}`;
+  const facts = candidates.length ? candidates.map((item) => `${item.fieldKey}｜${item.label}｜${item.value}（${formatCount(item.count)} 筆）`).join("\n") : "（沒有名稱候選；仍可使用完整值清單、數值、日期或完整財產編號。）";
+  const prompt = buildPlannerPrompt({ today: taipeiToday(), capabilities, domains: smallDomainText(ctx, catalog), facts, question, feedback: validationFeedback });
   const generate = async (text: string) => {
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey }, body: JSON.stringify({ contents: [{ role: "user", parts: [{ text }] }], generationConfig: { temperature: 0, responseMimeType: "application/json" } }) });
     const payload = await response.json(); if (!response.ok) throw new Error(payload?.error?.message || "Gemini 查詢規劃失敗。");
@@ -280,21 +378,37 @@ async function plan(apiKey: string, model: string, question: string, catalog: Ca
   if (repaired.intent !== "analysis" || !repaired.analysis) throw new Error("AI 未能產生與意圖一致的分析計畫，請換一種說法後重試。");
   return repaired;
 }
-async function validateClarification(client: ReturnType<typeof createClient>, clarification: Clarification, catalog: CatalogField[]) {
+async function validateClarification(ctx: Ctx, clarification: Clarification, catalog: CatalogField[]) {
   const catalogByKey = new Map(catalog.map((field) => [field.field_key, field]));
-  for (const option of clarification.options) for (const predicates of option.groups) await compileGroup(client, predicates, catalogByKey);
+  for (const option of clarification.options) for (const predicates of option.groups) await compileGroup(ctx, predicates, catalogByKey);
 }
-async function saveClarification(admin: ReturnType<typeof createClient>, userId: string, question: string, candidates: Candidate[], clarification: Clarification) {
+async function saveClarification(admin: Client, userId: string, question: string, candidates: Candidate[], clarification: Clarification) {
   const { data, error } = await admin.from("ai_query_clarifications").insert({ user_id: userId, question, candidates, choices: clarification.options }).select("id").single();
   if (error) throw error;
   return { status: "clarification", clarification: { id: data.id, question, prompt: formatAiText(clarification.prompt), options: clarification.options.map(({ id, label }) => ({ id, label: formatAiText(label) })) } };
 }
-async function completedResponse(client: ReturnType<typeof createClient>, question: string, candidates: Candidate[], groups: Predicate[][], catalog: CatalogField[], analysisPlan: AnalysisPlan | null, extraTrace: string[] = [], modelVersion: string | null = null) {
-  const catalogByKey = new Map(catalog.map((field) => [field.field_key, field])); const results = await Promise.all(groups.map((predicates) => executeGroup(client, predicates, catalogByKey)));
-  const assetIdentityIds = [...new Set(results.flatMap((result) => result.identityIds))]; const descriptions = [...new Set(results.flatMap((result) => result.description))]; const conditionGroups = results.map((result) => result.rules);
-  const analysis = analysisPlan ? await runAnalysis(client, analysisPlan, assetIdentityIds, catalogByKey) : null;
+async function completedResponse(ctx: Ctx, question: string, candidates: Candidate[], groups: Predicate[][], catalog: CatalogField[], analysisPlan: AnalysisPlan | null, extraTrace: string[] = [], modelVersion: string | null = null) {
+  const catalogByKey = new Map(catalog.map((field) => [field.field_key, field])); const results = await Promise.all(groups.map((predicates) => executeGroup(ctx, predicates, catalogByKey)));
+  const assetIdentityIds = [...new Set(results.flatMap((result) => result.identityIds))]; const descriptions = [...new Set(results.flatMap((result) => result.description))];
+  const conditionGroups = results.map((result) => [...result.selves, ...result.rules, ...result.flags.map((flag) => flagLabels[flag.value])]);
+  const analysis = analysisPlan ? await runAnalysis(ctx.client, analysisPlan, assetIdentityIds, catalogByKey) : null;
   const displayIdentityIds = analysis && "displayIdentityIds" in analysis ? analysis.displayIdentityIds : assetIdentityIds;
-  return { question: formatAiText(question), modelVersion: modelVersion ? formatAiText(modelVersion) : null, summary: formatAiText(`已依語意目錄與索引事實完成${analysis ? "分析與" : ""}查詢，系統驗證共 ${formatCount(assetIdentityIds.length)} 筆資料。`), explanation: formatAiText(descriptions.length ? `查詢條件：${descriptions.join("；")}。` : "已依語意目錄完成查詢。"), analysisDescription: analysis && "conditionDescription" in analysis ? formatAiText(analysis.conditionDescription) : null, conditionGroups, assetIdentityIds, displayIdentityIds, scopeCount: assetIdentityIds.length, analysis, trace: ["語意目錄", candidates.length ? "解析索引事實" : "直接識別條件", ...(analysis ? ["執行分析"] : []), ...extraTrace, formatAiText(`編譯查詢（${formatCount(assetIdentityIds.length)} 筆）`)] };
+  // A plain lookup can be handed back as the search the person would have
+  // typed: editable chips, highlighting, and no second round trip.  Photo and
+  // collaboration conditions map to the dropdown filters instead of rules.
+  let searchRules: string | null = null; let uiFilters: { photo: string; collaboration: string } | null = null;
+  // "My assets" is resolved by account code, which the search box cannot say.
+  if (!analysisPlan && !results.some((result) => result.selves.length)) {
+    const hasEmpty = results.some((result) => !result.rules.length); const hasFlags = results.some((result) => result.flags.length);
+    if (results.length === 1 || (!hasEmpty && !hasFlags)) {
+      searchRules = results.map((result) => result.rules.join(" ")).join(" | ");
+      if (results.length === 1 && hasFlags) {
+        uiFilters = { photo: "", collaboration: "" };
+        for (const flag of results[0].flags) if (flag.field === "has_photo") uiFilters.photo = flag.value; else uiFilters.collaboration = flag.value;
+      }
+    }
+  }
+  return { question: formatAiText(question), modelVersion: modelVersion ? formatAiText(modelVersion) : null, summary: formatAiText(`已依語意目錄與索引事實完成${analysis ? "分析與" : ""}查詢，系統驗證共 ${formatCount(assetIdentityIds.length)} 筆資料。`), explanation: formatAiText(descriptions.length ? `查詢條件：${descriptions.join("；")}。` : "已依語意目錄完成查詢。"), analysisDescription: analysis && "conditionDescription" in analysis ? formatAiText(analysis.conditionDescription) : null, conditionGroups, searchRules, uiFilters, assetIdentityIds, displayIdentityIds, scopeCount: assetIdentityIds.length, analysis, trace: ["語意目錄", candidates.length ? "解析索引事實" : "直接識別條件", ...(analysis ? ["執行分析"] : []), ...extraTrace, formatAiText(`編譯查詢（${formatCount(assetIdentityIds.length)} 筆）`)] };
 }
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: headers(request) });
@@ -303,6 +417,7 @@ Deno.serve(async (request) => {
     const client = createClient(url, anon, { global: { headers: { Authorization: auth } } }); const admin = createClient(url, service);
     const { data: { user } } = await client.auth.getUser(); if (!user) throw new Error("登入已失效。");
     const payload = await request.json(); const catalog = await loadCatalog(admin);
+    const ctx: Ctx = { client, admin, index: await loadIndex(admin), userId: user.id };
     if (payload?.action === "clarify") {
       const clarificationId = String(payload.clarificationId ?? ""); const choiceId = String(payload.choiceId ?? ""); const customAnswer = String(payload.customAnswer ?? "").trim();
       const { data: clarification, error } = await admin.from("ai_query_clarifications").select("question,candidates,choices,expires_at,resolved_at").eq("id", clarificationId).eq("user_id", user.id).maybeSingle();
@@ -314,10 +429,10 @@ Deno.serve(async (request) => {
         const { data: setting } = await admin.from("user_ai_settings").select("gemini_key_ciphertext,gemini_key_iv,gemini_model").eq("user_id", user.id).maybeSingle();
         if (!setting?.gemini_key_ciphertext || !setting.gemini_key_iv || !setting.gemini_model) throw new Error("請先在個人設定儲存 Gemini API Key 與模型。");
         const raw = await crypto.subtle.decrypt({ name: "AES-GCM", iv: decode(setting.gemini_key_iv) }, await encryptionKey(), decode(setting.gemini_key_ciphertext));
-        question = `${question}\n使用者補充：${customAnswer}`; const planned = await plan(new TextDecoder().decode(raw), setting.gemini_model, question, catalog, candidates);
+        question = `${question}\n使用者補充：${customAnswer}`; const planned = await plan(new TextDecoder().decode(raw), setting.gemini_model, question, catalog, candidates, ctx);
         if (planned.intent === "clarify") {
           if (!planned.clarification) throw new Error("AI 未能提供可執行的追問選項。");
-          await validateClarification(client, planned.clarification, catalog);
+          await validateClarification(ctx, planned.clarification, catalog);
           await admin.from("ai_query_clarifications").update({ resolved_at: new Date().toISOString() }).eq("id", clarificationId).eq("user_id", user.id);
           return Response.json(await saveClarification(admin, user.id, question, candidates, planned.clarification), { headers: headers(request) });
         }
@@ -330,39 +445,40 @@ Deno.serve(async (request) => {
         const { data: setting } = await admin.from("user_ai_settings").select("gemini_key_ciphertext,gemini_key_iv,gemini_model").eq("user_id", user.id).maybeSingle();
         if (!setting?.gemini_key_ciphertext || !setting.gemini_key_iv || !setting.gemini_model) throw new Error("請先在個人設定儲存 Gemini API Key 與模型。");
         const raw = await crypto.subtle.decrypt({ name: "AES-GCM", iv: decode(setting.gemini_key_iv) }, await encryptionKey(), decode(setting.gemini_key_ciphertext));
-        const planned = await plan(new TextDecoder().decode(raw), setting.gemini_model, `${question}\n使用者選擇：${choice.label || choice.id}`, catalog, candidates);
+        const planned = await plan(new TextDecoder().decode(raw), setting.gemini_model, `${question}\n使用者選擇：${choice.label || choice.id}`, catalog, candidates, ctx);
         if (planned.intent === "clarify") {
           if (!planned.clarification) throw new Error("AI 未能提供可執行的追問選項。");
-          await validateClarification(client, planned.clarification, catalog);
+          await validateClarification(ctx, planned.clarification, catalog);
           await admin.from("ai_query_clarifications").update({ resolved_at: new Date().toISOString() }).eq("id", clarificationId).eq("user_id", user.id);
           return Response.json(await saveClarification(admin, user.id, question, candidates, planned.clarification), { headers: headers(request) });
         }
         analysisPlan = planned.analysis; modelVersion = planned.modelVersion ?? null;
       }
       await admin.from("ai_query_clarifications").update({ resolved_at: new Date().toISOString() }).eq("id", clarificationId).eq("user_id", user.id);
-      return Response.json(await completedResponse(client, question, candidates, groups, catalog, analysisPlan, trace, modelVersion), { headers: headers(request) });
+      return Response.json(await completedResponse(ctx, question, candidates, groups, catalog, analysisPlan, trace, modelVersion), { headers: headers(request) });
     }
     const query = payload?.query; if (typeof query !== "string" || !query.trim() || query.length > 300) throw new Error("請輸入不超過 300 字的查詢。");
-    const question = query.trim(); const candidates = await findCandidates(client, question, catalog);
+    const question = query.trim(); const candidates = findCandidates(ctx, question, catalog);
+    if (refersToSelf(question) && !(await selfCodes(ctx)).length) throw new Error(noSelfMapping);
     const { data: setting } = await admin.from("user_ai_settings").select("gemini_key_ciphertext,gemini_key_iv,gemini_model").eq("user_id", user.id).maybeSingle();
     if (!setting?.gemini_key_ciphertext || !setting.gemini_key_iv || !setting.gemini_model) throw new Error("請先在個人設定儲存 Gemini API Key 與模型。");
     const raw = await crypto.subtle.decrypt({ name: "AES-GCM", iv: decode(setting.gemini_key_iv) }, await encryptionKey(), decode(setting.gemini_key_ciphertext));
-    let planned = await plan(new TextDecoder().decode(raw), setting.gemini_model, question, catalog, candidates);
+    let planned = await plan(new TextDecoder().decode(raw), setting.gemini_model, question, catalog, candidates, ctx);
     if (planned.intent === "clarify") {
       if (!planned.clarification) throw new Error("AI 未能提供可執行的追問選項。");
-      await validateClarification(client, planned.clarification, catalog);
+      await validateClarification(ctx, planned.clarification, catalog);
       return Response.json(await saveClarification(admin, user.id, question, candidates, planned.clarification), { headers: headers(request) });
     }
     try {
-      return Response.json(await completedResponse(client, question, candidates, planned.groups, catalog, planned.analysis, [], planned.modelVersion), { headers: headers(request) });
+      return Response.json(await completedResponse(ctx, question, candidates, planned.groups, catalog, planned.analysis, [], planned.modelVersion), { headers: headers(request) });
     } catch (error) {
-      planned = await plan(new TextDecoder().decode(raw), setting.gemini_model, question, catalog, candidates, error instanceof Error ? error.message : "工具驗證失敗。");
+      planned = await plan(new TextDecoder().decode(raw), setting.gemini_model, question, catalog, candidates, ctx, error instanceof Error ? error.message : "工具驗證失敗。");
       if (planned.intent === "clarify") {
         if (!planned.clarification) throw new Error("AI 未能提供可執行的追問選項。");
-        await validateClarification(client, planned.clarification, catalog);
+        await validateClarification(ctx, planned.clarification, catalog);
         return Response.json(await saveClarification(admin, user.id, question, candidates, planned.clarification), { headers: headers(request) });
       }
-      return Response.json(await completedResponse(client, question, candidates, planned.groups, catalog, planned.analysis, [], planned.modelVersion), { headers: headers(request) });
+      return Response.json(await completedResponse(ctx, question, candidates, planned.groups, catalog, planned.analysis, [], planned.modelVersion), { headers: headers(request) });
     }
   } catch (error) { return Response.json({ error: error instanceof Error ? error.message : "查詢失敗。" }, { status: 400, headers: headers(request) }); }
 });

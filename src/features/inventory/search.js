@@ -806,3 +806,16 @@ export function highlightTermsFactory(appliedTerm, filters = {}) {
     return terms;
   };
 }
+
+// True when every word of the text is already a search rule (欄位:值, a
+// comparison, or an asset number), so it can run locally without the AI.
+export function looksLikeRuleSyntax(text) {
+  const tokens = tokenizeSearch(normalizeSearchInput(text)).filter((token) => token !== "|");
+  if (!tokens.length) return false;
+  return tokens.every((rawToken) => {
+    const token = rawToken.startsWith("-") ? rawToken.slice(1) : rawToken;
+    if (parseAssetNumberToken(token)) return true;
+    const fieldToken = token.match(/^([^:]+):(.+)$/);
+    return Boolean(fieldToken && searchFieldAliases[fieldToken[1]]);
+  });
+}

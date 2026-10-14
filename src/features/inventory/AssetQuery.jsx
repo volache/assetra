@@ -14,6 +14,7 @@ import {
   matchesAdvancedSearch,
   normalizeSearchInput,
   highlightTermsFactory,
+  looksLikeRuleSyntax,
   normalized,
   searchFieldAliases,
   searchTermWarnings,
@@ -21,6 +22,15 @@ import {
 } from "./search";
 import { KeywordSearchBox } from "./KeywordSearchBox";
 import { rememberSearch } from "./searchHistory";
+// The derived fields every row carries for searching and display.
+function enrichAsset(asset) {
+  return {
+    ...asset,
+    assetMajorClass: assetMajorClass(asset.assetNo),
+    usedDuration: usedDuration(asset.acquiredAt),
+    serviceLifeExpired: serviceLifeExpired(asset.acquiredAt, asset.usefulLife),
+  };
+}
 export function AssetQuery({
   assets,
   focusTask,
@@ -72,30 +82,25 @@ export function AssetQuery({
           normalized(value).includes(normalized(filters[key])),
         ),
     );
-  const matchesFlags = (asset) => {
-    if (!flagged || (!photoFilter && !collaborationFilter)) return true;
+  const matchesFlags = (asset, photo = photoFilter, collaboration = collaborationFilter) => {
+    if (!flagged || (!photo && !collaboration)) return true;
     const id = asset.identityId;
     const hasPhoto = flagged.photo.has(id);
     const isOpen = flagged.open.has(id);
     const isInProgress = flagged.inProgress.has(id);
-    if (photoFilter === "with" && !hasPhoto) return false;
-    if (photoFilter === "without" && hasPhoto) return false;
-    if (collaborationFilter === "open" && !isOpen) return false;
-    if (collaborationFilter === "in_progress" && !isInProgress) return false;
-    if (collaborationFilter === "any" && !isOpen && !isInProgress) return false;
-    if (collaborationFilter === "none" && (isOpen || isInProgress)) return false;
+    if (photo === "with" && !hasPhoto) return false;
+    if (photo === "without" && hasPhoto) return false;
+    if (collaboration === "open" && !isOpen) return false;
+    if (collaboration === "in_progress" && !isInProgress) return false;
+    if (collaboration === "any" && !isOpen && !isInProgress) return false;
+    if (collaboration === "none" && (isOpen || isInProgress)) return false;
     return true;
   };
   const sourceRows = useMemo(
     () =>
       assets
         .filter((asset) => source === "all" || asset.sourceType === source)
-        .map((asset) => ({
-          ...asset,
-          assetMajorClass: assetMajorClass(asset.assetNo),
-          usedDuration: usedDuration(asset.acquiredAt),
-          serviceLifeExpired: serviceLifeExpired(asset.acquiredAt, asset.usefulLife),
-        })),
+        .map(enrichAsset),
     [assets, source],
   );
   const distinctValueCache = useMemo(() => new Map(), [sourceRows]);
@@ -402,13 +407,42 @@ export function AssetQuery({
     setAiAssetIds(null);
     setRuleMenuOpen(false);
   }
+  // The AI hands back the search it would have typed.  Use it only when the
+  // local engine reproduces exactly the rows the server found; otherwise keep
+  // the server's list so the answer is never different from what was verified.
+  function searchRulesReproduce(result) {
+    const rules = result.searchRules;
+    if (typeof rules !== "string" || result.analysis) return false;
+    const uiFilters = result.uiFilters || { photo: "", collaboration: "" };
+    if ((uiFilters.photo || uiFilters.collaboration) && !flagged) return false;
+    const expected = new Set(result.assetIdentityIds || []);
+    let found = 0;
+    for (const asset of assets) {
+      const hit =
+        matchesAdvancedSearch(enrichAsset(asset), rules) &&
+        matchesFlags(asset, uiFilters.photo, uiFilters.collaboration);
+      if (hit !== expected.has(asset.identityId)) return false;
+      if (hit) found += 1;
+    }
+    return found === expected.size;
+  }
   function applyAiResult(result, fallbackQuestion) {
+    const asRules = searchRulesReproduce(result);
+    const uiFilters = result.uiFilters || { photo: "", collaboration: "" };
     setFilters(Object.fromEntries(filterFields.map(([key]) => [key, ""])));
     setSource("all");
-    setPhotoFilter("");
-    setCollaborationFilter("");
-    setAiAssetIds(new Set(result.displayIdentityIds || result.assetIdentityIds || [])); setAppliedTerm(""); setAiClarification(null); setClarificationText(""); setAiAnalysis(result.analysis || null);
-    setAiReport({ question: result.question || fallbackQuestion, modelVersion: result.modelVersion || null, summary: result.summary, explanation: result.explanation, analysisDescription: result.analysisDescription, conditionGroups: result.conditionGroups || [], scopeCount: result.scopeCount, trace: result.trace || [] });
+    if (asRules) {
+      setPhotoFilter(uiFilters.photo || "");
+      setCollaborationFilter(uiFilters.collaboration || "");
+      setTerm(result.searchRules); setAppliedTerm(result.searchRules.trim()); rememberSearch(result.searchRules);
+      setAiAssetIds(null);
+    } else {
+      setPhotoFilter("");
+      setCollaborationFilter("");
+      setAiAssetIds(new Set(result.displayIdentityIds || result.assetIdentityIds || [])); setAppliedTerm("");
+    }
+    setAiClarification(null); setClarificationText(""); setAiAnalysis(result.analysis || null);
+    setAiReport({ question: result.question || fallbackQuestion, modelVersion: result.modelVersion || null, summary: result.summary, explanation: result.explanation, analysisDescription: result.analysisDescription, conditionGroups: result.conditionGroups || [], scopeCount: result.scopeCount, trace: [...(result.trace || []), ...(asRules ? ["轉成可編輯的搜尋條件"] : [])] });
   }
   async function callAiQuery(body) {
     const { data: { session } } = await supabase.auth.getSession();
@@ -419,6 +453,11 @@ export function AssetQuery({
   }
   async function runAiSearch() {
     if (!term.trim()) return;
+    // Already written as search rules: run them here, no AI call needed.
+    if (looksLikeRuleSyntax(term)) {
+      runSearch();
+      return;
+    }
     setAiBusy(true);
     try {
       const question = term.trim();
