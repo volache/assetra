@@ -144,6 +144,7 @@ export const searchRuleGroups = [
     rules: [
       ["單一件", "5010304-0004-0000120"],
       ["流水號區間", "5010304-0004-0000120~128"],
+      ["跨品項區間", "5010304-0004-0000120~5010400-0001-0000050"],
       ["財產編號區間", "5010304-0001~5010400-0001"],
       ["財產編號起", "財產編號:>=5010304-0001"],
       ["財產編號迄", "財產編號:<=5010400-0001"],
@@ -249,7 +250,13 @@ function fieldValues(asset, field) {
 const assetNoPattern = "\\d{7}-[0-9A-Za-z]{4}";
 const serialFullPattern = new RegExp(`^(${assetNoPattern})-(\\d{1,7})$`);
 const serialRangePattern = new RegExp(`^(${assetNoPattern})-(\\d{1,7})~(\\d{1,7})$`);
-const assetRangePattern = new RegExp(`^(${assetNoPattern})~(${assetNoPattern})$`);
+const spanPattern = new RegExp(
+  `^(${assetNoPattern})(?:-(\\d{1,7}))?~(${assetNoPattern})(?:-(\\d{1,7}))?$`,
+);
+const serialKey = (value) => String(value).padStart(7, "0");
+// Rows are ordered by 財產編號 then 流水號, so 財產編號-流水號 (fixed width)
+// compared character by character gives the same order as the table.  A
+// bound written without a 流水號 stands for the whole 財產編號.
 export function parseAssetNumberToken(token) {
   const text = String(token || "");
   let match = text.match(serialRangePattern);
@@ -267,28 +274,36 @@ export function parseAssetNumberToken(token) {
       assetNo: match[1].toUpperCase(),
       serial: Number(match[2]),
     };
-  match = text.match(assetRangePattern);
-  if (match)
+  match = text.match(spanPattern);
+  if (match) {
+    const fromAssetNo = match[1].toUpperCase();
+    const toAssetNo = match[3].toUpperCase();
     return {
-      kind: "asset-range",
-      from: match[1].toUpperCase(),
-      to: match[2].toUpperCase(),
+      kind: "range",
+      fromAssetNo,
+      toAssetNo,
+      from: `${fromAssetNo}-${match[2] === undefined ? "0000000" : serialKey(match[2])}`,
+      to: `${toAssetNo}-${match[4] === undefined ? "9999999" : serialKey(match[4])}`,
     };
+  }
   return null;
 }
 // Text to highlight in the result table for a bare token, or null.
 export function highlightTextForToken(token) {
   const parsed = parseAssetNumberToken(token);
   if (!parsed) return token;
-  return parsed.kind === "asset-range" ? null : parsed.assetNo;
+  return parsed.kind === "range" ? null : parsed.assetNo;
 }
 function assetNumberMatches(asset, parsed) {
   const assetNo = String(asset.assetNo || "").toUpperCase();
-  if (parsed.kind === "asset-range")
-    // Character-by-character order, both ends included.
-    return assetNo >= parsed.from && assetNo <= parsed.to;
-  if (assetNo !== parsed.assetNo) return false;
   const serial = numericValue(asset.serialNo);
+  if (parsed.kind === "range") {
+    if (!Number.isFinite(serial)) return false;
+    // Character-by-character order, both ends included.
+    const key = `${assetNo}-${serialKey(serial)}`;
+    return key >= parsed.from && key <= parsed.to;
+  }
+  if (assetNo !== parsed.assetNo) return false;
   if (!Number.isFinite(serial)) return false;
   return parsed.kind === "serial"
     ? serial === parsed.serial
@@ -453,21 +468,8 @@ export function suggestionsForToken(raw, distinctValues) {
   const none = { items: [], total: 0 };
   const helper = comparisonHelper(raw);
   if (helper) return helper;
-  if (/^\d{7}-[0-9A-Za-z]{4}~/.test(raw))
-    return {
-      items: [],
-      total: 0,
-      note: "「~」後面填結束的財產編號，起訖都包含",
-    };
-  // A bare asset number: explain how to add the 流水號 or a range.
-  if (/^\d{7}-[0-9A-Za-z]{4}(-\d{0,7})?(~\d{0,7})?$/.test(raw))
-    return {
-      items: [],
-      total: 0,
-      note: /^\d{7}-[0-9A-Za-z]{4}$/.test(raw)
-        ? "財產編號後面接「-流水號」可查單一件（5010304-0004-0000120），再接「~128」查區間"
-        : "流水號不用補零；「~」後面填結束的流水號，起訖都包含",
-    };
+  const assetNumberNote = assetNumberTypingNote(raw);
+  if (assetNumberNote) return { items: [], total: 0, note: assetNumberNote };
   const negated = raw.startsWith("-");
   const body = negated ? raw.slice(1) : raw;
   const prefix = negated ? "-" : "";
@@ -530,9 +532,8 @@ export function searchTermWarnings(term) {
     const assetNumber = parseAssetNumberToken(token);
     if (assetNumber) {
       const reversed =
-        assetNumber.kind === "serial-range"
-          ? assetNumber.from > assetNumber.to
-          : assetNumber.kind === "asset-range" && assetNumber.from > assetNumber.to;
+        (assetNumber.kind === "serial-range" || assetNumber.kind === "range") &&
+        assetNumber.from > assetNumber.to;
       if (reversed)
         warnings.push(`「${token}」的起訖順序顛倒，不會查到任何資料。`);
       continue;
@@ -662,4 +663,26 @@ function comparisonHelper(raw) {
         items.push(add(String(value), value >= 10000 ? value.toLocaleString("en-US") : "快速填入"));
   }
   return { items, total: items.length, note, calendar };
+}
+
+// Short guidance while a 財產編號 / 流水號 / range is being typed.
+function assetNumberTypingNote(raw) {
+  const assetNo = "\\d{7}-[0-9A-Za-z]{4}";
+  if (new RegExp(`^${assetNo}$`).test(raw))
+    return "接「-流水號」查單一件（5010304-0004-0000120）；接「~」查區間";
+  if (new RegExp(`^${assetNo}-\\d{0,7}$`).test(raw))
+    return "流水號不用補零；接「~」查區間，起訖都包含";
+  const span = raw.match(new RegExp(`^${assetNo}(?:-\\d{1,7})?~(.*)$`));
+  if (!span) return "";
+  const end = span[1];
+  if (!end)
+    return "「~」後面填結束的流水號（同一品項，如 128），或結束的財產編號（可再接 -流水號）";
+  if (/^\d{7}$/.test(end))
+    return "這是同一品項的流水號；若要指定結束的財產編號，請接「-4 碼」（如 5010400-0001）";
+  if (/^\d+$/.test(end)) return "同一品項的流水號區間，起訖都包含，流水號不用補零";
+  if (new RegExp(`^${assetNo}$`).test(end))
+    return "到該財產編號的最後一件為止；接「-流水號」可指定到第幾件";
+  if (new RegExp(`^${assetNo}-\\d{0,7}$`).test(end))
+    return "到該財產編號的這一件為止，起訖都包含";
+  return "輸入結束的財產編號（如 5010400-0001）";
 }
