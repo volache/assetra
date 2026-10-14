@@ -4,7 +4,20 @@ export const filterFields = [
   ["locationName", "存置地點"],
   ["name", "財產名稱"],
   ["categoryName", "財產別名"],
+  ["assetMajorClass", "財產大類"],
   ["status", "使用現況"],
+];
+export const photoFilterOptions = [
+  ["", "全部"],
+  ["with", "有照片"],
+  ["without", "無照片"],
+];
+export const collaborationFilterOptions = [
+  ["", "全部"],
+  ["open", "待處理"],
+  ["in_progress", "處理中"],
+  ["any", "有未結協作"],
+  ["none", "無未結協作"],
 ];
 export const defaultPageSize = 50;
 export const normalized = (value) =>

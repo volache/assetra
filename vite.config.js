@@ -7,15 +7,20 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
-    server: functionsTarget
-      ? {
-          proxy: {
-            "/functions/v1": {
-              target: functionsTarget,
-              changeOrigin: true,
+    server: {
+      ...(process.env.PORT
+        ? { port: Number(process.env.PORT), strictPort: true }
+        : {}),
+      ...(functionsTarget
+        ? {
+            proxy: {
+              "/functions/v1": {
+                target: functionsTarget,
+                changeOrigin: true,
+              },
             },
-          },
-        }
-      : undefined,
+          }
+        : {}),
+    },
   };
 });

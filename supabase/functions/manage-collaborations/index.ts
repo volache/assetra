@@ -396,6 +396,56 @@ Deno.serve(async (req) => {
         { headers: corsHeaders(req) },
       );
     }
+    if (action === "flagged") {
+      await viewerContext(admin, user.id);
+      // Page through both tables: a single select stops at the API row limit.
+      const collectIds = async (
+        table: string,
+        configure: (query: any) => any,
+        pick: (row: any) => string,
+      ) => {
+        const ids = new Set<string>();
+        for (let start = 0; ; start += 1000) {
+          const { data, error } = await configure(
+            admin.from(table).select("asset_identity_id"),
+          ).range(start, start + 999);
+          if (error) throw error;
+          for (const row of data ?? []) ids.add(pick(row));
+          if ((data?.length ?? 0) < 1000) break;
+        }
+        return ids;
+      };
+      const open = new Set<string>();
+      const inProgress = new Set<string>();
+      for (let start = 0; ; start += 1000) {
+        const { data, error } = await admin
+          .from("asset_collaborations")
+          .select("asset_identity_id, status")
+          .neq("kind", "note")
+          .in("status", ["open", "in_progress"])
+          .order("id")
+          .range(start, start + 999);
+        if (error) throw error;
+        for (const row of data ?? [])
+          (row.status === "in_progress" ? inProgress : open).add(
+            row.asset_identity_id,
+          );
+        if ((data?.length ?? 0) < 1000) break;
+      }
+      const photos = await collectIds(
+        "asset_photos",
+        (query) => query.order("id"),
+        (row) => row.asset_identity_id,
+      );
+      return new Response(
+        JSON.stringify({
+          photoIds: [...photos],
+          openIds: [...open],
+          inProgressIds: [...inProgress],
+        }),
+        { headers: corsHeaders(req) },
+      );
+    }
     if (action === "list_tasks") {
       const status = ["all", "open", "in_progress", "resolved", "cancelled"].includes(text(body.status))
         ? text(body.status)

@@ -14,6 +14,8 @@ export function FilterCombo({
   onOpenChange,
   showAllOptions = false,
   menuPlacement = "below",
+  placeholder,
+  readOnly = false,
 }) {
   const rootRef = useRef(null);
   const suggestions = (showAllOptions
@@ -37,6 +39,7 @@ export function FilterCombo({
           aria-controls={`${id}-options`}
           aria-expanded={open}
           autoComplete="off"
+          readOnly={readOnly}
           value={value}
           onBlur={() =>
             setTimeout(
@@ -53,7 +56,7 @@ export function FilterCombo({
           onKeyDown={(e) => {
             if (e.key === "Escape") onOpenChange(null);
           }}
-          placeholder={`全部${label}`}
+          placeholder={placeholder ?? `全部${label}`}
         />
         <button
           aria-label={`開啟${label}選項`}

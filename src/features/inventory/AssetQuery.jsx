@@ -7,8 +7,10 @@ import { FilterCombo, HighlightText, SearchRuleMenu } from "./QueryControls";
 import { CapsuleSpinner, useFeedback } from "../../components/FeedbackCenter";
 import { supabase } from "../../supabase";
 import {
+  collaborationFilterOptions,
   defaultPageSize,
   filterFields,
+  photoFilterOptions,
   matchesAdvancedSearch,
   normalized,
   searchFieldAliases,
@@ -35,6 +37,9 @@ export function AssetQuery({
   const [filters, setFilters] = useState(() =>
     Object.fromEntries(filterFields.map(([key]) => [key, ""])),
   );
+  const [photoFilter, setPhotoFilter] = useState("");
+  const [collaborationFilter, setCollaborationFilter] = useState("");
+  const [flagged, setFlagged] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(defaultPageSize);
   const [expandedId, setExpandedId] = useState(null);
@@ -62,6 +67,20 @@ export function AssetQuery({
           normalized(value).includes(normalized(filters[key])),
         ),
     );
+  const matchesFlags = (asset) => {
+    if (!flagged || (!photoFilter && !collaborationFilter)) return true;
+    const id = asset.identityId;
+    const hasPhoto = flagged.photo.has(id);
+    const isOpen = flagged.open.has(id);
+    const isInProgress = flagged.inProgress.has(id);
+    if (photoFilter === "with" && !hasPhoto) return false;
+    if (photoFilter === "without" && hasPhoto) return false;
+    if (collaborationFilter === "open" && !isOpen) return false;
+    if (collaborationFilter === "in_progress" && !isInProgress) return false;
+    if (collaborationFilter === "any" && !isOpen && !isInProgress) return false;
+    if (collaborationFilter === "none" && (isOpen || isInProgress)) return false;
+    return true;
+  };
   const sourceRows = useMemo(
     () =>
       assets
@@ -77,17 +96,43 @@ export function AssetQuery({
   const options = useMemo(
     () =>
       Object.fromEntries(
-        filterFields.map(([key]) => [
-          key,
-          [
-            ...new Set(
-              sourceRows
-                .filter((asset) => matches(asset, key))
-                .map((asset) => String(asset[key] || "").trim())
-                .filter(Boolean),
-            ),
-          ].sort((a, b) => a.localeCompare(b, "zh-Hant")),
-        ]),
+        filterFields.map(([key]) => {
+          const candidates = sourceRows.filter((asset) => matches(asset, key));
+          if (key === "assetMajorClass") {
+            // Order classes by their lowest asset number, ascending.
+            const lowestNo = new Map();
+            for (const asset of candidates) {
+              const name = String(asset.assetMajorClass || "").trim();
+              const no = String(asset.assetNo || "");
+              if (!name) continue;
+              const known = lowestNo.get(name);
+              if (known === undefined || (no && (!known || no.localeCompare(known, "zh-Hant", { numeric: true }) < 0)))
+                lowestNo.set(name, no);
+            }
+            return [
+              key,
+              [...lowestNo.keys()].sort((a, b) => {
+                const left = lowestNo.get(a);
+                const right = lowestNo.get(b);
+                if (!left !== !right) return left ? -1 : 1;
+                return (
+                  String(left).localeCompare(String(right), "zh-Hant", { numeric: true }) ||
+                  a.localeCompare(b, "zh-Hant")
+                );
+              }),
+            ];
+          }
+          return [
+            key,
+            [
+              ...new Set(
+                candidates
+                  .map((asset) => String(asset[key] || "").trim())
+                  .filter(Boolean),
+              ),
+            ].sort((a, b) => a.localeCompare(b, "zh-Hant")),
+          ];
+        }),
       ),
     [sourceRows, filters],
   );
@@ -97,6 +142,7 @@ export function AssetQuery({
         .filter(
           (asset) =>
             matches(asset) &&
+            matchesFlags(asset) &&
             matchesAdvancedSearch(asset, appliedTerm) &&
             (!aiAssetIds || aiAssetIds.has(asset.identityId)),
         )
@@ -113,7 +159,7 @@ export function AssetQuery({
               { numeric: true, sensitivity: "base" },
             ),
         ),
-    [sourceRows, filters, appliedTerm, aiAssetIds],
+    [sourceRows, filters, appliedTerm, aiAssetIds, photoFilter, collaborationFilter, flagged],
   );
   const globalHighlightTerms = useMemo(
     () =>
@@ -148,11 +194,33 @@ export function AssetQuery({
   const activeFilterCount =
     filterFields.filter(([key]) => filters[key]).length +
     Number(Boolean(appliedTerm)) +
+    Number(Boolean(photoFilter)) +
+    Number(Boolean(collaborationFilter)) +
     Number(source !== "all");
+  function loadFlagged() {
+    requestCollaboration({ action: "flagged" })
+      .then((data) =>
+        setFlagged({
+          photo: new Set(data.photoIds || []),
+          open: new Set(data.openIds || []),
+          inProgress: new Set(data.inProgressIds || []),
+        }),
+      )
+      .catch(() => {});
+  }
+  useEffect(() => {
+    loadFlagged();
+  }, []);
   useEffect(() => {
     setCurrentPage(1);
     setExpandedId(null);
-  }, [appliedTerm, source, ...filterFields.map(([key]) => filters[key])]);
+  }, [
+    appliedTerm,
+    source,
+    photoFilter,
+    collaborationFilter,
+    ...filterFields.map(([key]) => filters[key]),
+  ]);
   useEffect(() => {
     if (defaultFilterApplied.current) return;
     if (focusTask?.identityId) {
@@ -195,6 +263,8 @@ export function AssetQuery({
     setAiClarification(null);
     setAiAssetIds(null);
     setSource("all");
+    setPhotoFilter("");
+    setCollaborationFilter("");
     setFilters(Object.fromEntries(filterFields.map(([key]) => [key, ""])));
     window.requestAnimationFrame(() => {
       setCurrentPage(Math.floor(Math.max(0, index) / pageSize) + 1);
@@ -255,6 +325,34 @@ export function AssetQuery({
     document.addEventListener("pointerdown", closeOutsideMenus);
     return () => document.removeEventListener("pointerdown", closeOutsideMenus);
   }, []);
+  function statusFilterSelects(prefix) {
+    return [
+      ["photo", "有無照片", photoFilter, setPhotoFilter, photoFilterOptions],
+      [
+        "collaboration",
+        "協作狀態",
+        collaborationFilter,
+        setCollaborationFilter,
+        collaborationFilterOptions,
+      ],
+    ].map(([key, label, value, onChange, choices]) => (
+      <FilterCombo
+        id={`${prefix}${key}`}
+        key={`${prefix}${key}`}
+        label={label}
+        onChange={(picked) =>
+          onChange(choices.find(([, optionLabel]) => optionLabel === picked)?.[0] ?? "")
+        }
+        onOpenChange={setOpenFilterId}
+        open={openFilterId === `${prefix}${key}`}
+        options={choices.map(([, optionLabel]) => optionLabel)}
+        placeholder="全部"
+        readOnly
+        showAllOptions
+        value={choices.find(([optionValue]) => optionValue === value)?.[1] ?? ""}
+      />
+    ));
+  }
   function updateFilter(key, value) {
     setFilters((current) => ({ ...current, [key]: value }));
   }
@@ -267,6 +365,8 @@ export function AssetQuery({
     setAiClarification(null);
     setAiAssetIds(null);
     setSource("all");
+    setPhotoFilter("");
+    setCollaborationFilter("");
   }
   function runSearch() {
     setAppliedTerm(term.trim());
@@ -279,6 +379,8 @@ export function AssetQuery({
   function applyAiResult(result, fallbackQuestion) {
     setFilters(Object.fromEntries(filterFields.map(([key]) => [key, ""])));
     setSource("all");
+    setPhotoFilter("");
+    setCollaborationFilter("");
     setAiAssetIds(new Set(result.displayIdentityIds || result.assetIdentityIds || [])); setAppliedTerm(""); setAiClarification(null); setClarificationText(""); setAiAnalysis(result.analysis || null);
     setAiReport({ question: result.question || fallbackQuestion, modelVersion: result.modelVersion || null, summary: result.summary, explanation: result.explanation, analysisDescription: result.analysisDescription, conditionGroups: result.conditionGroups || [], scopeCount: result.scopeCount, trace: result.trace || [] });
   }
@@ -390,6 +492,7 @@ export function AssetQuery({
                     value={filters[key]}
                   />
                 ))}
+                {statusFilterSelects("compact-")}
               </div>
             </div>
           )}
@@ -426,6 +529,7 @@ export function AssetQuery({
               value={filters[key]}
             />
           ))}
+          {statusFilterSelects("")}
         </div>
         <div className="advanced-search">
           <label className="search-field">
@@ -794,6 +898,7 @@ export function AssetQuery({
           requestCollaboration({ action: "summaries", identityIds })
             .then((data) => setCollaborationSummaries(Object.fromEntries((data.summaries || []).map((summary) => [summary.identityId, summary]))))
             .catch(() => {});
+          loadFlagged();
         }}
         onClose={() => {
           setCollaborationFocusId(null);
@@ -809,6 +914,7 @@ export function AssetQuery({
             ...current,
             [identityId]: { ...(current[identityId] || {}), identityId, photoCount },
           }));
+          loadFlagged();
         }}
         onClose={() => setPhotoPickerAsset(null)}
       />
