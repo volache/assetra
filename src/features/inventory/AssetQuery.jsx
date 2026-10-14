@@ -12,8 +12,12 @@ import {
   filterFields,
   photoFilterOptions,
   matchesAdvancedSearch,
+  normalizeSearchInput,
   normalized,
   searchFieldAliases,
+  searchTermWarnings,
+  suggestionsForToken,
+  tokenAtCaret,
   tokenizeSearch,
 } from "./search";
 export function AssetQuery({
@@ -37,6 +41,9 @@ export function AssetQuery({
   const [filters, setFilters] = useState(() =>
     Object.fromEntries(filterFields.map(([key]) => [key, ""])),
   );
+  const [caret, setCaret] = useState(0);
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const [activeSuggestion, setActiveSuggestion] = useState(-1);
   const [photoFilter, setPhotoFilter] = useState("");
   const [collaborationFilter, setCollaborationFilter] = useState("");
   const [flagged, setFlagged] = useState(null);
@@ -93,6 +100,28 @@ export function AssetQuery({
         })),
     [assets, source],
   );
+  const distinctValueCache = useMemo(() => new Map(), [sourceRows]);
+  const distinctValues = (field) => {
+    if (!distinctValueCache.has(field))
+      distinctValueCache.set(
+        field,
+        [
+          ...new Set(
+            sourceRows
+              .map((asset) => String(asset[field] || "").trim())
+              .filter(Boolean),
+          ),
+        ].sort((a, b) => a.localeCompare(b, "zh-Hant")),
+      );
+    return distinctValueCache.get(field);
+  };
+  const searchToken = tokenAtCaret(term, Math.min(caret, term.length));
+  const suggestions = useMemo(
+    () => suggestionsForToken(searchToken.raw, distinctValues),
+    [searchToken.raw, distinctValueCache],
+  );
+  const appliedTokens = useMemo(() => tokenizeSearch(appliedTerm), [appliedTerm]);
+  const termWarnings = useMemo(() => searchTermWarnings(term), [term]);
   const options = useMemo(
     () =>
       Object.fromEntries(
@@ -368,8 +397,42 @@ export function AssetQuery({
     setPhotoFilter("");
     setCollaborationFilter("");
   }
+  function removeAppliedToken(index) {
+    const cleaned = [];
+    appliedTokens.forEach((token, position) => {
+      if (position === index) return;
+      // Drop an "|" that would lead the query or follow another "|".
+      if (token === "|" && (!cleaned.length || cleaned[cleaned.length - 1] === "|")) return;
+      cleaned.push(token);
+    });
+    while (cleaned[cleaned.length - 1] === "|") cleaned.pop();
+    const next = cleaned.join(" ");
+    setTerm(next);
+    setAppliedTerm(next);
+    setCaret(next.length);
+  }
+  function acceptSuggestion(suggestion) {
+    const before = term.slice(0, searchToken.start);
+    const after = term.slice(searchToken.end);
+    const next = `${before}${suggestion.replacement}${after}`;
+    const nextCaret = (before + suggestion.replacement).length;
+    setTerm(next);
+    setCaret(nextCaret);
+    setActiveSuggestion(-1);
+    setAiReport(null);
+    setAiAnalysis(null);
+    setAiClarification(null);
+    setAiAssetIds(null);
+    requestAnimationFrame(() => {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.setSelectionRange(nextCaret, nextCaret);
+    });
+  }
   function runSearch() {
-    setAppliedTerm(term.trim());
+    const normalizedTerm = normalizeSearchInput(term);
+    if (normalizedTerm !== term) setTerm(normalizedTerm);
+    setSuggestOpen(false);
+    setAppliedTerm(normalizedTerm.trim());
     setAiReport(null);
     setAiAnalysis(null);
     setAiClarification(null);
@@ -426,10 +489,12 @@ export function AssetQuery({
     const next = `${before}${padding}${value}${after}`;
     setTerm(next);
     setRuleMenuOpen(false);
+    const nextCaret = (before + padding + value).length;
+    setCaret(nextCaret);
+    setSuggestOpen(true);
     requestAnimationFrame(() => {
       input?.focus();
-      const caret = (before + padding + value).length;
-      input?.setSelectionRange(caret, caret);
+      input?.setSelectionRange(nextCaret, nextCaret);
     });
   }
   return (
@@ -537,14 +602,82 @@ export function AssetQuery({
             <input
               ref={searchInputRef}
               value={term}
-              onChange={(e) => { setTerm(e.target.value); setAiReport(null); setAiAnalysis(null); setAiClarification(null); setAiAssetIds(null); }}
+              onBlur={() => setTimeout(() => setSuggestOpen(false), 120)}
+              onChange={(e) => {
+                const raw = e.target.value;
+                const position = e.target.selectionStart ?? raw.length;
+                // Leave text alone while an IME composition is still open.
+                const next = e.nativeEvent.isComposing ? raw : normalizeSearchInput(raw);
+                setTerm(next);
+                setCaret(position);
+                setSuggestOpen(true);
+                setActiveSuggestion(-1);
+                setAiReport(null); setAiAnalysis(null); setAiClarification(null); setAiAssetIds(null);
+                if (next !== raw)
+                  requestAnimationFrame(() =>
+                    searchInputRef.current?.setSelectionRange(position, position),
+                  );
+              }}
+              onClick={(e) => setCaret(e.target.selectionStart ?? 0)}
+              onCompositionEnd={(e) => {
+                const next = normalizeSearchInput(e.target.value);
+                if (next !== e.target.value) setTerm(next);
+                setCaret(e.target.selectionStart ?? next.length);
+              }}
+              onFocus={() => setSuggestOpen(true)}
               onKeyDown={(e) => {
+                const listOpen = suggestOpen && suggestions.length > 0;
+                if (listOpen && e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setActiveSuggestion((index) => (index + 1) % suggestions.length);
+                  return;
+                }
+                if (listOpen && e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setActiveSuggestion((index) => (index <= 0 ? suggestions.length - 1 : index - 1));
+                  return;
+                }
+                if (listOpen && e.key === "Tab" && !e.shiftKey) {
+                  e.preventDefault();
+                  acceptSuggestion(suggestions[Math.max(activeSuggestion, 0)]);
+                  return;
+                }
+                if (listOpen && e.key === "Escape") {
+                  e.preventDefault();
+                  setSuggestOpen(false);
+                  return;
+                }
                 if (e.key !== "Enter") return;
                 e.preventDefault();
+                if (listOpen && activeSuggestion >= 0) {
+                  acceptSuggestion(suggestions[activeSuggestion]);
+                  return;
+                }
                 if (e.ctrlKey || e.metaKey) runAiSearch(); else runSearch();
+              }}
+              onKeyUp={(e) => {
+                if (e.key !== "Enter") setCaret(e.target.selectionStart ?? 0);
               }}
               placeholder="輸入關鍵字，或以自然語言描述需求"
             />
+            {suggestOpen && suggestions.length > 0 && (
+              <span className="combo-menu search-suggestions" role="listbox">
+                {suggestions.map((suggestion, index) => (
+                  <button
+                    aria-selected={index === activeSuggestion}
+                    className={index === activeSuggestion ? "active" : ""}
+                    key={`${suggestion.kind}-${suggestion.label}`}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => acceptSuggestion(suggestion)}
+                    role="option"
+                    type="button"
+                  >
+                    <span>{suggestion.label}</span>
+                    <small>{suggestion.hint}</small>
+                  </button>
+                ))}
+              </span>
+            )}
           </label>
           <div className="advanced-search-actions">
             <button aria-keyshortcuts="Control+Enter" className="button button-secondary query-action ai-query-action" disabled={aiBusy || !term.trim()} onClick={runAiSearch} type="button">{aiBusy ? <><CapsuleSpinner compact /><span>施展魔法中</span></> : <><span>智慧查詢</span><small>Ctrl + Enter</small></>}</button>
@@ -562,6 +695,33 @@ export function AssetQuery({
               open={ruleMenuOpen}
             />
           </div>
+          {appliedTokens.length > 0 && (
+            <div aria-label="目前搜尋條件" className="search-chips">
+              {appliedTokens.map((token, index) =>
+                token === "|" ? (
+                  <i className="search-chip-or" key={`or-${index}`}>或</i>
+                ) : (
+                  <span className="search-chip" key={`${index}-${token}`}>
+                    <code>{token}</code>
+                    <button
+                      aria-label={`移除條件 ${token}`}
+                      onClick={() => removeAppliedToken(index)}
+                      type="button"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ),
+              )}
+            </div>
+          )}
+          {termWarnings.length > 0 && (
+            <ul aria-live="polite" className="search-hints">
+              {termWarnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          )}
           {aiReport && <aside aria-live="polite" className="ai-search-report"><strong>智慧查詢結果</strong><span>提問：{aiReport.question}</span>{aiReport.modelVersion && <span>推理模型：{aiReport.modelVersion}</span>}<span>{aiReport.summary}</span>{aiReport.conditionGroups.some((group) => group.length) ? <span className="ai-report-conditions">查詢條件：<span className="ai-condition-chips">{aiReport.conditionGroups.map((group, groupIndex) => <React.Fragment key={`group-${groupIndex}`}>{groupIndex > 0 && <i className="ai-condition-or">或</i>}{group.map((rule) => <code className="ai-condition-chip" key={`${groupIndex}-${rule}`}>{rule}</code>)}</React.Fragment>)}</span></span> : <span>{aiReport.analysisDescription || aiReport.explanation}</span>}<span>{aiAnalysis ? `${typeof aiAnalysis.matchCount === "number" ? `符合分析條件共 ${aiAnalysis.matchCount.toLocaleString()} 筆資料；` : ""}分析範圍共 ${(aiReport.scopeCount ?? 0).toLocaleString()} 筆資料。` : `共找到 ${rows.length.toLocaleString()} 筆資料。`}{aiReport.trace.length ? ` 已執行：${aiReport.trace.join("、")}。` : ""}</span></aside>}
           {aiAnalysis && <aside aria-live="polite" className="ai-analysis"><strong>分析摘要</strong><span>{aiAnalysis.title}</span><span>{aiAnalysis.summary}</span>{aiAnalysis.value ? <b className="ai-analysis-value">{aiAnalysis.value}{aiAnalysis.unit}</b> : <div className="ai-analysis-table-wrap"><table><thead><tr>{aiAnalysis.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{aiAnalysis.rows.map((row, index) => <tr key={`${row[0]}-${index}`}>{row.map((value, cellIndex) => <td key={cellIndex}>{value}</td>)}</tr>)}</tbody></table></div>}</aside>}
           {aiClarification && <aside aria-live="polite" className="ai-clarification"><strong>想再確認一下</strong><span>{aiClarification.prompt}</span><div className="ai-clarification-options">{aiClarification.options.map((option) => <button className="button button-secondary" disabled={aiBusy} key={option.id} onClick={() => answerClarification(option.id)} type="button">{option.label}</button>)}</div><div className="ai-clarification-custom-row"><label className="ai-clarification-custom">或用自己的話說明<input disabled={aiBusy} onChange={(event) => setClarificationText(event.target.value)} placeholder="例如：放在消防班的財產" value={clarificationText} /></label><button className="button button-primary ai-clarification-submit" disabled={aiBusy || !clarificationText.trim()} onClick={() => answerClarification("custom")} type="button">依這個說明查詢</button></div></aside>}

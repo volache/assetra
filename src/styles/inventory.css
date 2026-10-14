@@ -70,3 +70,15 @@ mark { background: oklch(88% .11 86 / .55); border-radius: .2rem; color: inherit
 
 .export-inventory { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-sm); margin-inline-start: auto; }
 .export-inventory select { background: var(--color-paper); border: 1px solid var(--color-rule); border-radius: var(--radius-sm); color: var(--color-ink-2); font-size: var(--text-xs); min-height: 2.25rem; max-width: 16rem; padding: .25rem 1.8rem .25rem .5rem; }
+.advanced-search .search-field { position: relative; }
+.search-suggestions button { display: flex; gap: var(--space-sm); justify-content: space-between; }
+.search-suggestions button.active { background: var(--color-paper-2); }
+.search-suggestions small { color: var(--color-muted); flex: none; }
+.search-chips { align-items: center; display: flex; flex-wrap: wrap; gap: var(--space-xs); grid-column: 1 / -1; }
+.search-chip { align-items: center; background: var(--color-paper-2); border: 1px solid var(--color-rule); border-radius: var(--radius-pill); display: inline-flex; font-size: var(--text-sm); gap: .25rem; padding: .15rem .25rem .15rem .7rem; }
+.search-chip code { font: inherit; }
+.search-chip button { background: transparent; border: 0; border-radius: var(--radius-pill); color: var(--color-muted); cursor: pointer; font: inherit; height: 1.5rem; line-height: 1; width: 1.5rem; }
+.search-chip button:hover, .search-chip button:focus-visible { background: var(--color-rule); color: var(--color-ink); }
+.search-chip-or { color: var(--color-muted); font-size: var(--text-sm); font-style: normal; }
+.search-hints { color: var(--color-error); font-size: var(--text-sm); grid-column: 1 / -1; list-style: none; margin: 0; padding: 0; }
+.search-hints li + li { margin-top: var(--space-xs); }
