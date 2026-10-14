@@ -97,5 +97,5 @@ mark { background: oklch(88% .11 86 / .55); border-radius: .2rem; color: inherit
 .search-popover > button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .search-popover > .search-popover-clear { border-top: 1px solid var(--color-rule); border-radius: 0; color: var(--color-muted); justify-content: center; margin-top: var(--space-xs); }
 .search-rule-column { align-content: start; display: grid; gap: var(--space-sm); min-width: 0; }
-.search-rule-group button.stacked { align-items: start; display: grid; gap: .1rem; justify-items: start; }
+.search-rule-group button.stacked { align-items: start; display: grid; gap: .1rem; grid-template-columns: minmax(0, 1fr); justify-content: stretch; justify-items: start; }
 .search-rule-group button.stacked code { overflow-wrap: anywhere; }

@@ -1,5 +1,5 @@
 import React from "react";
-import { normalized } from "../features/inventory/search";
+import { normalized, variantRegexSource } from "../features/inventory/search";
 
 export function HighlightText({ value, terms }) {
   const text = String(value || "");
@@ -7,14 +7,20 @@ export function HighlightText({ value, terms }) {
     ...new Set(
       terms
         .map((term) =>
-          String(term).replace(/^"|"$/g, "").replace(/[?*]/g, "").trim(),
+          // \* \? \\ are literal characters; bare * and ? are wildcards.
+          String(term)
+            .replace(/^"|"$/g, "")
+            .replace(/\\([*?\\])/g, "\u0000$1\u0000")
+            .replace(/[?*]/g, "")
+            .replace(/\u0000(.)\u0000/g, "$1")
+            .trim(),
         )
         .filter(Boolean),
     ),
   ].sort((a, b) => b.length - a.length);
   if (!text || !needles.length) return text || "—";
   const pattern = new RegExp(
-    `(${needles.map((term) => term.replace(/[.*+^${}()|[\]\\]/g, "\\$&")).join("|")})`,
+    `(${needles.map((term) => variantRegexSource(term)).join("|")})`,
     "giu",
   );
   return text

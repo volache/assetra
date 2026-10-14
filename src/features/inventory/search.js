@@ -20,10 +20,48 @@ export const collaborationFilterOptions = [
   ["none", "無未結協作"],
 ];
 export const defaultPageSize = 50;
-export const normalized = (value) =>
-  String(value || "")
+// Spellings that this inventory (and its users) mix freely.  Both the query
+// and the data are folded the same way before comparing, so 櫃台 finds 櫃臺
+// and 櫃檯.  Only the comparison changes; stored and displayed text do not.
+//   - single characters: 臺 檯 -> 台 and 汙 -> 污
+//   - words: 傢俱 傢具 家俱 -> 家具 (家 and 具 are far too common to fold alone)
+const characterFolds = { 臺: "台", 檯: "台", 汙: "污" };
+const wordFolds = [
+  ["傢俱", "家具"],
+  ["傢具", "家具"],
+  ["家俱", "家具"],
+];
+const foldedSpellings = {
+  台: "[台臺檯]",
+  污: "[污汙]",
+};
+const furnitureSpellings = "(?:家具|傢俱|傢具|家俱)";
+export const normalized = (value) => {
+  let text = String(value || "")
     .trim()
     .toLocaleLowerCase("zh-TW");
+  for (const [variant, standard] of wordFolds)
+    text = text.split(variant).join(standard);
+  return text.replace(/[臺檯汙]/g, (character) => characterFolds[character]);
+};
+// Regular expression source that matches a term in any of the folded spellings.
+export function variantRegexSource(term) {
+  const text = normalized(term);
+  let source = "";
+  for (let index = 0; index < text.length; ) {
+    if (text.startsWith("家具", index)) {
+      source += furnitureSpellings;
+      index += 2;
+      continue;
+    }
+    const character = text[index];
+    source +=
+      foldedSpellings[character] ||
+      character.replace(/[.*+^${}()|[\]\\]/g, "\\$&");
+    index += 1;
+  }
+  return source;
+}
 export const searchFieldAliases = {
   保管單位: "unitName",
   保管人: "custodianName",
@@ -53,7 +91,7 @@ export const searchFieldAliases = {
   備註: "notes",
 };
 // Each group sits in one of three columns of the rule panel.  A rule is
-// [label, text inserted].
+// [label, text inserted, optional "stacked" to put the example under the label].
 export const searchRuleGroups = [
   {
     column: 0,
@@ -68,13 +106,15 @@ export const searchRuleGroups = [
     column: 0,
     title: "萬用字元",
     rules: [
-      ["任意文字", "*"],
+      ["任意數量字元", "*"],
       ["單一字元", "?"],
+      ["星號本身", "\\*"],
+      ["問號本身", "\\?"],
     ],
   },
   {
     column: 0,
-    title: "比較（數字、日期、年資）",
+    title: "比較（數字、日期）",
     rules: [
       ["原值至少", "原值:>=50000"],
       ["原值大於", "原值:>50000"],
@@ -87,8 +127,8 @@ export const searchRuleGroups = [
       ["已使用至少 5 年", "已使用:>=5年"],
       ["已使用不到 5 年", "已使用:<5年"],
       ["已使用恰好 5 年", "已使用:=5年"],
-      ["購置日期之後", "購置日期:>=110/01/01"],
-      ["購置日期之前", "購置日期:<110/01/01"],
+      ["購置日期以後", "購置日期:>=110/01/01"],
+      ["購置日期以前", "購置日期:<=110/01/01"],
     ],
   },
   {
@@ -142,12 +182,12 @@ export const searchRuleGroups = [
     column: 2,
     title: "編號查詢（財產編號-流水號）",
     rules: [
-      ["單一件", "5010304-0004-0000120"],
-      ["流水號區間", "5010304-0004-0000120~128"],
-      ["跨品項區間", "5010304-0004-0000120~5010400-0001-0000050"],
-      ["財產編號區間", "5010304-0001~5010400-0001"],
-      ["財產編號起", "財產編號:>=5010304-0001"],
-      ["財產編號迄", "財產編號:<=5010400-0001"],
+      ["單一件", "5010304-0004-0000120", "stacked"],
+      ["流水號區間", "5010304-0004-0000120~128", "stacked"],
+      ["跨品項區間", "5010304-0004-0000120~5010400-0001-0000050", "stacked"],
+      ["財產編號區間", "5010304-0001~5010400-0001", "stacked"],
+      ["財產編號起", "財產編號:>=5010304-0001", "stacked"],
+      ["財產編號迄", "財產編號:<=5010400-0001", "stacked"],
     ],
   },
 ];
@@ -207,34 +247,49 @@ function searchableValues(asset) {
     asset.usedDuration,
   ];
 }
+// Wildcards: * is any number of characters and ? is one character.  A
+// backslash makes the next * ? or \ literal, e.g. 550\*500 finds "550*500".
+function parsePattern(raw) {
+  const characters = [...raw];
+  let wildcard = false;
+  let source = "";
+  let literal = "";
+  const escapeRegex = (character) =>
+    character.replace(/[.*+^${}()|[\]\\]/g, "\\$&");
+  for (let index = 0; index < characters.length; index += 1) {
+    const character = characters[index];
+    const next = characters[index + 1];
+    if (character === "\\" && next !== undefined && "*?\\".includes(next)) {
+      index += 1;
+      literal += next;
+      source += escapeRegex(next);
+    } else if (character === "*") {
+      wildcard = true;
+      source += ".*";
+    } else if (character === "?") {
+      wildcard = true;
+      source += ".";
+    } else {
+      literal += character;
+      source += escapeRegex(character);
+    }
+  }
+  return { wildcard, source, literal };
+}
 function textMatches(value, needle) {
-  const query = normalized(String(needle).replace(/^"|"$/g, ""));
-  if (!/[?*]/.test(query)) return normalized(value).includes(query);
-  const expression = [...query]
-    .map((character) =>
-      character === "*"
-        ? ".*"
-        : character === "?"
-          ? "."
-          : character.replace(/[.*+^${}()|[\]\\]/g, "\\$&"),
-    )
-    .join("");
-  return new RegExp(expression, "u").test(normalized(value));
+  const pattern = parsePattern(
+    normalized(String(needle).replace(/^"|"$/g, "")),
+  );
+  if (!pattern.wildcard) return normalized(value).includes(pattern.literal);
+  return new RegExp(pattern.source, "u").test(normalized(value));
 }
 function exactMatches(value, needle) {
-  const query = normalized(String(needle).replace(/^"|"$/g, ""));
-  if (!/[?*]/.test(query)) return normalized(value) === query;
+  const pattern = parsePattern(
+    normalized(String(needle).replace(/^"|"$/g, "")),
+  );
+  if (!pattern.wildcard) return normalized(value) === pattern.literal;
   // Wildcards in a field search still have to match the whole value.
-  const expression = [...query]
-    .map((character) =>
-      character === "*"
-        ? ".*"
-        : character === "?"
-          ? "."
-          : character.replace(/[.*+^${}()|[\]\\]/g, "\\$&"),
-    )
-    .join("");
-  return new RegExp(`^${expression}$`, "u").test(normalized(value));
+  return new RegExp(`^${pattern.source}$`, "u").test(normalized(value));
 }
 function fieldValues(asset, field) {
   return [

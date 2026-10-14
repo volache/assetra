@@ -116,9 +116,9 @@ export function SearchRuleMenu({ open, onInsert, onToggle }) {
                 .map((group) => (
                   <span className="search-rule-group" key={group.title}>
                     <b>{group.title}</b>
-                    {group.rules.map(([label, value]) => (
+                    {group.rules.map(([label, value, layout]) => (
                       <button
-                        className={value.length > 16 ? "stacked" : ""}
+                        className={layout === "stacked" ? "stacked" : ""}
                         key={label}
                         onClick={() => onInsert(value)}
                         type="button"
