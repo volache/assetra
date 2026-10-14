@@ -22,7 +22,7 @@ function isSameDay(left, right) {
   return left && right && left.getFullYear() === right.getFullYear() && left.getMonth() === right.getMonth() && left.getDate() === right.getDate();
 }
 
-export function DatePicker({ id, label, value, onChange }) {
+export function DatePicker({ id, label, value, onChange, popoverDirection = "down" }) {
   const rootRef = useRef(null);
   const selected = fromValue(value);
   const today = useMemo(() => new Date(), []);
@@ -66,7 +66,7 @@ export function DatePicker({ id, label, value, onChange }) {
           <svg aria-hidden="true" fill="none" viewBox="0 0 24 24"><rect height="14" rx="2" stroke="currentColor" strokeWidth="1.8" width="15" x="4.5" y="6.5" /><path d="M8 3.5v5m8-5v5M4.5 10.5h15" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" /></svg>
         </button>
         {open ? (
-          <span className="date-picker-popover" id={`${id}-calendar`} role="dialog" aria-label={`${label}日期選擇器`}>
+          <span className={`date-picker-popover ${popoverDirection === "up" ? "opens-upward" : ""}`} id={`${id}-calendar`} role="dialog" aria-label={`${label}日期選擇器`}>
             <span className="date-picker-head">
               <button aria-label="上個月" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} type="button">‹</button>
               <strong>{String(month.getFullYear() - 1911).padStart(3, "0")} 年 {String(month.getMonth() + 1).padStart(2, "0")} 月</strong>

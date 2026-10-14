@@ -12,6 +12,7 @@ import { requestOwnershipDocument } from "../ownership/api";
 import { FilterCombo } from "../inventory/QueryControls";
 import { normalized } from "../inventory/search";
 import { CapsuleSpinner } from "../../components/FeedbackCenter";
+import { LandEditorDialog } from "./LandEditorDialog";
 
 const emptyFeatureCollection = { type: "FeatureCollection", features: [] };
 
@@ -56,6 +57,8 @@ function GeoListViewContent({
   filtered,
   geoFilterSentinelRef,
   onCompactFiltersOpenChange,
+  onCreateLand,
+  onEditLand,
   onOpenMap,
   onOpenOwnership,
   onDeleteOwnership,
@@ -91,13 +94,10 @@ function GeoListViewContent({
             底圖與地籍範圍檢視花蓮航空站土地財產，並與財產編號、面積及帳面價值交叉核對。
           </p>
         </div>
-        <button
-          className="button button-primary"
-          onClick={onViewMap}
-          type="button"
-        >
-          地圖檢視
-        </button>
+        <div className="geo-page-actions">
+          <button className="button button-secondary" onClick={onCreateLand} type="button">新增土地</button>
+          <button className="button button-primary" onClick={onViewMap} type="button">地圖檢視</button>
+        </div>
       </div>
       <div
         aria-hidden="true"
@@ -258,6 +258,7 @@ function GeoListViewContent({
                       >
                         查看地圖
                       </button>
+                      <button className="row-action" onClick={() => onEditLand(land)} type="button">編輯土地</button>
                       {ownershipDocumentsByLandId[land.documentLandParcelId]?.[0] ? (
                         <>
                           <button className="row-action" onClick={() => onOpenOwnership(ownershipDocumentsByLandId[land.documentLandParcelId][0])} type="button">查看權狀</button>
@@ -315,6 +316,8 @@ function GeoListView({
   landFilters,
   landUseTypes,
   onCompactFiltersOpenChange,
+  onCreateLand,
+  onEditLand,
   onFilterChange,
   onOpenFilterChange,
   onOpenMap,
@@ -375,6 +378,8 @@ function GeoListView({
       filtered={filtered}
       geoFilterSentinelRef={geoFilterSentinelRef}
       onCompactFiltersOpenChange={onCompactFiltersOpenChange}
+      onCreateLand={onCreateLand}
+      onEditLand={onEditLand}
       onOpenMap={onOpenMap}
       onOpenOwnership={onOpenOwnership}
       onDeleteOwnership={onDeleteOwnership}
@@ -577,6 +582,8 @@ export function GeographicAssets() {
   const [landProperties, setLandProperties] = useState(emptyFeatureCollection);
   const [isLoadingLandProperties, setIsLoadingLandProperties] = useState(true);
   const [landPropertiesError, setLandPropertiesError] = useState("");
+  const [landEditorTarget, setLandEditorTarget] = useState(undefined);
+  const [landReloadKey, setLandReloadKey] = useState(0);
   const lands = useMemo(
     () =>
       landProperties.features.map((feature, index) => {
@@ -691,7 +698,7 @@ export function GeographicAssets() {
     return () => {
       isCurrent = false;
     };
-  }, []);
+  }, [landReloadKey]);
   useEffect(() => {
     if (lands.length && !lands.some((land) => land.id === selectedId))
       setSelectedId(lands[0].id);
@@ -1113,6 +1120,8 @@ export function GeographicAssets() {
         landFilters={landFilters}
         landUseTypes={landUseTypes}
         onCompactFiltersOpenChange={setCompactGeoFiltersOpen}
+        onCreateLand={() => setLandEditorTarget(null)}
+        onEditLand={setLandEditorTarget}
         onFilterChange={setLandFilter}
         onOpenFilterChange={setOpenGeoFilterId}
         onOpenMap={openMapForLand}
@@ -1139,6 +1148,12 @@ export function GeographicAssets() {
         totalValue={totalValue}
         viewTransition={hasChangedView}
         zonings={zonings}
+      />
+      <LandEditorDialog
+        land={landEditorTarget}
+        onClose={() => setLandEditorTarget(undefined)}
+        onSaved={() => { setLandEditorTarget(undefined); setLandReloadKey((key) => key + 1); }}
+        supabase={supabase}
       />
       <OwnershipDeleteDialog document={ownershipDeleteTarget} onCancel={() => setOwnershipDeleteTarget(null)} onConfirm={confirmOwnershipDeletion} />
       </>
@@ -1331,20 +1346,19 @@ export function GeographicAssets() {
             底圖與地籍範圍檢視花蓮航空站土地財產，並與財產編號、面積及帳面價值交叉核對。
           </p>
         </div>
-        <button
-          className="button button-primary"
-          onClick={() => changeViewMode(viewMode === "map" ? "list" : "map")}
-          type="button"
-        >
-          {viewMode === "map" ? "列表檢視" : "地圖檢視"}
-        </button>
+        <div className="geo-page-actions">
+          <button className="button button-secondary" onClick={() => setLandEditorTarget(null)} type="button">新增土地</button>
+          <button className="button button-primary" onClick={() => changeViewMode(viewMode === "map" ? "list" : "map")} type="button">
+            {viewMode === "map" ? "列表檢視" : "地圖檢視"}
+          </button>
+        </div>
       </div>
       {viewMode === "map" ? (
         <section className="geo-workbench">
           <aside className="geo-list-panel">
             <header>
               <h2>土地清單</h2>
-              <strong>{filtered.length} 筆</strong>
+              <div className="geo-list-header-actions"><strong>{filtered.length} 筆</strong>{selected && <button className="row-action" onClick={() => setLandEditorTarget(selected)} type="button">編輯</button>}</div>
             </header>
             <label className="geo-search">
               <span className="sr-only">搜尋土地</span>
@@ -1663,6 +1677,12 @@ export function GeographicAssets() {
           />
         </section>
       )}
+      <LandEditorDialog
+        land={landEditorTarget}
+        onClose={() => setLandEditorTarget(undefined)}
+        onSaved={() => { setLandEditorTarget(undefined); setLandReloadKey((key) => key + 1); }}
+        supabase={supabase}
+      />
     </section>
   );
 }

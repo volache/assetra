@@ -6,6 +6,7 @@ import { fromDatabaseAsset, fromDatabaseImport } from "../src/lib/inventory.js";
 import { assetMajorClass, rocDate, rocDateTime } from "../src/lib/formatters.js";
 import { matchesAdvancedSearch } from "../src/features/inventory/search.js";
 import { applyOfficialPersonnelNames } from "../src/lib/personnel.js";
+import { blankLandDraft, landPayload, parseLandGeometry } from "../src/features/geography/landEditor.js";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const sourceRoot = resolve(root, "src");
@@ -50,6 +51,9 @@ function checkImports() {
 function checkFeatureContracts() {
   const read = (path) => readFileSync(resolve(root, path), "utf8");
   assert.match(read("src/features/accounts/Accounts.jsx"), /HighlightText/);
+  assert.match(read("src/features/geography/GeographicAssets.jsx"), /LandEditorDialog/);
+  assert.match(read("supabase/migrations/20261014091843_add_land_parcel_editor.sql"), /security invoker/);
+  assert.match(read("supabase/migrations/20261014091843_add_land_parcel_editor.sql"), /revoke execute/);
   assert.match(read("src/features/accounts/Accounts.jsx"), /UserFilterCombo/);
   assert.match(read("src/features/imports/BatchHistory.jsx"), /Fragment/);
   assert.match(read("src/features/imports/ImportInventory.jsx"), /sourceLabels/);
@@ -104,6 +108,13 @@ function checkFeatureContracts() {
   assert.match(read("supabase/migrations/20261004094500_secure_ai_query_semantic_catalog.sql"), /service role manages AI query semantic catalog/);
   assert.match(read("supabase/migrations/20261004101500_add_ai_acquisition_date_semantic.sql"), /date_range/);
   assert.match(read("supabase/migrations/20261003145740_ai_agent_search.sql"), /users search terms for visible inventory/);
+}
+
+function checkLandEditorValidation() {
+  const draft = { ...blankLandDraft(), sectionCode: "AA", sectionName: "測試段", landNumber: "1", geometryText: JSON.stringify({ type: "Polygon", coordinates: [[[121, 24], [121.001, 24], [121, 24.001], [121, 24]]] }), relatedBuildingNumbers: "101、102, 103" };
+  assert.equal(parseLandGeometry(draft.geometryText).type, "Polygon");
+  assert.deepEqual(landPayload(draft).related_building_numbers, ["101", "102", "103"]);
+  assert.throws(() => parseLandGeometry('{"type":"Point","coordinates":[121,24]}'));
 }
 
 function checkAiQueryRegressionCases() {
@@ -204,4 +215,5 @@ checkAiQueryRegressionCases();
 checkInventoryBehavior();
 checkSearchBehavior();
 checkOfficialPersonnelNames();
+checkLandEditorValidation();
 console.log(`Regression checks passed for ${sourceFiles.length} source files.`);
