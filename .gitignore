@@ -15,3 +15,4 @@ dist/
 # Local package-manager caches and development-server output.
 .pnpm-store/
 vite-server.*.log
+.vite.*.log

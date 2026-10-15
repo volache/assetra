@@ -6,6 +6,9 @@ export default defineConfig(({ mode }) => {
   const functionsTarget = env.VITE_SUPABASE_URL;
 
   return {
+    // GitHub Pages project sites are served below /<repository>/.
+    // Other environments keep the app at the domain root.
+    base: env.VITE_BASE_PATH || "/",
     plugins: [react()],
     server: {
       ...(process.env.PORT

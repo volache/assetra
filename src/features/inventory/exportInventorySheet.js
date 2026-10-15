@@ -88,26 +88,30 @@ const COLUMN_COUNT = 13;
 const FIXED_WIDTHS = {
   [COL.NO]: 8,
   [COL.ASSET]: 24,
-  [COL.DATE]: 14,
+  [COL.DATE]: 18,
   [COL.BRAND]: 17,
   [COL.MODEL]: 20,
   [COL.QTY]: 14,
-  [COL.LIFE]: 15,
-  [COL.CHECK]: 15,
-  [COL.TAG]: 14,
+  [COL.LIFE]: 20,
+  [COL.CHECK]: 18,
+  [COL.TAG]: 17,
 };
 const REMARK_MIN_WIDTH = 16;
 const REMARK_MAX_WIDTH = 26;
 const CODE_GAP = 1.4;
-const CELL_PAD = 0.8;
-const CHECK_SIZE = 3;
-const LOCATION_ROW_HEIGHT = 5.5;
-const ALIAS_FONT_SIZE = 5.5;
-const ALIAS_COLOR = 110;
+const TABLE_FONT_SIZE = 8;
+const CELL_PAD = 1;
+const CHECK_SIZE = 3.2;
+const LOCATION_ROW_HEIGHT = 7.5;
+const ALIAS_FONT_SIZE = 7;
+const ALIAS_COLOR = 65;
+const ALIAS_DIVIDER_COLOR = 155;
+const ALIAS_DIVIDER_GAP = 1.8;
+const ALIAS_DIVIDER_INSET = 2.2;
 const SIGNATURE_HEIGHT = 22;
 const GRID_STYLES = {
   font: FONT,
-  fontSize: 6.5,
+  fontSize: TABLE_FONT_SIZE,
   cellPadding: CELL_PAD,
   lineWidth: 0.15,
   lineColor: [60, 60, 60],
@@ -128,15 +132,15 @@ function measureLayout(doc, assets) {
     [COL.USE]: { code: 0, name: 0 },
   };
   for (const asset of assets) {
-    nameMax = Math.max(nameMax, width(asset.name, 6.5), width(asset.categoryName, ALIAS_FONT_SIZE));
+    nameMax = Math.max(nameMax, width(asset.name, TABLE_FONT_SIZE), width(asset.categoryName, ALIAS_FONT_SIZE));
     [
       [COL.UNIT, asset.unitCode, asset.unitName],
       [COL.UNIT, asset.custodianCode, asset.custodianName],
       [COL.USE, asset.useUnitCode, asset.useUnitName],
       [COL.USE, asset.userCode, asset.userName],
     ].forEach(([column, code, name]) => {
-      merged[column].code = Math.max(merged[column].code, width(cleanCode(code), 6.5));
-      merged[column].name = Math.max(merged[column].name, width(name, 6.5));
+      merged[column].code = Math.max(merged[column].code, width(cleanCode(code), TABLE_FONT_SIZE));
+      merged[column].name = Math.max(merged[column].name, width(name, TABLE_FONT_SIZE));
     });
   }
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -146,9 +150,9 @@ function measureLayout(doc, assets) {
     [COL.USE]: merged[COL.USE].code ? merged[COL.USE].code + CODE_GAP : 0,
   };
   const dynamic = {
-    [COL.NAME]: clamp(nameMax + pad, 30, 60),
-    [COL.UNIT]: clamp(offsets[COL.UNIT] + merged[COL.UNIT].name + pad, 20, 44),
-    [COL.USE]: clamp(offsets[COL.USE] + merged[COL.USE].name + pad, 20, 44),
+    [COL.NAME]: clamp(nameMax + pad, 34, 60),
+    [COL.UNIT]: clamp(offsets[COL.UNIT] + merged[COL.UNIT].name + pad, 20, 29),
+    [COL.USE]: clamp(offsets[COL.USE] + merged[COL.USE].name + pad, 20, 29),
   };
   const fixed = Object.values(FIXED_WIDTHS).reduce((sum, value) => sum + value, 0);
   const room = page.width - page.side * 2 - fixed;
@@ -327,7 +331,7 @@ export async function buildSheet(assets) {
 
   const groups = buildGroups(assets);
   const layout = measureLayout(doc, assets);
-  doc.setFontSize(6.5);
+  doc.setFontSize(TABLE_FONT_SIZE);
   const metaByPage = new Map();
   const printDate = rocPrintDate();
   const lineHeight = () => doc.getLineHeight() / doc.internal.scaleFactor;
@@ -344,7 +348,7 @@ export async function buildSheet(assets) {
     startY: page.top,
     margin: { top: page.top, bottom: page.bottom, left: page.side, right: page.side },
     theme: "grid",
-    styles: { ...GRID_STYLES, minCellHeight: 8 },
+    styles: { ...GRID_STYLES, minCellHeight: 11 },
     headStyles: {
       fillColor: [235, 235, 235],
       textColor: 20,
@@ -375,15 +379,20 @@ export async function buildSheet(assets) {
       if (data.section === "body" && data.column.index === COL.NAME && data.cell.raw?.name !== undefined) {
         const { name, alias } = data.cell.raw;
         const width = layout.nameWidth - CELL_PAD * 2 - 0.4;
-        doc.setFontSize(6.5);
+        doc.setFontSize(TABLE_FONT_SIZE);
         const nameLines = name ? doc.splitTextToSize(name, width) : [""];
         doc.setFontSize(ALIAS_FONT_SIZE);
         const aliasLines = alias ? doc.splitTextToSize(alias, width) : [""];
-        doc.setFontSize(6.5);
+        doc.setFontSize(TABLE_FONT_SIZE);
         data.cell.nameLines = nameLines;
         data.cell.aliasLines = aliasLines;
         // Reserve the right height; the lines themselves are drawn in didDrawCell.
         data.cell.text = [...nameLines, ...aliasLines];
+        if (aliasLines.length) {
+          const lineHeight = doc.getLineHeight() / doc.internal.scaleFactor;
+          const contentHeight = (nameLines.length + aliasLines.length) * lineHeight + ALIAS_DIVIDER_GAP + CELL_PAD * 2;
+          data.cell.styles.minCellHeight = Math.max(data.cell.styles.minCellHeight || 0, contentHeight);
+        }
       }
     },
     willDrawCell(data) {
@@ -394,33 +403,41 @@ export async function buildSheet(assets) {
       if (data.section !== "body") return;
       const index = data.column.index;
       if (index === COL.NO && data.cell.raw?.hint) {
-        doc.setFontSize(ALIAS_FONT_SIZE + 0.5);
-        doc.setTextColor(90);
+        doc.setFontSize(TABLE_FONT_SIZE);
+        doc.setTextColor(20);
         doc.text(data.cell.raw.hint, data.cell.x + data.cell.width - CELL_PAD, data.cell.y + data.cell.height / 2, {
           align: "right",
           baseline: "middle",
         });
-        doc.setFontSize(6.5);
+        doc.setFontSize(TABLE_FONT_SIZE);
         doc.setTextColor(20);
         return;
       }
       if (index === COL.NAME && data.cell.nameLines) {
         const { nameLines, aliasLines } = data.cell;
+        doc.setFontSize(TABLE_FONT_SIZE);
         const step = lineHeight();
-        const count = nameLines.length + aliasLines.length;
-        const top = data.cell.y + (data.cell.height - count * step) / 2;
+        const aliasGap = aliasLines.length ? ALIAS_DIVIDER_GAP : 0;
+        const contentHeight = (nameLines.length + aliasLines.length) * step + aliasGap;
+        const top = data.cell.y + (data.cell.height - contentHeight) / 2;
         const x = data.cell.x + CELL_PAD;
-        doc.setFontSize(6.5);
+        doc.setFontSize(TABLE_FONT_SIZE);
         doc.setTextColor(20);
         nameLines.forEach((line, i) => {
           doc.text(line, x, top + (i + 0.5) * step, { baseline: "middle" });
         });
         doc.setFontSize(ALIAS_FONT_SIZE);
         doc.setTextColor(ALIAS_COLOR);
+        if (aliasLines.length) {
+          const dividerY = top + nameLines.length * step + aliasGap / 2;
+          doc.setDrawColor(ALIAS_DIVIDER_COLOR);
+          doc.setLineWidth(0.12);
+          doc.line(x + ALIAS_DIVIDER_INSET, dividerY, data.cell.x + data.cell.width - CELL_PAD - ALIAS_DIVIDER_INSET, dividerY);
+        }
         aliasLines.forEach((line, i) => {
-          doc.text(line, x, top + (nameLines.length + i + 0.5) * step, { baseline: "middle" });
+          doc.text(line, x, top + nameLines.length * step + aliasGap + (i + 0.5) * step, { baseline: "middle" });
         });
-        doc.setFontSize(6.5);
+        doc.setFontSize(TABLE_FONT_SIZE);
         doc.setTextColor(20);
         return;
       }
@@ -677,7 +694,7 @@ export async function buildSheet(assets) {
       startY: page.top,
       margin: { top: page.top, bottom: page.bottom, left: page.side, right: page.side },
       theme: "grid",
-      styles: { ...GRID_STYLES, fontSize: 7.5, minCellHeight: 6 },
+      styles: { ...GRID_STYLES, fontSize: TABLE_FONT_SIZE, minCellHeight: 6 },
       headStyles: { fillColor: [235, 235, 235], textColor: 20, halign: "center", fontStyle: "normal" },
       rowPageBreak: "avoid",
       columnStyles,
@@ -686,7 +703,7 @@ export async function buildSheet(assets) {
         if (data.section !== "body" || !data.cell.raw?.count) return;
         const slash = data.cell.x + data.cell.width * 0.46;
         const y = data.cell.y + data.cell.height / 2;
-        doc.setFontSize(7.5);
+        doc.setFontSize(TABLE_FONT_SIZE);
         doc.setTextColor(20);
         doc.text(data.cell.raw.count, slash - 1.6, y, { align: "right", baseline: "middle" });
         doc.text("/", slash, y, { align: "center", baseline: "middle" });
@@ -712,7 +729,7 @@ export async function buildSheet(assets) {
   const overall = { count: assets.length };
 
   // identity line
-  doc.setFontSize(10);
+  doc.setFontSize(9);
   doc.setTextColor(20);
   doc.text(
     `保管人：${[cleanCode(first.custodianCode), first.custodianName].filter(Boolean).join(" ")}`,
@@ -741,7 +758,7 @@ export async function buildSheet(assets) {
     doc.setFontSize(8);
     doc.setTextColor(90);
     doc.text(label, x + 3, 36);
-    doc.setFontSize(15);
+    doc.setFontSize(11);
     doc.setTextColor(20);
     doc.text(value, x + 3, 44);
   });
@@ -775,7 +792,7 @@ export async function buildSheet(assets) {
     startY: 53,
     margin: { top: 53, bottom: page.bottom, left: page.side, right: page.side },
     theme: "grid",
-    styles: { ...GRID_STYLES, fontSize: 8.5, cellPadding: 1.6, minCellHeight: 8 },
+    styles: { ...GRID_STYLES, fontSize: TABLE_FONT_SIZE, cellPadding: 1.6, minCellHeight: 8 },
     headStyles: { fillColor: [235, 235, 235], textColor: 20, halign: "center", fontStyle: "normal" },
     rowPageBreak: "avoid",
     columnStyles: {
