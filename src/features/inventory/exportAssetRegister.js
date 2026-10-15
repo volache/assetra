@@ -75,19 +75,18 @@ const HEAD = [
   "使用年限\n已使用年月",
   "保管單位\n保管人",
   "使用單位\n使用人",
-  "原值\n－累折\n＝淨值",
+  "原值\n累折\n淨值",
   "備註",
 ];
 const REMARK_MIN_WIDTH = 16;
-const REMARK_MAX_WIDTH = 46;
 const REMARK_MAX_LINES = 4;
-const VALUE_MIN_WIDTH = 26;
-const VALUE_MAX_WIDTH = 44;
-const VALUE_SIGN_WIDTH = 4;
+const VALUE_MIN_WIDTH = 18;
+const VALUE_MAX_WIDTH = 40;
+const VALUE_SIGN_WIDTH = 3;
 const VALUE_RULE_COLOR = 60;
 const VALUE_RULE_GAP = 1.2;
 const SUBTOTAL_FILL = [240, 240, 240];
-const TITLES = { cover: "財產清冊 總覽", index: "存置地點索引", content: "財產清冊" };
+const TITLES = { cover: "財產清冊總覽", index: "存置地點索引", content: "財產清冊" };
 
 const isBlank = (value) => value === null || value === undefined || value === "";
 const amount = (value) =>
@@ -138,18 +137,18 @@ function measureLayout(doc, assets, grandTotals) {
     [COL.USE]: clamp(offsets[COL.USE] + merged[COL.USE].name + pad, 20, 29),
   };
   const widths = { ...FIXED_WIDTHS };
-  widths[COL.VALUE] = clamp(moneyMax + VALUE_SIGN_WIDTH + pad, VALUE_MIN_WIDTH, VALUE_MAX_WIDTH);
+  widths[COL.VALUE] = clamp(
+    moneyMax + VALUE_SIGN_WIDTH + CELL_PAD * 2 + 0.4,
+    VALUE_MIN_WIDTH,
+    VALUE_MAX_WIDTH,
+  );
   const fixed = Object.values(widths).reduce((sum, value) => sum + value, 0);
   const room = page.width - page.side * 2 - fixed;
   const dynamicTotal = Object.values(dynamic).reduce((sum, value) => sum + value, 0);
-  let remark = REMARK_MIN_WIDTH;
-  let scale = 1;
-  if (dynamicTotal > room - REMARK_MIN_WIDTH) scale = (room - REMARK_MIN_WIDTH) / dynamicTotal;
-  else {
-    const spare = room - REMARK_MIN_WIDTH - dynamicTotal;
-    remark = Math.min(REMARK_MAX_WIDTH, REMARK_MIN_WIDTH + spare * 0.4);
-    scale = (room - remark) / dynamicTotal;
-  }
+  // Names and units keep the width their content needs; whatever is left over
+  // belongs to the remarks.  Only when even the minimum remark width does not
+  // fit are the content columns squeezed.
+  const scale = dynamicTotal > room - REMARK_MIN_WIDTH ? (room - REMARK_MIN_WIDTH) / dynamicTotal : 1;
   for (const [column, value] of Object.entries(dynamic)) widths[column] = value * scale;
   widths[COL.REMARK] = room - dynamicTotal * scale;
   return { widths, offsets, nameWidth: widths[COL.NAME] };
@@ -186,10 +185,14 @@ export async function buildRegisterPdf(assets, { printedBy = "", filterSummary =
     const text = String(notes || "").replace(/\s+/g, " ").trim();
     if (!text) return "";
     doc.setFontSize(TABLE_FONT_SIZE);
-    const lines = doc.splitTextToSize(text, layout.widths[COL.REMARK] - CELL_PAD * 2 - 0.4);
+    const fit = layout.widths[COL.REMARK] - CELL_PAD * 2 - 0.8;
+    const lines = doc.splitTextToSize(text, fit);
     if (lines.length <= REMARK_MAX_LINES) return lines.join("\n");
-    // The workbook carries the full text; the printed page stays compact.
-    return `${lines.slice(0, REMARK_MAX_LINES - 1).join("\n")}\n${lines[REMARK_MAX_LINES - 1].replace(/.$/, "")}…`;
+    // The workbook carries the full text.  The ellipsis must stay on the last
+    // allowed line, so trim that line until the "…" fits beside it.
+    let last = lines[REMARK_MAX_LINES - 1];
+    while (last && doc.getTextWidth(`${last}…`) > fit) last = last.slice(0, -1);
+    return `${lines.slice(0, REMARK_MAX_LINES - 1).join("\n")}\n${last}…`;
   };
 
   function toRow(asset, sequence) {
