@@ -1044,6 +1044,29 @@ export function GeographicAssets() {
     const source = mapRef.current?.getSource?.("land-properties");
     if (source) source.setData(mapData);
   }, [mapData]);
+  // Picking a parcel on the map (or anywhere) brings its row into view in the
+  // list.  Only the list scrolls, never the page, and a row that is already
+  // fully visible is left where it is.
+  const landListRef = useRef(null);
+  useEffect(() => {
+    const container = landListRef.current;
+    if (!container || viewMode !== "map" || !selectedId) return;
+    const row = [...container.children].find(
+      (element) => element.dataset?.landId === selectedId,
+    );
+    if (!row) return;
+    const box = container.getBoundingClientRect();
+    const rowBox = row.getBoundingClientRect();
+    if (rowBox.top >= box.top && rowBox.bottom <= box.bottom) return;
+    const centered =
+      container.scrollTop + (rowBox.top - box.top) - (box.height - rowBox.height) / 2;
+    container.scrollTo({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+      top: Math.max(0, centered),
+    });
+  }, [selectedId, viewMode]);
   landPaintRef.current = (map) => {
     if (!map.getLayer("land-fill")) return;
     const visibleIds = filtered.map((land) => land.id);
@@ -1444,7 +1467,7 @@ export function GeographicAssets() {
                 value={term}
               />
             </label>
-            <div className="geo-list-scroll">
+            <div className="geo-list-scroll" ref={landListRef}>
               {isLoadingLandProperties ? (
                 <p className="geo-no-result">正在讀取地籍資料…</p>
               ) : landPropertiesError ? (
@@ -1456,6 +1479,7 @@ export function GeographicAssets() {
                   <button
                     aria-pressed={selected?.id === land.id}
                     className={`geo-list-item ${selected?.id === land.id ? "is-selected" : ""}`}
+                    data-land-id={land.id}
                     key={land.id}
                     onClick={() => selectLand(land)}
                     type="button"
