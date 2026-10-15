@@ -218,7 +218,7 @@ function GeoListViewContent({
             </thead>
             <tbody>
               {pageRows.map((land) => {
-                const [number, serial] = String(land.id).split("\n");
+                const [number, serial] = String(land.assetNumber).split("\n");
                 return (
                   <tr key={land.id}>
                     <td>
@@ -526,7 +526,7 @@ function GeoListView({
             </thead>
             <tbody>
               {filtered.map((land) => {
-                const [number, serial] = String(land.id).split("\n");
+                const [number, serial] = String(land.assetNumber).split("\n");
                 return (
                   <tr key={land.id}>
                     <td>
@@ -621,9 +621,16 @@ export function GeographicAssets() {
           area: Number(basic.area) || 0,
           feature,
           documentLandParcelId: feature.properties?.land_parcel_id || null,
-          id: number.serial
+          // Identity of the parcel on the map and in the lists.  The 財產編號 is
+          // not unique here: 120-1040103-0001-0000004 and 200-1040103-0001-0000004
+          // both shorten to the same displayed number.
+          id:
+            feature.properties?.land_parcel_id ||
+            `${basic.section_code}-${basic.land_number}`,
+          assetNumber: number.serial
             ? `${number.primary}\n${number.serial}`
             : number.primary,
+          propertyNumber: String(property.property_number || ""),
           landNumber: basic.land_number || "—",
           landUseType: basic.land_use_type || "—",
           name: property.property_name || "未命名土地",
@@ -730,7 +737,7 @@ export function GeographicAssets() {
       lands.filter(
         (land) =>
           normalized(
-            `${land.section}${land.landNumber} ${land.name} ${land.id} ${land.zoning}`,
+            `${land.section}${land.landNumber} ${land.name} ${land.assetNumber} ${land.propertyNumber} ${land.zoning}`,
           ).includes(normalized(viewMode === "list" ? appliedTerm : term)) &&
           (!landFilters.section || land.section === landFilters.section) &&
           (!landFilters.zoning || land.zoningLabel === landFilters.zoning) &&
@@ -1382,7 +1389,7 @@ export function GeographicAssets() {
               </thead>
               <tbody>
                 {filtered.map((land) => {
-                  const [number, serial] = String(land.id).split("\n");
+                  const [number, serial] = String(land.assetNumber).split("\n");
                   return (
                     <tr key={land.id}>
                       <td>
@@ -1504,7 +1511,7 @@ export function GeographicAssets() {
                       <strong>
                         {land.section} {land.landNumber}
                       </strong>
-                      <small>{land.id}</small>
+                      <small>{land.assetNumber}</small>
                     </div>
                     <em>{land.area.toLocaleString()} m²</em>
                   </button>
@@ -1741,7 +1748,7 @@ export function GeographicAssets() {
                     <td className="money">
                       {land.announcedLandPrice.toLocaleString()}
                     </td>
-                    <td className="mono">{land.id}</td>
+                    <td className="mono">{land.assetNumber}</td>
                     <td>{land.name}</td>
                     <td className="money">{money(land.price)}</td>
                     <td>{land.relatedBuildingNumbers}</td>
