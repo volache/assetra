@@ -9,13 +9,22 @@ const sqlText = (value) => {
 };
 const jsonValue = (value) => `${sqlText(JSON.stringify(value ?? {}))}::jsonb`;
 
+const seenKeys = new Set();
 const values = collection.features
   .map((feature, index) => {
     const basic = feature.properties?.basic_info || {};
     const property = feature.properties?.property_info || {};
-    const parcelKey =
-      property.property_number ||
-      [basic.section_code, basic.land_number, index + 1].filter(Boolean).join("-");
+    // A parcel is identified by 段別代碼 + 地號 (the key the database already
+    // uses, e.g. 0080-1198 or 0431-861-1), so re-running this import updates
+    // the existing rows instead of adding duplicates.  The 財產編號 is data on
+    // the parcel, not its identity.
+    if (!basic.section_code || !basic.land_number)
+      throw new Error(`Feature ${index} has no section_code or land_number.`);
+    const parcelKey = `${basic.section_code}-${basic.land_number}`;
+
+    if (seenKeys.has(parcelKey))
+      throw new Error(`Duplicate parcel ${parcelKey} (feature ${index}).`);
+    seenKeys.add(parcelKey);
 
     return `(${[
       sqlText(parcelKey),
