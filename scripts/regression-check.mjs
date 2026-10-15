@@ -82,7 +82,7 @@ function checkFeatureContracts() {
   assert.match(read("src/features/inventory/AssetQuery.jsx"), /semantic-asset-query/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /ai_query_semantic_fields/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /identifier_range/);
-  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /ai_search_terms/);
+  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /ai_query_index_values/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /compileGroup/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /formatChineseTypography/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /intent: "lookup" \| "analysis" \| "clarify"/);
@@ -91,11 +91,12 @@ function checkFeatureContracts() {
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /operator === "contains"/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /runAnalysis/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /analysisPlan/);
-  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /你要自行判斷使用者真正要完成的工作/);
+  assert.match(read("supabase/functions/semantic-asset-query/query-rules.ts"), /你要自行判斷使用者真正要完成的工作/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /analysisPlan = planned\.analysis/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /資料品質檢查/);
   assert.match(read("supabase/functions/import-inventory/index.ts"), /財產大類/);
-  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /from === to/);
+  assert.match(read("supabase/functions/semantic-asset-query/query-rules.ts"), /identifierSpan/);
+  assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /kind.*self|"self"/);
   assert.match(read("src/features/inventory/AssetQuery.jsx"), /想再確認一下/);
   assert.match(read("src/features/inventory/AssetQuery.jsx"), /智慧查詢/);
   assert.match(read("src/features/inventory/AssetQuery.jsx"), /智慧查詢結果/);
