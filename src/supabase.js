@@ -8,7 +8,12 @@ const functionPath = `${url}/functions/v1/`;
 const developmentFunctionProxy = (input, init) => {
   const requestUrl = input instanceof Request ? input.url : String(input);
   if (import.meta.env.DEV && requestUrl.startsWith(functionPath)) {
-    return fetch(requestUrl.replace(functionPath, "/functions/v1/"), init);
+    const proxiedPath = requestUrl.replace(functionPath, "/functions/v1/");
+    const proxiedUrl = new URL(proxiedPath, window.location.origin).toString();
+    // supabase-js may provide a fully composed Request.  Recreate it with the
+    // local URL so its method, body and authorization headers are retained.
+    if (input instanceof Request) return fetch(new Request(proxiedUrl, input), init);
+    return fetch(proxiedUrl, init);
   }
   return fetch(input, init);
 };
