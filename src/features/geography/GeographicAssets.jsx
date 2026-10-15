@@ -578,6 +578,28 @@ function GeoListView({
   );
 }
 
+// Adds the land source and its two layers (or refreshes them when they exist).
+// A basemap switch wipes custom layers, so this runs again after style.load.
+function addLandLayers(map, data) {
+  const source = map.getSource("land-properties");
+  if (source) source.setData(data);
+  else map.addSource("land-properties", { data, type: "geojson" });
+  if (!map.getLayer("land-fill"))
+    map.addLayer({
+      id: "land-fill",
+      paint: { "fill-color": "#16a36b", "fill-opacity": 0.32 },
+      source: "land-properties",
+      type: "fill",
+    });
+  if (!map.getLayer("land-outline"))
+    map.addLayer({
+      id: "land-outline",
+      paint: { "line-color": "#087a4a", "line-width": 2 },
+      source: "land-properties",
+      type: "line",
+    });
+}
+
 export function GeographicAssets() {
   const [landProperties, setLandProperties] = useState(emptyFeatureCollection);
   const [isLoadingLandProperties, setIsLoadingLandProperties] = useState(true);
@@ -899,10 +921,26 @@ export function GeographicAssets() {
     mapStyle === "satellite"
       ? "mapbox://styles/mapbox/standard-satellite"
       : "mapbox://styles/mapbox/standard";
+  // The map instance is created once per visit to the map view and then kept:
+  // switching the basemap, 3D or the data updates it in place, so the camera
+  // is never sent back to the whole-Taiwan view and flown in again.
+  const mapDataRef = useRef(mapData);
+  const fullBoundsRef = useRef(fullBounds);
+  const mapStyleUrlRef = useRef(mapStyleUrl);
+  const is3DRef = useRef(is3D);
+  const appliedStyleUrlRef = useRef(mapStyleUrl);
+  const landPaintRef = useRef(null);
+  const cameraRef = useRef(null);
+  const hasFlownInRef = useRef(false);
+  mapDataRef.current = mapData;
+  fullBoundsRef.current = fullBounds;
+  mapStyleUrlRef.current = mapStyleUrl;
+  is3DRef.current = is3D;
+  const hasLands = lands.length > 0;
   useEffect(() => {
     if (
       viewMode !== "map" ||
-      !lands.length ||
+      !hasLands ||
       !mapToken ||
       !mapContainerRef.current ||
       mapRef.current
@@ -910,17 +948,21 @@ export function GeographicAssets() {
       return undefined;
     mapboxgl.accessToken = mapToken;
     let flyInTimer;
+    const saved = cameraRef.current;
+    appliedStyleUrlRef.current = mapStyleUrlRef.current;
     const map = new mapboxgl.Map({
-      center: [120.95, 23.7],
-      config: { basemap: { show3dObjects: is3D } },
+      bearing: saved?.bearing ?? 0,
+      center: saved?.center ?? [120.95, 23.7],
+      config: { basemap: { show3dObjects: is3DRef.current } },
       container: mapContainerRef.current,
       fitBoundsOptions: { padding: 64 },
       maxBounds: [
         [119, 21],
         [123, 26],
       ],
-      style: mapStyleUrl,
-      zoom: 6.2,
+      pitch: saved?.pitch ?? 0,
+      style: mapStyleUrlRef.current,
+      zoom: saved?.zoom ?? 6.2,
     });
     mapRef.current = map;
     map.addControl(
@@ -928,28 +970,21 @@ export function GeographicAssets() {
       "top-right",
     );
     map.on("load", () => {
-      map.addSource("land-properties", { data: mapData, type: "geojson" });
-      map.addLayer({
-        id: "land-fill",
-        paint: { "fill-color": "#16a36b", "fill-opacity": 0.32 },
-        source: "land-properties",
-        type: "fill",
-      });
-      map.addLayer({
-        id: "land-outline",
-        paint: { "line-color": "#087a4a", "line-width": 2 },
-        source: "land-properties",
-        type: "line",
-      });
-      flyInTimer = window.setTimeout(
-        () =>
-          map.fitBounds(fullBounds, {
-            duration: 2200,
-            essential: true,
-            padding: 64,
-          }),
-        420,
-      );
+      addLandLayers(map, mapDataRef.current);
+      landPaintRef.current?.(map);
+      // Only the first arrival on this page flies in from the Taiwan view.
+      if (!hasFlownInRef.current && fullBoundsRef.current) {
+        hasFlownInRef.current = true;
+        flyInTimer = window.setTimeout(
+          () =>
+            map.fitBounds(fullBoundsRef.current, {
+              duration: 2200,
+              essential: true,
+              padding: 64,
+            }),
+          420,
+        );
+      }
       map.on("click", "land-fill", (event) => {
         const id = event.features?.[0]?.properties?.geoId;
         if (id) setSelectedId(id);
@@ -967,13 +1002,50 @@ export function GeographicAssets() {
     });
     return () => {
       window.clearTimeout(flyInTimer);
+      // Remember where the user was, so coming back to the map keeps the view.
+      cameraRef.current = {
+        bearing: map.getBearing(),
+        center: map.getCenter().toArray(),
+        pitch: map.getPitch(),
+        zoom: map.getZoom(),
+      };
       map.remove();
       mapRef.current = null;
     };
-  }, [fullBounds, is3D, lands.length, mapData, mapStyleUrl, mapToken, viewMode]);
+  }, [hasLands, mapToken, viewMode]);
+  // Basemap switch: swap the style in place and put the land layers back.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map?.isStyleLoaded() || !map.getLayer("land-fill")) return;
+    if (!map || appliedStyleUrlRef.current === mapStyleUrl) return;
+    appliedStyleUrlRef.current = mapStyleUrl;
+    map.setStyle(mapStyleUrl);
+    map.once("style.load", () => {
+      try {
+        map.setConfigProperty("basemap", "show3dObjects", is3DRef.current);
+      } catch {
+        // The style has no basemap import to configure.
+      }
+      addLandLayers(map, mapDataRef.current);
+      landPaintRef.current?.(map);
+    });
+  }, [mapStyleUrl]);
+  // 3D buildings on or off, without touching the camera.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    try {
+      map.setConfigProperty("basemap", "show3dObjects", is3D);
+    } catch {
+      // The style has no basemap import to configure.
+    }
+  }, [is3D]);
+  // New land data: update the source in place.
+  useEffect(() => {
+    const source = mapRef.current?.getSource?.("land-properties");
+    if (source) source.setData(mapData);
+  }, [mapData]);
+  landPaintRef.current = (map) => {
+    if (!map.getLayer("land-fill")) return;
     const visibleIds = filtered.map((land) => land.id);
     map.setPaintProperty("land-fill", "fill-color", [
       "case",
@@ -1001,6 +1073,10 @@ export function GeographicAssets() {
       3,
       2,
     ]);
+  };
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map?.isStyleLoaded()) landPaintRef.current(map);
   }, [filtered, selectedId]);
   useEffect(() => {
     const onFullscreenChange = () => {
@@ -1584,7 +1660,7 @@ export function GeographicAssets() {
                 目前選取
               </span>
               <span className="geo-building-note">
-                建物圖徵：待後續匯入座標或範圍資料
+                底圖的道路與建物為示意，位置以土地範圍與衛星檢視為準
               </span>
             </footer>
           </section>
