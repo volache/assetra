@@ -3,9 +3,9 @@ import autoTable from "jspdf-autotable";
 import fontUrl from "../../assets/fonts/NotoSansTC-Regular-subset.ttf?url";
 import { assetMajorClass, usedDuration } from "../../lib/formatters";
 
-const AGENCY = "交通部民用航空局花蓮航空站";
+export const AGENCY = "交通部民用航空局花蓮航空站";
 const IN_USE = "使用中";
-const FONT = "NotoSansTC";
+export const FONT = "NotoSansTC";
 const SIGNATURES = [
   "保管人",
   "保管單位主管",
@@ -14,7 +14,7 @@ const SIGNATURES = [
   "主辦會計人員",
   "機關首長",
 ];
-const CLASS_ORDER = [
+export const CLASS_ORDER = [
   "土地",
   "土地改良物",
   "房屋建築及設備",
@@ -23,16 +23,16 @@ const CLASS_ORDER = [
   "什項設備",
   "非消耗品",
 ];
-const classRank = (name) => {
+export const classRank = (name) => {
   const index = CLASS_ORDER.indexOf(name);
   return index === -1 ? CLASS_ORDER.length : index;
 };
 
-const page = { width: 297, height: 210, side: 8, top: 25, bottom: 12 };
-const collator = new Intl.Collator("zh-Hant", { numeric: true, sensitivity: "base" });
+export const page = { width: 297, height: 210, side: 8, top: 25, bottom: 12 };
+export const collator = new Intl.Collator("zh-Hant", { numeric: true, sensitivity: "base" });
 
 let fontPromise;
-function loadFontBase64() {
+export function loadFontBase64() {
   fontPromise ??= fetch(fontUrl)
     .then((response) => {
       if (!response.ok) throw new Error("無法載入 PDF 中文字型。");
@@ -52,14 +52,14 @@ function loadFontBase64() {
   return fontPromise;
 }
 
-function rocPrintDate(date = new Date()) {
+export function rocPrintDate(date = new Date()) {
   return `${date.getFullYear() - 1911}年${String(date.getMonth() + 1).padStart(2, "0")}月${String(date.getDate()).padStart(2, "0")}日`;
 }
 
-const cleanCode = (code) => String(code || "").trim();
+export const cleanCode = (code) => String(code || "").trim();
 
 /** Two "code + name" lines whose names are aligned at their first character. */
-function pair(codeA, nameA, codeB, nameB) {
+export function pair(codeA, nameA, codeB, nameB) {
   return {
     content: "",
     lines: [
@@ -98,18 +98,18 @@ const FIXED_WIDTHS = {
 };
 const REMARK_MIN_WIDTH = 16;
 const REMARK_MAX_WIDTH = 26;
-const CODE_GAP = 1.4;
-const TABLE_FONT_SIZE = 8;
-const CELL_PAD = 1;
+export const CODE_GAP = 1.4;
+export const TABLE_FONT_SIZE = 8;
+export const CELL_PAD = 1;
 const CHECK_SIZE = 3.2;
-const LOCATION_ROW_HEIGHT = 7.5;
-const ALIAS_FONT_SIZE = 7;
-const ALIAS_COLOR = 65;
-const ALIAS_DIVIDER_COLOR = 155;
-const ALIAS_DIVIDER_GAP = 1.8;
-const ALIAS_DIVIDER_INSET = 2.2;
+export const LOCATION_ROW_HEIGHT = 7.5;
+export const ALIAS_FONT_SIZE = 7;
+export const ALIAS_COLOR = 65;
+export const ALIAS_DIVIDER_COLOR = 155;
+export const ALIAS_DIVIDER_GAP = 1.8;
+export const ALIAS_DIVIDER_INSET = 2.2;
 const SIGNATURE_HEIGHT = 22;
-const GRID_STYLES = {
+export const GRID_STYLES = {
   font: FONT,
   fontSize: TABLE_FONT_SIZE,
   cellPadding: CELL_PAD,
@@ -211,9 +211,9 @@ const HEAD = [
 ];
 const CHECK_COLUMNS = new Set([COL.CHECK, COL.TAG]);
 
-const locationKey = (asset) =>
+export const locationKey = (asset) =>
   `${cleanCode(asset.locationCode)}\u0000${asset.locationName || ""}`;
-const locationLabel = (asset) =>
+export const locationLabel = (asset) =>
   [cleanCode(asset.locationCode), asset.locationName].filter(Boolean).join(" ") || "未指定";
 
 function locationRow({ text, hint = "" }) {
@@ -231,7 +231,7 @@ function locationRow({ text, hint = "" }) {
   ];
 }
 
-function buildGroups(assets) {
+export function buildGroups(assets) {
   const buckets = new Map();
   for (const asset of assets) {
     const klass = assetMajorClass(asset.assetNo);
@@ -267,20 +267,22 @@ function buildGroups(assets) {
 }
 
 /** Frame drawn on every page once the total page count is known. */
-function drawPageFrame(doc, meta, total, printDate) {
+export function drawPageFrame(doc, meta, total, printDate, options = {}) {
   const center = page.width / 2;
   doc.setFontSize(16);
   doc.text(AGENCY, center, 10, { align: "center" });
   doc.setFontSize(11);
   const heading =
-    meta.kind === "index"
+    options.titles?.[meta.kind] ??
+    (meta.kind === "index"
       ? "存置地點索引"
       : meta.kind === "cover"
         ? "財物盤點清冊　總覽"
-        : "財物盤點清冊";
+        : "財物盤點清冊");
   doc.text(heading, center, 17, { align: "center" });
   doc.setFontSize(8);
   doc.text(`印表日期：${printDate}`, page.side, 8);
+  if (options.printedBy) doc.text(`印表人：${options.printedBy}`, page.side, 12.5);
   doc.text(`總頁數：${total}`, page.width - page.side, 8, { align: "right" });
   doc.text(`頁次：${meta.pageNumber}`, page.width - page.side, 12.5, { align: "right" });
   if (meta.kind !== "content") return;
@@ -825,7 +827,7 @@ export async function buildSheet(assets) {
   return doc.output("blob");
 }
 
-function saveBlob(blob, fileName) {
+export function saveBlob(blob, fileName) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -836,7 +838,7 @@ function saveBlob(blob, fileName) {
   window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
-const delay = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+export const delay = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
 /** Builds the single 財物盤點清冊 of one custodian: [{ fileName, blob }] (empty when nothing is in use). */
 export async function buildCustodianSheets(assets, custodianCode) {
@@ -862,7 +864,7 @@ export async function exportCustodianInventorySheets(assets, custodianCode) {
   return sheets.map((sheet) => sheet.fileName);
 }
 
-function rocStamp(date = new Date()) {
+export function rocStamp(date = new Date()) {
   const year = String(date.getFullYear() - 1911).padStart(3, "0");
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");

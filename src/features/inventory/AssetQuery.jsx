@@ -72,6 +72,7 @@ export function AssetQuery({
   const [compactFilters, setCompactFilters] = useState(false);
   const [compactFilterExpanded, setCompactFilterExpanded] = useState(false);
   const [openFilterId, setOpenFilterId] = useState(null);
+  const [registerExport, setRegisterExport] = useState(null);
   const [ruleMenuOpen, setRuleMenuOpen] = useState(false);
   const filterSentinelRef = useRef(null);
   const filterPanelRef = useRef(null);
@@ -341,6 +342,32 @@ export function AssetQuery({
         value={choices.find(([optionValue]) => optionValue === value)?.[1] ?? ""}
       />
     ));
+  }
+  // The register covers every row of the current result, not just this page.
+  async function exportRegister(format) {
+    if (!rows.length || registerExport) return;
+    const optionLabel = (options, value) => options.find(([key]) => key === value)?.[1] || value;
+    const filterSummary = [
+      ...filterFields.filter(([key]) => filters[key]).map(([key, label]) => `${label}：${filters[key]}`),
+      ...(source !== "all" ? [`資料類型：${source === "asset" ? "財產" : "物品"}`] : []),
+      ...(photoFilter ? [`有無照片：${optionLabel(photoFilterOptions, photoFilter)}`] : []),
+      ...(collaborationFilter ? [`協作狀態：${optionLabel(collaborationFilterOptions, collaborationFilter)}`] : []),
+      ...(appliedTerm.trim() ? [`關鍵字：${appliedTerm.trim()}`] : []),
+      ...(aiAssetIds ? [`智慧查詢：${aiReport?.question || "已套用"}`] : []),
+    ];
+    setRegisterExport(format);
+    try {
+      const { exportAssetRegister } = await import("./exportAssetRegister");
+      const fileName = await exportAssetRegister(format, rows, {
+        printedBy: user?.name || "",
+        filterSummary,
+      });
+      notify(`已匯出 ${rows.length.toLocaleString()} 筆財產清冊：${fileName}`, "success");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "匯出財產清冊失敗。", "error");
+    } finally {
+      setRegisterExport(null);
+    }
   }
   function updateFilter(key, value) {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -631,6 +658,26 @@ export function AssetQuery({
           查詢結果：<strong>{rows.length.toLocaleString()}</strong> 筆
         </p>
         {imports[0] && <p className="latest-data">資料更新：{imports[0].at}</p>}
+        <div aria-label="匯出財產清冊" className="result-export" role="group">
+          <button
+            className="button button-secondary"
+            disabled={!rows.length || Boolean(registerExport)}
+            onClick={() => exportRegister("pdf")}
+            title="依目前的篩選結果產生財產清冊 PDF（含所有分頁）"
+            type="button"
+          >
+            {registerExport === "pdf" ? "產生中…" : "匯出清冊 PDF"}
+          </button>
+          <button
+            className="button button-secondary"
+            disabled={!rows.length || Boolean(registerExport)}
+            onClick={() => exportRegister("xlsx")}
+            title="依目前的篩選結果匯出 Excel，一筆資料一列"
+            type="button"
+          >
+            {registerExport === "xlsx" ? "產生中…" : "匯出 Excel"}
+          </button>
+        </div>
         {rows.length > pageSize && (
           <label className="page-size">
             每頁

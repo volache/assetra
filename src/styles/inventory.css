@@ -99,3 +99,5 @@ mark { background: oklch(88% .11 86 / .55); border-radius: .2rem; color: inherit
 .search-rule-column { align-content: start; display: grid; gap: var(--space-sm); min-width: 0; }
 .search-rule-group button.stacked { align-items: start; display: grid; gap: .1rem; grid-template-columns: minmax(0, 1fr); justify-content: stretch; justify-items: start; }
 .search-rule-group button.stacked code { overflow-wrap: anywhere; }
+.result-export { align-items: center; display: inline-flex; flex-wrap: wrap; gap: var(--space-xs, .35rem); margin: var(--space-xl) var(--space-md) var(--space-md) 0; }
+.result-export .button { font-size: var(--text-xs); min-height: 2rem; padding: .3rem .65rem; }

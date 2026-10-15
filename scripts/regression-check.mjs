@@ -80,6 +80,9 @@ function checkFeatureContracts() {
   assert.match(read("supabase/functions/manage-users/index.ts"), /127\.0\.0\.1:5173/);
   assert.match(read("supabase/functions/manage-users/index.ts"), /detail: \{ accountCode/);
   assert.match(read("src/features/inventory/AssetQuery.jsx"), /semantic-asset-query/);
+  assert.match(read("src/features/inventory/AssetQuery.jsx"), /exportAssetRegister/);
+  assert.match(read("src/features/inventory/exportAssetRegister.js"), /buildRegisterPdf/);
+  assert.match(read("src/features/inventory/exportAssetRegister.js"), /buildRegisterWorkbook/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /ai_query_semantic_fields/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /identifier_range/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /ai_query_index_values/);
