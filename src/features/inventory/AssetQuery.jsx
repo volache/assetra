@@ -72,7 +72,10 @@ export function AssetQuery({
   const [compactFilters, setCompactFilters] = useState(false);
   const [compactFilterExpanded, setCompactFilterExpanded] = useState(false);
   const [openFilterId, setOpenFilterId] = useState(null);
+  // { format, fraction, label } while a 財產清冊 is being produced.
   const [registerExport, setRegisterExport] = useState(null);
+  const registerAbort = useRef(null);
+  useEffect(() => () => registerAbort.current?.abort(), []);
   const [ruleMenuOpen, setRuleMenuOpen] = useState(false);
   const filterSentinelRef = useRef(null);
   const filterPanelRef = useRef(null);
@@ -355,17 +358,28 @@ export function AssetQuery({
       ...(appliedTerm.trim() ? [`關鍵字：${appliedTerm.trim()}`] : []),
       ...(aiAssetIds ? [`智慧查詢：${aiReport?.question || "已套用"}`] : []),
     ];
-    setRegisterExport(format);
+    const controller = new AbortController();
+    registerAbort.current = controller;
+    setRegisterExport({ format, fraction: 0, label: "準備中" });
     try {
-      const { exportAssetRegister } = await import("./exportAssetRegister");
-      const fileName = await exportAssetRegister(format, rows, {
-        printedBy: user?.name || "",
-        filterSummary,
-      });
+      const { exportAssetRegister } = await import("./exportRegisterClient");
+      const fileName = await exportAssetRegister(
+        format,
+        rows,
+        { printedBy: user?.name || "", filterSummary },
+        {
+          signal: controller.signal,
+          onProgress: (fraction, label) =>
+            setRegisterExport({ format, fraction, label }),
+        },
+      );
       notify(`已匯出 ${rows.length.toLocaleString()} 筆財產清冊：${fileName}`, "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "匯出財產清冊失敗。", "error");
+      if (error instanceof DOMException && error.name === "AbortError")
+        notify("已取消匯出。");
+      else notify(error instanceof Error ? error.message : "匯出財產清冊失敗。", "error");
     } finally {
+      registerAbort.current = null;
       setRegisterExport(null);
     }
   }
@@ -666,7 +680,7 @@ export function AssetQuery({
             title="依目前的篩選結果產生財產清冊 PDF（含所有分頁）"
             type="button"
           >
-            {registerExport === "pdf" ? "產生中…" : "匯出清冊 PDF"}
+            {registerExport?.format === "pdf" ? <><CapsuleSpinner compact />{`產生中 ${Math.round(registerExport.fraction * 100)}%`}</> : "匯出清冊 PDF"}
           </button>
           <button
             className="button button-secondary"
@@ -675,8 +689,22 @@ export function AssetQuery({
             title="依目前的篩選結果匯出 Excel，一筆資料一列"
             type="button"
           >
-            {registerExport === "xlsx" ? "產生中…" : "匯出 Excel"}
+            {registerExport?.format === "xlsx" ? <><CapsuleSpinner compact />{`產生中 ${Math.round(registerExport.fraction * 100)}%`}</> : "匯出 Excel"}
           </button>
+          {registerExport && (
+            <>
+              <button
+                className="button button-secondary"
+                onClick={() => registerAbort.current?.abort()}
+                type="button"
+              >
+                取消
+              </button>
+              <span aria-live="polite" className="result-export-status" role="status">
+                {registerExport.label}
+              </span>
+            </>
+          )}
         </div>
         {rows.length > pageSize && (
           <label className="page-size">

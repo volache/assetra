@@ -10,6 +10,8 @@ export default defineConfig(({ mode }) => {
     // Other environments keep the app at the domain root.
     base: env.VITE_BASE_PATH || "/",
     plugins: [react()],
+    // The export worker lazy-loads xlsx, which needs ES-module workers.
+    worker: { format: "es" },
     server: {
       ...(process.env.PORT
         ? { port: Number(process.env.PORT), strictPort: true }

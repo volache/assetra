@@ -18,7 +18,6 @@ import {
   classRank,
   cleanCode,
   collator,
-  delay,
   drawPageFrame,
   loadFontBase64,
   locationKey,
@@ -26,8 +25,6 @@ import {
   page,
   pair,
   rocPrintDate,
-  rocStamp,
-  saveBlob,
 } from "./exportInventorySheet";
 
 // 財產清冊: the register of the assets currently on screen.  It reads like the
@@ -166,8 +163,21 @@ function locationRow({ text, hint = "" }) {
 }
 
 /** Builds the 財產清冊 PDF and returns its Blob. */
-export async function buildRegisterPdf(assets, { printedBy = "", filterSummary = [] } = {}) {
+export async function buildRegisterPdf(
+  assets,
+  { printedBy = "", filterSummary = [], onProgress } = {},
+) {
+  // Stages: font 0-3%, planning 3-45%, drawing 45-90%, index and overview 90-97%, frames 97-100%.
+  let lastReported = -1;
+  const report = (fraction, label) => {
+    const value = Math.min(1, Math.max(0, fraction));
+    if (value - lastReported < 0.004 && value < 1) return;
+    lastReported = value;
+    onProgress?.(value, label);
+  };
+  report(0, "載入字型");
   const base64 = await loadFontBase64();
+  report(0.03, "分析版面");
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4", compress: true });
   doc.addFileToVFS(`${FONT}.ttf`, base64);
   doc.addFont(`${FONT}.ttf`, FONT, "normal");
@@ -455,7 +465,11 @@ export async function buildRegisterPdf(assets, { printedBy = "", filterSummary =
   }
 
   // ---- plan every group first so pages can point at each other -------------
-  const plans = groups.map(planGroup);
+  const plans = groups.map((group, index) => {
+    report(0.03 + (0.42 * index) / groups.length, "分析版面");
+    return planGroup(group);
+  });
+  report(0.45, "繪製頁面");
   let nextPage = 2; // page 1 is the overview
   plans.forEach((plan) => {
     plan.startPage = nextPage;
@@ -500,6 +514,8 @@ export async function buildRegisterPdf(assets, { printedBy = "", filterSummary =
   };
 
   // ---- group pages ----------------------------------------------------------
+  const pagesToDraw = plans.reduce((sum, plan) => sum + plan.pages.length, 0) || 1;
+  let pagesDrawn = 0;
   plans.forEach((plan) => {
     const { group } = plan;
     let cumulative = 0;
@@ -528,8 +544,11 @@ export async function buildRegisterPdf(assets, { printedBy = "", filterSummary =
           },
         }),
       );
+      pagesDrawn += 1;
+      report(0.45 + (0.45 * pagesDrawn) / pagesToDraw, `繪製頁面 ${pagesDrawn} / ${pagesToDraw}`);
     });
   });
+  report(0.9, "建立索引與總覽");
 
   // ---- location index -----------------------------------------------------
   const sortedPlaces = [...places.values()].sort(
@@ -689,12 +708,15 @@ export async function buildRegisterPdf(assets, { printedBy = "", filterSummary =
   }
 
   const pageTotal = doc.getNumberOfPages();
+  report(0.97, "加上頁首與頁尾");
   for (let pageNumber = 1; pageNumber <= pageTotal; pageNumber += 1) {
     doc.setPage(pageNumber);
     doc.setFont(FONT, "normal");
     drawPageFrame(doc, metaByPage.get(pageNumber), pageTotal, printDate, { titles: TITLES, printedBy });
   }
-  return doc.output("blob");
+  const blob = doc.output("blob");
+  report(1, "完成");
+  return blob;
 }
 
 // ---- Excel: one asset per row, every field -----------------------------------
@@ -751,8 +773,13 @@ function orderedForSheet(assets) {
 }
 
 /** Builds the 財產清冊 workbook and returns its Blob. */
-export async function buildRegisterWorkbook(assets, { printedBy = "", filterSummary = [] } = {}) {
+export async function buildRegisterWorkbook(
+  assets,
+  { printedBy = "", filterSummary = [], onProgress } = {},
+) {
+  onProgress?.(0.05, "載入試算表元件");
   const XLSX = await import("xlsx");
+  onProgress?.(0.2, "整理資料");
   const rows = orderedForSheet(assets);
   const header = SHEET_COLUMNS.map(([label]) => label);
   const body = rows.map((asset) => SHEET_COLUMNS.map(([, read]) => read(asset) ?? ""));
@@ -785,22 +812,13 @@ export async function buildRegisterWorkbook(assets, { printedBy = "", filterSumm
     if (info[ref]) info[ref].z = "#,##0";
   });
 
+  onProgress?.(0.7, "建立工作表");
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, sheet, "財產清冊");
   XLSX.utils.book_append_sheet(workbook, info, "清冊資訊");
   const bytes = XLSX.write(workbook, { type: "array", bookType: "xlsx" });
+  onProgress?.(1, "完成");
   return new Blob([bytes], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
-}
-
-/** Builds and downloads the register.  format: "pdf" | "xlsx". Returns the file name. */
-export async function exportAssetRegister(format, assets, meta) {
-  if (!assets.length) throw new Error("目前沒有可匯出的財物。");
-  // Let the page paint its "producing" state before the heavy synchronous work.
-  await delay(30);
-  const blob = format === "xlsx" ? await buildRegisterWorkbook(assets, meta) : await buildRegisterPdf(assets, meta);
-  const fileName = `財產清冊_${rocStamp()}_${assets.length}筆.${format === "xlsx" ? "xlsx" : "pdf"}`;
-  saveBlob(blob, fileName);
-  return fileName;
 }
