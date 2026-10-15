@@ -45,16 +45,15 @@ const COL = {
   LIFE: 7,
   UNIT: 8,
   USE: 9,
-  ORIGINAL: 10,
-  DEPRECIATION: 11,
-  NET: 12,
-  REMARK: 13,
+  VALUE: 10,
+  REMARK: 11,
 };
-const COLUMN_COUNT = 14;
+const COLUMN_COUNT = 12;
+// 原值 / －累折 / ＝淨值 share one stacked cell, written like a subtraction.
 const MONEY = [
-  [COL.ORIGINAL, "originalValue"],
-  [COL.DEPRECIATION, "depreciation"],
-  [COL.NET, "netValue"],
+  ["原值", "originalValue"],
+  ["累折", "depreciation"],
+  ["淨值", "netValue"],
 ];
 const FIXED_WIDTHS = {
   [COL.NO]: 8,
@@ -76,16 +75,17 @@ const HEAD = [
   "使用年限\n已使用年月",
   "保管單位\n保管人",
   "使用單位\n使用人",
-  "原值",
-  "累折",
-  "淨值",
+  "原值\n－累折\n＝淨值",
   "備註",
 ];
 const REMARK_MIN_WIDTH = 16;
-const REMARK_MAX_WIDTH = 30;
-const REMARK_MAX_LINES = 3;
-const MONEY_MIN_WIDTH = 16;
-const MONEY_MAX_WIDTH = 36;
+const REMARK_MAX_WIDTH = 46;
+const REMARK_MAX_LINES = 4;
+const VALUE_MIN_WIDTH = 26;
+const VALUE_MAX_WIDTH = 44;
+const VALUE_SIGN_WIDTH = 4;
+const VALUE_RULE_COLOR = 60;
+const VALUE_RULE_GAP = 1.2;
 const SUBTOTAL_FILL = [240, 240, 240];
 const TITLES = { cover: "財產清冊 總覽", index: "存置地點索引", content: "財產清冊" };
 
@@ -108,7 +108,7 @@ function measureLayout(doc, assets, grandTotals) {
     [COL.UNIT]: { code: 0, name: 0 },
     [COL.USE]: { code: 0, name: 0 },
   };
-  const moneyMax = Object.fromEntries(MONEY.map(([column]) => [column, 0]));
+  let moneyMax = 0;
   for (const asset of assets) {
     nameMax = Math.max(nameMax, width(asset.name, TABLE_FONT_SIZE), width(asset.categoryName, ALIAS_FONT_SIZE));
     [
@@ -120,12 +120,12 @@ function measureLayout(doc, assets, grandTotals) {
       merged[column].code = Math.max(merged[column].code, width(cleanCode(code), TABLE_FONT_SIZE));
       merged[column].name = Math.max(merged[column].name, width(name, TABLE_FONT_SIZE));
     });
-    for (const [column, key] of MONEY)
-      moneyMax[column] = Math.max(moneyMax[column], width(amount(asset[key]), TABLE_FONT_SIZE));
+    for (const [, key] of MONEY)
+      moneyMax = Math.max(moneyMax, width(amount(asset[key]), TABLE_FONT_SIZE));
   }
   // The grand total is the widest figure any subtotal can reach.
-  for (const [column, key] of MONEY)
-    moneyMax[column] = Math.max(moneyMax[column], width(amount(grandTotals[key]), TABLE_FONT_SIZE));
+  for (const [, key] of MONEY)
+    moneyMax = Math.max(moneyMax, width(amount(grandTotals[key]), TABLE_FONT_SIZE));
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
   const pad = CELL_PAD * 2 + 0.8;
   const offsets = {
@@ -138,8 +138,7 @@ function measureLayout(doc, assets, grandTotals) {
     [COL.USE]: clamp(offsets[COL.USE] + merged[COL.USE].name + pad, 20, 29),
   };
   const widths = { ...FIXED_WIDTHS };
-  for (const [column] of MONEY)
-    widths[column] = clamp(moneyMax[column] + pad, MONEY_MIN_WIDTH, MONEY_MAX_WIDTH);
+  widths[COL.VALUE] = clamp(moneyMax + VALUE_SIGN_WIDTH + pad, VALUE_MIN_WIDTH, VALUE_MAX_WIDTH);
   const fixed = Object.values(widths).reduce((sum, value) => sum + value, 0);
   const room = page.width - page.side * 2 - fixed;
   const dynamicTotal = Object.values(dynamic).reduce((sum, value) => sum + value, 0);
@@ -210,9 +209,7 @@ export async function buildRegisterPdf(assets, { printedBy = "", filterSummary =
       },
       pair(asset.unitCode, asset.unitName, asset.custodianCode, asset.custodianName),
       pair(asset.useUnitCode, asset.useUnitName, asset.userCode, asset.userName),
-      amount(asset.originalValue),
-      amount(asset.depreciation),
-      amount(asset.netValue),
+      { content: "", value: MONEY.map(([, key]) => amount(asset[key])) },
       remarkText(asset.notes),
     ];
   }
@@ -221,13 +218,14 @@ export async function buildRegisterPdf(assets, { printedBy = "", filterSummary =
     return [
       {
         content: `${group.klass} 小計：${group.assets.length} 筆`,
-        colSpan: COL.ORIGINAL,
+        colSpan: COL.VALUE,
         styles: { halign: "right", fillColor: SUBTOTAL_FILL },
       },
-      ...MONEY.map(([, key]) => ({
-        content: amount(total(group.assets, key)),
+      {
+        content: "",
+        value: MONEY.map(([, key]) => amount(total(group.assets, key))),
         styles: { fillColor: SUBTOTAL_FILL },
-      })),
+      },
       { content: "", styles: { fillColor: SUBTOTAL_FILL } },
     ];
   }
@@ -251,15 +249,20 @@ export async function buildRegisterPdf(assets, { printedBy = "", filterSummary =
       [COL.LIFE]: { cellWidth: layout.widths[COL.LIFE] },
       [COL.UNIT]: { cellWidth: layout.widths[COL.UNIT] },
       [COL.USE]: { cellWidth: layout.widths[COL.USE] },
-      [COL.ORIGINAL]: { cellWidth: layout.widths[COL.ORIGINAL], halign: "right" },
-      [COL.DEPRECIATION]: { cellWidth: layout.widths[COL.DEPRECIATION], halign: "right" },
-      [COL.NET]: { cellWidth: layout.widths[COL.NET], halign: "right" },
+      [COL.VALUE]: { cellWidth: layout.widths[COL.VALUE] },
       [COL.REMARK]: { cellWidth: layout.widths[COL.REMARK] },
     },
     rowPageBreak: "avoid",
     didParseCell(data) {
       if (data.section === "head") {
         data.cell.styles.halign = "center";
+        return;
+      }
+      if (data.section === "body" && data.column.index === COL.VALUE && data.cell.raw?.value) {
+        doc.setFontSize(TABLE_FONT_SIZE);
+        const step = doc.getLineHeight() / doc.internal.scaleFactor;
+        const height = 3 * step + VALUE_RULE_GAP + CELL_PAD * 1.4;
+        data.cell.styles.minCellHeight = Math.max(data.cell.styles.minCellHeight || 0, height);
         return;
       }
       if (data.section === "body" && data.column.index === COL.NAME && data.cell.raw?.name !== undefined) {
@@ -321,6 +324,29 @@ export async function buildRegisterPdf(assets, { printedBy = "", filterSummary =
         });
         doc.setFontSize(TABLE_FONT_SIZE);
         doc.setTextColor(20);
+        return;
+      }
+      if (index === COL.VALUE && data.cell.raw?.value) {
+        // 原值, －累折, rule, ＝淨值: figures right-aligned so the digits line up.
+        const [original, depreciation, net] = data.cell.raw.value;
+        const step = lineHeight();
+        const gap = VALUE_RULE_GAP;
+        const top = data.cell.y + (data.cell.height - (3 * step + gap)) / 2;
+        const left = data.cell.x + CELL_PAD;
+        const right = data.cell.x + data.cell.width - CELL_PAD;
+        doc.setFontSize(TABLE_FONT_SIZE);
+        doc.setTextColor(20);
+        const line = (text, sign, y) => {
+          if (sign && text) doc.text(sign, left, y, { baseline: "middle" });
+          if (text) doc.text(text, right, y, { align: "right", baseline: "middle" });
+        };
+        line(original, "", top + step * 0.5);
+        line(depreciation, "－", top + step * 1.5);
+        line(net, "＝", top + step * 2 + gap + step * 0.5);
+        doc.setDrawColor(VALUE_RULE_COLOR);
+        doc.setLineWidth(0.15);
+        const ruleY = top + step * 2 + gap / 2;
+        doc.line(left, ruleY, right, ruleY);
         return;
       }
       if ((index === COL.UNIT || index === COL.USE) && data.cell.raw?.lines) {
