@@ -1,7 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const headers = (request: Request) => ({ "Access-Control-Allow-Origin": new Set(["http://localhost:5173", "http://127.0.0.1:5173"]).has(request.headers.get("Origin") ?? "") ? request.headers.get("Origin")! : "http://localhost:5173", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS", "Content-Type": "application/json" });
+const origins = new Set(["http://localhost:5173", "http://127.0.0.1:5173", "https://volache.github.io"]);
+const headers = (request: Request) => ({ "Access-Control-Allow-Origin": origins.has(request.headers.get("Origin") ?? "") ? request.headers.get("Origin")! : "http://localhost:5173", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS", "Content-Type": "application/json", Vary: "Origin" });
 const normalize = (value: unknown) => String(value ?? "").trim().toLocaleLowerCase("zh-TW");
 const decode = (value: string) => Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
 const fields: Record<string, string> = { "保管單位": "unit_name", "使用單位": "use_unit_name", "保管人": "custodian_name", "使用人": "user_name", "存置地點": "location_name", "財產名稱": "name", "財產別名": "category_name", "使用現況": "status", "廠牌": "brand", "型式": "model", "財產編號": "asset_no", "淨值": "net_value", "原值": "original_value", "數量": "quantity" };

@@ -6,6 +6,7 @@ const allowedOrigins = new Set([
   "http://localhost:5174",
   "http://127.0.0.1:5173",
   "http://127.0.0.1:5174",
+  "https://volache.github.io",
 ]);
 const validRoles = new Set(["custodian", "chief", "admin"]);
 const validStatuses = new Set(["active", "inactive"]);

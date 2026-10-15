@@ -1,12 +1,23 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "http://localhost:5173",
+const allowedOrigins = new Set([
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:5174",
+  "http://127.0.0.1:5174",
+  "https://volache.github.io",
+]);
+
+const corsHeaders = (request: Request) => ({
+  "Access-Control-Allow-Origin": allowedOrigins.has(request.headers.get("Origin") ?? "")
+    ? request.headers.get("Origin")!
+    : "http://localhost:5173",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Content-Type": "application/json",
-};
+  Vary: "Origin",
+});
 
 const asText = (value: unknown) => String(value ?? "").trim();
 const asNumber = (value: unknown, fallback = 0) => {
@@ -122,8 +133,9 @@ async function refreshAiQueryIndex(client: ReturnType<typeof createClient>) {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (req.method !== "POST") return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: corsHeaders });
+  const responseHeaders = corsHeaders(req);
+  if (req.method === "OPTIONS") return new Response("ok", { headers: responseHeaders });
+  if (req.method !== "POST") return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: responseHeaders });
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -131,14 +143,14 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("Authorization") ?? "";
   const client = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: authHeader } } });
   const { data: { user }, error: authError } = await client.auth.getUser();
-  if (authError || !user) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+  if (authError || !user) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: responseHeaders });
 
   const admin = createClient(supabaseUrl, serviceRoleKey);
   const [{ data: profile }, { data: role }] = await Promise.all([
     admin.from("profiles").select("status").eq("id", user.id).maybeSingle(),
     admin.from("user_roles").select("role").eq("user_id", user.id).eq("role", "admin").maybeSingle(),
   ]);
-  if (profile?.status !== "active" || !role) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: corsHeaders });
+  if (profile?.status !== "active" || !role) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: responseHeaders });
 
   try {
     const body = await req.json();
@@ -146,12 +158,12 @@ Deno.serve(async (req) => {
       if (typeof body.importId !== 'string' || !body.importId) throw new Error("請指定要刪除的匯入批次。");
       const { data, error } = await admin.rpc('delete_inventory_import', { p_import_id: body.importId });
       if (error) throw error;
-      return new Response(JSON.stringify({ deleted: data }), { headers: corsHeaders });
+      return new Response(JSON.stringify({ deleted: data }), { headers: responseHeaders });
     }
     if (body.mode === 'changes') {
       const { data, error } = await admin.from('import_batch_changes').select('change_kind, category_type_code, asset_no, serial_no, asset_name, before_record, after_record').eq('import_id', body.importId).order('change_kind').limit(200);
       if (error) throw error;
-      return new Response(JSON.stringify({ changes: data || [] }), { headers: corsHeaders });
+      return new Response(JSON.stringify({ changes: data || [] }), { headers: responseHeaders });
     }
     if (!['asset', 'item'].includes(body.sourceType)) throw new Error("無效的清冊類型。");
     if (!Array.isArray(body.records) || body.records.length === 0) throw new Error("清冊不可為空。");
@@ -168,7 +180,7 @@ Deno.serve(async (req) => {
       else if (sameRecord(record, existing)) summary.unchanged += 1;
       else { summary.changed += 1; if (samples.changed.length < 10) samples.changed.push(identity.replaceAll('\u0000', '－')); }
     }
-    if (body.mode === 'preview') return new Response(JSON.stringify({ recordCount: records.length, summary, samples }), { headers: corsHeaders });
+    if (body.mode === 'preview') return new Response(JSON.stringify({ recordCount: records.length, summary, samples }), { headers: responseHeaders });
     const { data: importId, error } = await admin.rpc("commit_inventory_import", {
       p_source_type: body.sourceType,
       p_file_name: asText(body.fileName) || "未命名清冊",
@@ -210,7 +222,7 @@ Deno.serve(async (req) => {
       aiIndex,
       aiIndexWarning,
       retention: retentionError ? { warning: '新批次已完成，但舊批次尚未清理。下次成功匯入時會再次嘗試。' } : retention,
-    }), { headers: corsHeaders });
+    }), { headers: responseHeaders });
   } catch (error) {
     console.error("Inventory import failed:", error);
     const message = error instanceof Error
@@ -218,6 +230,6 @@ Deno.serve(async (req) => {
       : typeof error === "object" && error && "message" in error
         ? String(error.message)
         : "匯入失敗。";
-    return new Response(JSON.stringify({ error: message }), { status: 400, headers: corsHeaders });
+    return new Response(JSON.stringify({ error: message }), { status: 400, headers: responseHeaders });
   }
 });

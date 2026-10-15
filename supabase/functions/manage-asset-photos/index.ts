@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { AwsClient } from "npm:aws4fetch";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const allowedOrigins = new Set(["http://localhost:5173", "http://localhost:5174"]);
+const allowedOrigins = new Set(["http://localhost:5173", "http://localhost:5174", "https://volache.github.io"]);
 const maxPhotoBytes = 10 * 1024 * 1024;
 const maxPhotosPerAsset = 12;
 const allowedContentTypes = new Set(["image/jpeg", "image/png", "image/webp"]);

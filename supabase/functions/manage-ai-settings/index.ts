@@ -1,12 +1,13 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const origins = new Set(["http://localhost:5173", "http://127.0.0.1:5173"]);
+const origins = new Set(["http://localhost:5173", "http://127.0.0.1:5173", "https://volache.github.io"]);
 const headers = (request: Request) => ({
   "Access-Control-Allow-Origin": origins.has(request.headers.get("Origin") ?? "") ? request.headers.get("Origin")! : "http://localhost:5173",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Content-Type": "application/json",
+  Vary: "Origin",
 });
 const bytes = (value: string) => Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
 const encode = (value: Uint8Array) => btoa(String.fromCharCode(...value));

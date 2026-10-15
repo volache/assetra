@@ -1,12 +1,13 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const origins = new Set(["http://localhost:5173", "http://127.0.0.1:5173"]);
+const origins = new Set(["http://localhost:5173", "http://127.0.0.1:5173", "https://volache.github.io"]);
 const headers = (request: Request) => ({
   "Access-Control-Allow-Origin": origins.has(request.headers.get("Origin") ?? "") ? request.headers.get("Origin")! : "http://localhost:5173",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Content-Type": "application/json",
+  Vary: "Origin",
 });
 const decode = (value: string) => Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
 const fields = new Set(["保管單位", "保管人", "存置地點", "財產名稱", "財產別名", "使用現況", "財產編號", "流水號", "淨值", "原值", "累折", "購置日期", "廠牌", "型式", "使用單位", "使用人", "計量單位", "財產區分別", "財產大類", "已使用", "年限", "數量", "備註"]);
