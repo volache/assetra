@@ -1,8 +1,11 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { HighlightText } from "../../components/HighlightText";
 import { normalized, searchRuleGroups } from "./search";
 
 export { HighlightText };
+
+// How long typing may pause before the filters are re-run.
+const typingPauseMs = 150;
 
 export function FilterCombo({
   id,
@@ -18,9 +21,37 @@ export function FilterCombo({
   readOnly = false,
 }) {
   const rootRef = useRef(null);
+  // What is typed lives here first.  The page-wide filters (and the table
+  // under them) only hear about it once the input method has finished a
+  // syllable or the typing pauses, so each Bopomofo symbol no longer triggers
+  // a full re-filter.
+  const [draft, setDraft] = useState(value);
+  const committed = useRef(value);
+  const timer = useRef(null);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  useEffect(() => {
+    // Outside changes (clear, choosing an option, the AI) replace the draft.
+    if (value !== committed.current) {
+      committed.current = value;
+      setDraft(value);
+    }
+  }, [value]);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const commit = (next) => {
+    clearTimeout(timer.current);
+    timer.current = null;
+    if (next === committed.current) return;
+    committed.current = next;
+    onChangeRef.current(next);
+  };
+  const commitSoon = (next) => {
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => commit(next), typingPauseMs);
+  };
   const suggestions = (showAllOptions
     ? options
-    : options.filter((option) => normalized(option).includes(normalized(value))))
+    : options.filter((option) => normalized(option).includes(normalized(draft))))
     .slice(0, 100);
   useEffect(() => {
     if (!open) return undefined;
@@ -40,21 +71,27 @@ export function FilterCombo({
           aria-expanded={open}
           autoComplete="off"
           readOnly={readOnly}
-          value={value}
-          onBlur={() =>
+          value={draft}
+          onBlur={(e) => {
+            commit(e.target.value);
             setTimeout(
               () =>
                 onOpenChange((current) => (current === id ? null : current)),
               120,
-            )
-          }
-          onChange={(e) => {
-            onChange(e.target.value);
-            onOpenChange(id);
+            );
           }}
+          onChange={(e) => {
+            const next = e.target.value;
+            setDraft(next);
+            onOpenChange(id);
+            // Mid-composition text is not a real value yet.
+            if (!e.nativeEvent.isComposing) commitSoon(next);
+          }}
+          onCompositionEnd={(e) => commitSoon(e.target.value)}
           onFocus={() => onOpenChange(id)}
           onKeyDown={(e) => {
             if (e.key === "Escape") onOpenChange(null);
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) commit(e.currentTarget.value);
           }}
           placeholder={placeholder ?? `全部${label}`}
         />
@@ -75,7 +112,8 @@ export function FilterCombo({
                   key={option}
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => {
-                    onChange(option);
+                    setDraft(option);
+                    commit(option);
                     onOpenChange(null);
                   }}
                   role="option"

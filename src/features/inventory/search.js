@@ -44,6 +44,35 @@ export const normalized = (value) => {
     text = text.split(variant).join(standard);
   return text.replace(/[臺檯汙]/g, (character) => characterFolds[character]);
 };
+// One collator reused for every comparison: building a new one per
+// localeCompare call is what made sorting thousands of rows slow.
+export const textCollator = new Intl.Collator("zh-Hant");
+export const numericCollator = new Intl.Collator("zh-Hant", { numeric: true });
+export const assetNumberCollator = new Intl.Collator("zh-Hant", {
+  numeric: true,
+  sensitivity: "base",
+});
+// The folded form of a row's filterable cells, computed once per row object.
+// Rows are rebuilt (new objects) whenever the source data changes, so the
+// cache never goes stale.
+const filterCellCache = new WeakMap();
+function filterCellValues(asset, key) {
+  let byKey = filterCellCache.get(asset);
+  if (!byKey) filterCellCache.set(asset, (byKey = new Map()));
+  let values = byKey.get(key);
+  if (!values) {
+    values = [
+      asset[key],
+      key === "custodianName" ? asset.rawCustodianName : "",
+      key === "userName" ? asset.rawUserName : "",
+    ].map(normalized);
+    byKey.set(key, values);
+  }
+  return values;
+}
+// needle must already be normalized(); an empty needle matches everything.
+export const filterCellMatches = (asset, key, needle) =>
+  !needle || filterCellValues(asset, key).some((value) => value.includes(needle));
 // Regular expression source that highlights where a search term matched, in
 // any of the folded spellings.  Follows the search rules: * is any run of
 // characters (kept short so only the matched part is marked), ? is one

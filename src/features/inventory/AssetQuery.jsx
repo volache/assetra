@@ -7,9 +7,13 @@ import { FilterCombo, HighlightText, SearchRuleMenu } from "./QueryControls";
 import { CapsuleSpinner, useFeedback } from "../../components/FeedbackCenter";
 import { supabase } from "../../supabase";
 import {
+  assetNumberCollator,
   collaborationFilterOptions,
   defaultPageSize,
+  filterCellMatches,
   filterFields,
+  numericCollator,
+  textCollator,
   photoFilterOptions,
   matchesAdvancedSearch,
   normalizeSearchInput,
@@ -31,6 +35,9 @@ function enrichAsset(asset) {
     serviceLifeExpired: serviceLifeExpired(asset.acquiredAt, asset.usefulLife),
   };
 }
+const compareByAssetNumber = (left, right) =>
+  assetNumberCollator.compare(String(left.assetNo || ""), String(right.assetNo || "")) ||
+  assetNumberCollator.compare(String(left.serialNo || ""), String(right.serialNo || ""));
 export function AssetQuery({
   assets,
   focusTask,
@@ -69,18 +76,14 @@ export function AssetQuery({
   const filterSentinelRef = useRef(null);
   const filterPanelRef = useRef(null);
   const searchBoxRef = useRef(null);
+  // Folded once per filter change, not once per row and field.
+  const filterNeedles = useMemo(
+    () => filterFields.map(([key]) => [key, normalized(filters[key])]),
+    [filters],
+  );
   const matches = (asset, omit = null) =>
-    filterFields.every(
-      ([key]) =>
-        key === omit ||
-        !filters[key] ||
-        [
-          asset[key],
-          key === "custodianName" ? asset.rawCustodianName : "",
-          key === "userName" ? asset.rawUserName : "",
-        ].some((value) =>
-          normalized(value).includes(normalized(filters[key])),
-        ),
+    filterNeedles.every(
+      ([key, needle]) => key === omit || filterCellMatches(asset, key, needle),
     );
   const matchesFlags = (asset, photo = photoFilter, collaboration = collaborationFilter) => {
     if (!flagged || (!photo && !collaboration)) return true;
@@ -115,7 +118,7 @@ export function AssetQuery({
                 .map((asset) => String(asset[field] || "").trim())
                 .filter(Boolean),
             ),
-          ].sort((a, b) => a.localeCompare(b, "zh-Hant")),
+          ].sort(textCollator.compare),
         );
       return distinctValueCache.get(field);
     },
@@ -135,7 +138,7 @@ export function AssetQuery({
               const no = String(asset.assetNo || "");
               if (!name) continue;
               const known = lowestNo.get(name);
-              if (known === undefined || (no && (!known || no.localeCompare(known, "zh-Hant", { numeric: true }) < 0)))
+              if (known === undefined || (no && (!known || numericCollator.compare(no, known) < 0)))
                 lowestNo.set(name, no);
             }
             return [
@@ -145,8 +148,8 @@ export function AssetQuery({
                 const right = lowestNo.get(b);
                 if (!left !== !right) return left ? -1 : 1;
                 return (
-                  String(left).localeCompare(String(right), "zh-Hant", { numeric: true }) ||
-                  a.localeCompare(b, "zh-Hant")
+                  numericCollator.compare(String(left), String(right)) ||
+                  textCollator.compare(a, b)
                 );
               }),
             ];
@@ -159,7 +162,7 @@ export function AssetQuery({
                   .map((asset) => String(asset[key] || "").trim())
                   .filter(Boolean),
               ),
-            ].sort((a, b) => a.localeCompare(b, "zh-Hant")),
+            ].sort(textCollator.compare),
           ];
         }),
       ),
@@ -175,19 +178,7 @@ export function AssetQuery({
             matchesAdvancedSearch(asset, appliedTerm) &&
             (!aiAssetIds || aiAssetIds.has(asset.identityId)),
         )
-        .sort(
-          (left, right) =>
-            String(left.assetNo || "").localeCompare(
-              String(right.assetNo || ""),
-              "zh-Hant",
-              { numeric: true, sensitivity: "base" },
-            ) ||
-            String(left.serialNo || "").localeCompare(
-              String(right.serialNo || ""),
-              "zh-Hant",
-              { numeric: true, sensitivity: "base" },
-            ),
-        ),
+        .sort(compareByAssetNumber),
     [sourceRows, filters, appliedTerm, aiAssetIds, photoFilter, collaborationFilter, flagged],
   );
   const highlightTermsFor = useMemo(
@@ -252,19 +243,7 @@ export function AssetQuery({
       onTaskFocusHandled?.();
       return;
     }
-    const orderedAssets = [...assets].sort(
-      (left, right) =>
-        String(left.assetNo || "").localeCompare(
-          String(right.assetNo || ""),
-          "zh-Hant",
-          { numeric: true, sensitivity: "base" },
-        ) ||
-        String(left.serialNo || "").localeCompare(
-          String(right.serialNo || ""),
-          "zh-Hant",
-          { numeric: true, sensitivity: "base" },
-        ),
-    );
+    const orderedAssets = [...assets].sort(compareByAssetNumber);
     const index = orderedAssets.findIndex((item) => item.id === asset.id);
     setTerm("");
     setAppliedTerm("");
