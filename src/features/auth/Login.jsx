@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 
 export function Login({ isLoading, onLogin }) {
-  const [accountCode, setAccountCode] = useState("admin");
+  const [accountCode, setAccountCode] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
