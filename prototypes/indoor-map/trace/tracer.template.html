@@ -672,7 +672,12 @@ function renderPanel() {
         if (!recorded) { pushHistory(); recorded = true; }   // one undo step per edit
         room[field] = input.value; save(); renderOverlay();
       });
-      input.addEventListener("change", () => { changed(true, false); });
+      input.addEventListener("change", () => {
+        // A code that exists in the main system brings its name along when no name is set yet.
+        const match = field === "locationCode" ? locationByCode.get(room.locationCode.trim()) : null;
+        if (match) { room.locationCode = room.locationCode.trim(); if (!room.name) room.name = match.name; }
+        changed(true, false);
+      });
       wrap.append(input);
       return wrap;
     };
