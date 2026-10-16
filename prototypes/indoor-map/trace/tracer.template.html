@@ -7,7 +7,7 @@
 <style>
   :root {
     --ink: #172033; --ink-2: #44506a; --muted: #7a859c; --rule: #d8dfeb; --paper: #f6f8fb;
-    --accent: #e0654a; --teal: #1fb5a5; --room: rgba(31, 181, 165, 0.16); --room-line: #139688;
+    --accent: #e0654a; --teal: #1fb5a5; --room: rgba(31, 181, 165, 0.16); --room-line: #139688; --wall: #26334f;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
@@ -31,19 +31,23 @@
   .stage .overlay { pointer-events: none; }
   .minor { fill: none; stroke: #c3cadb; stroke-width: 0.6; vector-effect: non-scaling-stroke; }
   .major { fill: none; stroke: #6b7694; stroke-width: 0.9; vector-effect: non-scaling-stroke; }
-  .stage.faint .minor, .stage.faint .major { opacity: 0.55; }
-  .room { fill: var(--room); stroke: var(--room-line); stroke-linejoin: round; stroke-width: 1.4; vector-effect: non-scaling-stroke; }
+  .stage.faint .minor, .stage.faint .major { opacity: 0.45; }
+  .room { fill: var(--room); stroke: var(--room-line); stroke-linejoin: round; stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+  .room.auto { stroke-width: 0.8; }
   .room.public { fill: rgba(120, 140, 200, 0.14); stroke: #5f74bd; }
   .room.void { fill: rgba(255, 255, 255, 0.35); stroke: #8a95b3; stroke-dasharray: 6 4; }
   .room.selected { fill: rgba(224, 101, 74, 0.22); stroke: var(--accent); stroke-width: 2.2; }
   .room:hover { fill: rgba(255, 190, 90, 0.28); }
+  .wall { fill: none; stroke: var(--wall); stroke-linecap: round; stroke-linejoin: round; stroke-width: 3.2; vector-effect: non-scaling-stroke; }
+  .wall.selected { stroke: var(--accent); stroke-width: 4; }
   .draft { fill: rgba(224, 101, 74, 0.12); stroke: var(--accent); stroke-dasharray: 5 4; stroke-width: 1.6; }
+  .draft.wall { fill: none; stroke-width: 3; }
   .handle { fill: #fff; stroke: var(--accent); stroke-width: 2; }
   .handle.active { fill: var(--accent); }
   .snap { fill: none; stroke-width: 2; }
   .label { fill: var(--ink); font-size: 12px; paint-order: stroke; stroke: rgba(255, 255, 255, 0.9); stroke-linejoin: round; stroke-width: 3px; text-anchor: middle; }
   .src { fill: #8a6d00; font-size: 10px; paint-order: stroke; stroke: rgba(255, 255, 255, 0.85); stroke-width: 2.5px; text-anchor: middle; }
-  .hint { background: rgba(23, 32, 51, 0.88); border-radius: 8px; bottom: 10px; color: #fff; font-size: 12px; left: 12px; padding: 6px 10px; position: absolute; }
+  .hint { background: rgba(23, 32, 51, 0.88); border-radius: 8px; bottom: 10px; color: #fff; font-size: 12px; left: 12px; max-width: calc(100% - 24px); padding: 6px 10px; position: absolute; }
   aside { background: #fff; border-left: 1px solid var(--rule); display: flex; flex-direction: column; min-height: 0; }
   aside h2 { font-size: 13px; margin: 0; padding: 10px 14px 4px; }
   .list { flex: 1; list-style: none; margin: 0; min-height: 0; overflow-y: auto; padding: 0 8px 8px; }
@@ -67,8 +71,10 @@
   <h1 id="title"></h1>
   <div class="group" role="group" aria-label="工具" id="tools">
     <button type="button" data-tool="select" aria-pressed="true" title="選取、拖曳頂點、雙擊邊線加點">選取<kbd>V</kbd></button>
-    <button type="button" data-tool="rect" aria-pressed="false" title="拖曳或點兩個對角">矩形<kbd>R</kbd></button>
-    <button type="button" data-tool="poly" aria-pressed="false" title="逐點描出任意形狀">多邊形<kbd>P</kbd></button>
+    <button type="button" data-tool="wall" aria-pressed="false" title="畫牆：逐點點出，線段會被當成牆">牆<kbd>W</kbd></button>
+    <button type="button" data-tool="arcwall" aria-pressed="false" title="畫弧形的牆：起點、終點、再點弧上一點">弧牆<kbd>A</kbd></button>
+    <button type="button" data-tool="rect" aria-pressed="false" title="直接描一個矩形房間">矩形<kbd>R</kbd></button>
+    <button type="button" data-tool="poly" aria-pressed="false" title="逐點描出任意形狀的房間">多邊形<kbd>P</kbd></button>
     <button type="button" data-tool="semi" aria-pressed="false" title="點直徑兩端，再點一側">半圓<kbd>C</kbd></button>
     <button type="button" data-tool="circle" aria-pressed="false" title="點圓心，再點半徑">圓<kbd>O</kbd></button>
   </div>
@@ -76,12 +82,15 @@
     <button type="button" id="undo" title="復原 Ctrl+Z">復原</button>
     <button type="button" id="redo" title="重做 Ctrl+Y">重做</button>
   </div>
-  <div class="group" role="group" aria-label="顯示">
+  <div class="group" role="group" aria-label="顯示與行為">
+    <button type="button" id="toggle-live" aria-pressed="true" title="牆圍成封閉區域時，自動產生房間">即時生成房間</button>
     <button type="button" id="toggle-minor" aria-pressed="false" title="顯示短線（門、傢俱等）">短線</button>
     <button type="button" id="toggle-texts" aria-pressed="true" title="顯示原圖文字">原圖文字</button>
-    <button type="button" id="toggle-snap" aria-pressed="true" title="吸附到牆線端點與其他房間">吸附</button>
+    <button type="button" id="toggle-faint" aria-pressed="false" title="把底圖調淡">淡化底圖</button>
+    <button type="button" id="toggle-snap" aria-pressed="true" title="吸附到牆線端點與其他物件">吸附</button>
   </div>
-  <button type="button" class="btn" id="tidy" title="頂點靠攏、邊線拉直、相鄰房間共邊">自動整理</button>
+  <button type="button" class="btn" id="generate" title="依目前的牆重新產生房間">由牆生成房間</button>
+  <button type="button" class="btn" id="tidy" title="頂點靠攏、邊線拉直、相鄰物件共邊">自動整理</button>
   <span class="spacer"></span>
   <button type="button" class="btn" id="import">匯入</button>
   <button type="button" class="btn primary" id="export">匯出 JSON</button>
@@ -90,7 +99,7 @@
 
 <main>
   <div class="stage select" id="stage">
-    <svg id="plan" aria-label="平面圖底圖與描繪的房間"></svg>
+    <svg id="plan" aria-label="平面圖底圖、牆與房間"></svg>
     <svg id="overlay" class="overlay" aria-hidden="true"></svg>
     <div class="hint" id="hint"></div>
   </div>
@@ -108,11 +117,13 @@ const DATA = /*__TRACE_DATA__*/null;
 const STORE_KEY = "indoor-trace:" + DATA.title + ":" + DATA.source;
 const TYPE_NAMES = { room: "房間", public: "公共區域", void: "挑空／採光" };
 const HINTS = {
-  select: "點房間選取；拖曳白點移動頂點；雙擊邊線加點；Delete 刪除頂點或房間；空白處拖曳或按住空白鍵可平移",
-  rect: "按住拖曳畫矩形，或依序點兩個對角；Esc 取消",
-  poly: "依序點出各頂點；Enter、雙擊或點回第一點完成；Backspace 退一點；按住 Shift 鎖定水平／垂直",
-  semi: "先點直徑的兩個端點，再把滑鼠移到要凸出的一側後點一下",
-  circle: "先點圓心，再點圓周上的任一點",
+  select: "點房間或牆選取；拖曳白點移動頂點；雙擊邊線加點；Delete 刪除；空白處拖曳或按住空白鍵可平移",
+  wall: "逐點點出牆；Enter、雙擊或點回起點完成；Backspace 退一點；Shift 鎖定水平／垂直。牆圍成封閉區域就會自動變成房間",
+  arcwall: "弧形的牆：先點起點，再點終點，最後點弧線上的一點決定彎曲方向與弧度",
+  rect: "直接描矩形房間：按住拖曳，或依序點兩個對角；Esc 取消",
+  poly: "逐點描房間外形；Enter、雙擊或點回第一點完成；Backspace 退一點；Shift 鎖定水平／垂直",
+  semi: "半圓房間：先點直徑的兩個端點，再把滑鼠移到要凸出的一側後點一下",
+  circle: "圓形房間：先點圓心，再點圓周上的任一點",
 };
 const SVGNS = "http://www.w3.org/2000/svg";
 const $ = (id) => document.getElementById(id);
@@ -124,38 +135,43 @@ const make = (name, attrs = {}, parent) => {
 };
 
 // ---- state ---------------------------------------------------------------------
-let rooms = [];
-let selectedId = null;
+let rooms = [];                   // { id, name, type, ring, auto?, anchor?, curve? }
+let walls = [];                   // { id, pts, curve? }
+let suppressed = [];              // anchors of generated rooms the user deleted
+let selectedId = null;            // a room id
+let selectedWallId = null;
 let selectedVertex = null;
 let tool = "select";
-let draft = null;                 // { tool, pts: [...], cursor: [x, y], rectStart?: [x, y] }
+let draft = null;
 let drag = null;
 let view = { z: 1, tx: 0, ty: 0 };
 let size = { w: 1000, h: 700 };
 let snapOn = true;
 let showTexts = true;
+let liveRooms = true;
 let spaceDown = false;
-let cursorPoint = null;
 let snapHit = null;
 let history = [], future = [];
 let counter = 1;
+let generateTimer = null;
 
 const stage = $("stage");
 const planSvg = $("plan");
 const overlay = $("overlay");
-let viewGroup, minorPath, majorPath, roomGroup;
+let viewGroup, minorPath, majorPath, roomGroup, wallGroup;
 
-// ---- small geometry helpers -----------------------------------------------------
+// ---- geometry helpers ------------------------------------------------------------
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 const round1 = (v) => Math.round(v * 10) / 10;
-function area(ring) {
+function signedArea(ring) {
   let sum = 0;
   for (let i = 0; i < ring.length; i++) {
     const [x1, y1] = ring[i], [x2, y2] = ring[(i + 1) % ring.length];
     sum += x1 * y2 - x2 * y1;
   }
-  return Math.abs(sum) / 2;
+  return sum / 2;
 }
+const area = (ring) => Math.abs(signedArea(ring));
 function centroid(ring) {
   let a = 0, cx = 0, cy = 0;
   for (let i = 0; i < ring.length; i++) {
@@ -180,20 +196,34 @@ function closestOnSegment(p, a, b) {
   const t = len2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2)) : 0;
   return { point: [a[0] + t * dx, a[1] + t * dy], t };
 }
+/** A point that is really inside the ring (the centroid can fall outside an L shape). */
+function interiorPoint(ring) {
+  const c = centroid(ring);
+  if (inRing(ring, c)) return [round1(c[0]), round1(c[1])];
+  const y = c[1];
+  const xs = [];
+  for (let i = 0; i < ring.length; i++) {
+    const [x1, y1] = ring[i], [x2, y2] = ring[(i + 1) % ring.length];
+    if ((y1 > y) !== (y2 > y)) xs.push(x1 + ((y - y1) / (y2 - y1)) * (x2 - x1));
+  }
+  xs.sort((a, b) => a - b);
+  let best = [xs[0], xs[1] ?? xs[0]];
+  for (let i = 0; i + 1 < xs.length; i += 2) if (xs[i + 1] - xs[i] > best[1] - best[0]) best = [xs[i], xs[i + 1]];
+  return [round1((best[0] + best[1]) / 2), round1(y)];
+}
 
-// ---- spatial index for the underlay ----------------------------------------------
+// ---- spatial index of the underlay -------------------------------------------------
 const CELL = 150;
 const segGrid = new Map(), ptGrid = new Map();
 const cellKey = (x, y) => Math.floor(x / CELL) + "," + Math.floor(y / CELL);
 DATA.segments.forEach((s, i) => {
   const [x1, y1, x2, y2] = s;
-  const x0 = Math.floor(Math.min(x1, x2) / CELL), x3 = Math.floor(Math.max(x1, x2) / CELL);
-  const y0 = Math.floor(Math.min(y1, y2) / CELL), y3 = Math.floor(Math.max(y1, y2) / CELL);
-  for (let cx = x0; cx <= x3; cx++) for (let cy = y0; cy <= y3; cy++) {
-    const key = cx + "," + cy;
-    if (!segGrid.has(key)) segGrid.set(key, []);
-    segGrid.get(key).push(i);
-  }
+  for (let cx = Math.floor(Math.min(x1, x2) / CELL); cx <= Math.floor(Math.max(x1, x2) / CELL); cx++)
+    for (let cy = Math.floor(Math.min(y1, y2) / CELL); cy <= Math.floor(Math.max(y1, y2) / CELL); cy++) {
+      const key = cx + "," + cy;
+      if (!segGrid.has(key)) segGrid.set(key, []);
+      segGrid.get(key).push(i);
+    }
 });
 DATA.points.forEach((p, i) => {
   const key = cellKey(p[0], p[1]);
@@ -207,7 +237,12 @@ function cellsAround([x, y], r) {
   return keys;
 }
 
-// ---- snapping --------------------------------------------------------------------
+// ---- snapping ----------------------------------------------------------------------
+function wallSegments() {
+  const list = [];
+  for (const wall of walls) for (let i = 0; i + 1 < wall.pts.length; i++) list.push([wall.pts[i], wall.pts[i + 1], wall.id, i]);
+  return list;
+}
 function snap(point, options = {}) {
   let p = point;
   if (options.from && options.axis) {
@@ -224,6 +259,10 @@ function snap(point, options = {}) {
     if (options.excludeRoom === room.id && options.excludeIndex === i) return;
     offer(v, dist(p, v), "vertex");
   }));
+  walls.forEach((wall) => wall.pts.forEach((v, i) => {
+    if (options.excludeWall === wall.id && options.excludeIndex === i) return;
+    offer(v, dist(p, v), "vertex");
+  }));
   for (const key of cellsAround(p, r)) for (const i of ptGrid.get(key) || []) offer(DATA.points[i], dist(p, DATA.points[i]), "corner");
   if (best) return { p: best.p, kind: best.kind };
   const er = 9 / view.z;
@@ -237,6 +276,10 @@ function snap(point, options = {}) {
     if (options.excludeRoom === room.id && (options.excludeIndex === i || options.excludeIndex === (i + 1) % room.ring.length)) return;
     offerEdge(v, room.ring[(i + 1) % room.ring.length], "edge");
   }));
+  for (const [a, b, id, i] of wallSegments()) {
+    if (options.excludeWall === id && (options.excludeIndex === i || options.excludeIndex === i + 1)) continue;
+    offerEdge(a, b, "edge");
+  }
   const seen = new Set();
   for (const key of cellsAround(p, er)) for (const i of segGrid.get(key) || []) {
     if (seen.has(i)) continue;
@@ -247,7 +290,7 @@ function snap(point, options = {}) {
   return edge ? { p: edge.p, kind: edge.kind } : { p, kind: null };
 }
 
-// ---- view ------------------------------------------------------------------------
+// ---- view ----------------------------------------------------------------------------
 const toPlan = (clientX, clientY) => {
   const box = stage.getBoundingClientRect();
   return [(clientX - box.left - view.tx) / view.z, (clientY - box.top - view.ty) / view.z];
@@ -272,44 +315,59 @@ function resize() {
   applyView();
 }
 
-// ---- history and storage -----------------------------------------------------------
-const snapshot = () => JSON.stringify(rooms);
+// ---- history and storage ----------------------------------------------------------------
+const snapshot = () => JSON.stringify({ rooms, walls, suppressed });
 function pushHistory() { history.push(snapshot()); if (history.length > 120) history.shift(); future = []; }
 function restore(json) {
-  rooms = JSON.parse(json);
-  if (!rooms.some((r) => r.id === selectedId)) { selectedId = null; selectedVertex = null; }
-  changed(false);
+  const state = JSON.parse(json);
+  rooms = state.rooms; walls = state.walls; suppressed = state.suppressed || [];
+  if (!rooms.some((r) => r.id === selectedId)) selectedId = null;
+  if (!walls.some((w) => w.id === selectedWallId)) selectedWallId = null;
+  selectedVertex = null;
+  changed(false, true);   // rooms that come from walls are derived again, so they always match the walls
 }
 function undo() { if (!history.length) return; future.push(snapshot()); restore(history.pop()); }
 function redo() { if (!future.length) return; history.push(snapshot()); restore(future.pop()); }
-function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify({ rooms, counter })); } catch { /* private mode */ } }
+function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify({ rooms, walls, suppressed, counter })); } catch { /* private mode */ } }
 function load() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
-    if (saved) { rooms = saved.rooms || []; counter = saved.counter || rooms.length + 1; }
+    if (saved) { rooms = saved.rooms || []; walls = saved.walls || []; suppressed = saved.suppressed || []; counter = saved.counter || 1; }
   } catch { /* ignore */ }
 }
-function changed(record = true) {
+/** Redraw everything.  `regenerate` re-derives the rooms from the walls (when live). */
+function changed(record = true, regenerate = true) {
   if (record) save();
-  renderRooms();
+  if (regenerate && liveRooms && walls.length) scheduleGenerate();
+  renderScene();
   renderOverlay();
   renderPanel();
   $("undo").disabled = !history.length;
   $("redo").disabled = !future.length;
 }
 
-// ---- rooms -------------------------------------------------------------------------
-const newId = () => "T" + String(counter++).padStart(3, "0");
+// ---- rooms and walls ----------------------------------------------------------------------
+const newId = (prefix = "T") => prefix + String(counter++).padStart(3, "0");
+const roomById = (id) => rooms.find((r) => r.id === id);
+const wallById = (id) => walls.find((w) => w.id === id);
 function addRoom(ring, curve) {
   pushHistory();
-  const room = { id: newId(), name: "", type: "room", ring: ring.map((p) => [round1(p[0]), round1(p[1])]) };
+  const room = { id: newId("T"), name: "", type: "room", ring: ring.map((p) => [round1(p[0]), round1(p[1])]) };
   if (curve) room.curve = curve;
   rooms.push(room);
-  selectedId = room.id;
-  selectedVertex = null;
+  selectedId = room.id; selectedWallId = null; selectedVertex = null;
   changed();
 }
-const roomById = (id) => rooms.find((r) => r.id === id);
+function addWall(pts, curve) {
+  const cleaned = pts.filter((p, i) => i === 0 || dist(p, pts[i - 1]) > 1);
+  if (cleaned.length < 2) return;
+  pushHistory();
+  const wall = { id: newId("W"), pts: cleaned.map((p) => [round1(p[0]), round1(p[1])]) };
+  if (curve) wall.curve = true;
+  walls.push(wall);
+  selectedWallId = wall.id; selectedId = null; selectedVertex = null;
+  changed();
+}
 function suggestions(room) {
   return DATA.texts.filter((t) => inRing(room.ring, [t.x, t.y])).map((t) => t.t).filter((v, i, a) => a.indexOf(v) === i).slice(0, 12);
 }
@@ -335,42 +393,176 @@ function circleRing(center, edge, steps = 72) {
   });
 }
 const rectRing = (a, b) => [[a[0], a[1]], [b[0], a[1]], [b[0], b[1]], [a[0], b[1]]];
+/** Arc from `start` to `end` that passes through `via` (three points define a circle). */
+function arcPoints(start, end, via) {
+  const [x1, y1] = start, [x2, y2] = via, [x3, y3] = end;
+  const d = 2 * (x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2));
+  if (Math.abs(d) < 1e-6) return [start, end];
+  const ux = ((x1 * x1 + y1 * y1) * (y2 - y3) + (x2 * x2 + y2 * y2) * (y3 - y1) + (x3 * x3 + y3 * y3) * (y1 - y2)) / d;
+  const uy = ((x1 * x1 + y1 * y1) * (x3 - x2) + (x2 * x2 + y2 * y2) * (x1 - x3) + (x3 * x3 + y3 * y3) * (x2 - x1)) / d;
+  const r = Math.hypot(x1 - ux, y1 - uy);
+  const TAU = Math.PI * 2;
+  const norm = (a) => ((a % TAU) + TAU) % TAU;
+  const a1 = Math.atan2(y1 - uy, x1 - ux), am = Math.atan2(y2 - uy, x2 - ux), a3 = Math.atan2(y3 - uy, x3 - ux);
+  const ccw = norm(am - a1) < norm(a3 - a1);
+  const sweep = ccw ? norm(a3 - a1) : -norm(a1 - a3);
+  const steps = Math.max(6, Math.ceil(Math.abs(sweep) / (Math.PI / 36)));
+  const points = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = a1 + (sweep * i) / steps;
+    points.push([ux + r * Math.cos(t), uy + r * Math.sin(t)]);
+  }
+  points[0] = start; points[points.length - 1] = end;
+  return points;
+}
 
-// ---- rendering ---------------------------------------------------------------------
+// ---- rooms from walls --------------------------------------------------------------------------
+/** Closed areas of a set of wall segments.  Returns rings (counter-clockwise numerically). */
+function wallFaces(segments, minArea = 3000) {
+  const TOL = 6;
+  const nodes = [];
+  const nodeFor = (p) => {
+    for (let i = 0; i < nodes.length; i++) if (dist(nodes[i], p) <= TOL) return i;
+    nodes.push([p[0], p[1]]);
+    return nodes.length - 1;
+  };
+  const segs = segments.map(([p, q]) => ({ a: nodeFor(p), b: nodeFor(q) })).filter((s) => s.a !== s.b);
+  const cuts = segs.map(() => []);
+  // crossings between segments
+  for (let i = 0; i < segs.length; i++) for (let j = i + 1; j < segs.length; j++) {
+    const A = nodes[segs[i].a], B = nodes[segs[i].b], C = nodes[segs[j].a], D = nodes[segs[j].b];
+    const r = [B[0] - A[0], B[1] - A[1]], s = [D[0] - C[0], D[1] - C[1]];
+    const denom = r[0] * s[1] - r[1] * s[0];
+    if (Math.abs(denom) < 1e-9) continue;
+    const t = ((C[0] - A[0]) * s[1] - (C[1] - A[1]) * s[0]) / denom;
+    const u = ((C[0] - A[0]) * r[1] - (C[1] - A[1]) * r[0]) / denom;
+    if (t > 1e-6 && t < 1 - 1e-6 && u > 1e-6 && u < 1 - 1e-6) {
+      const id = nodeFor([A[0] + t * r[0], A[1] + t * r[1]]);
+      cuts[i].push({ t, id }); cuts[j].push({ t: u, id });
+    }
+  }
+  // corners that touch the middle of another wall
+  segs.forEach((seg, i) => {
+    const A = nodes[seg.a], B = nodes[seg.b];
+    nodes.forEach((n, k) => {
+      if (k === seg.a || k === seg.b) return;
+      const hit = closestOnSegment(n, A, B);
+      if (hit.t > 1e-4 && hit.t < 1 - 1e-4 && dist(n, hit.point) <= TOL) cuts[i].push({ t: hit.t, id: k });
+    });
+  });
+  const edges = new Map();
+  const addEdge = (a, b) => { if (a !== b) edges.set(a < b ? a + "-" + b : b + "-" + a, [Math.min(a, b), Math.max(a, b)]); };
+  segs.forEach((seg, i) => {
+    const chain = [{ t: 0, id: seg.a }, ...cuts[i].sort((p, q) => p.t - q.t), { t: 1, id: seg.b }];
+    for (let k = 0; k + 1 < chain.length; k++) addEdge(chain[k].id, chain[k + 1].id);
+  });
+  const adj = new Map();
+  const link = (a, b) => { if (!adj.has(a)) adj.set(a, new Set()); adj.get(a).add(b); };
+  for (const [a, b] of edges.values()) { link(a, b); link(b, a); }
+  // drop dangling ends, they enclose nothing
+  let pruned = true;
+  while (pruned) {
+    pruned = false;
+    for (const [n, set] of adj) if (set.size <= 1) { for (const m of set) adj.get(m).delete(n); adj.delete(n); pruned = true; }
+  }
+  const order = new Map();
+  for (const [n, set] of adj) {
+    order.set(n, [...set].sort((p, q) => Math.atan2(nodes[p][1] - nodes[n][1], nodes[p][0] - nodes[n][0]) - Math.atan2(nodes[q][1] - nodes[n][1], nodes[q][0] - nodes[n][0])));
+  }
+  const used = new Set();
+  const faces = [];
+  for (const [u, set] of adj) for (const v0 of set) {
+    if (used.has(u + ">" + v0)) continue;
+    const loop = [];
+    let a = u, b = v0, guard = 0;
+    while (!used.has(a + ">" + b) && guard++ < 10000) {
+      used.add(a + ">" + b);
+      loop.push(a);
+      const around = order.get(b);
+      const back = around.indexOf(a);
+      const next = around[(back - 1 + around.length) % around.length];   // sharpest left turn
+      a = b; b = next;
+    }
+    if (loop.length >= 3) {
+      const ring = loop.map((id) => nodes[id]);
+      const areaValue = signedArea(ring);
+      if (areaValue > minArea) faces.push(ring);
+    }
+  }
+  return faces.map((ring) => ring.filter((p, i) => {
+    const a = ring[(i + ring.length - 1) % ring.length], b = ring[(i + 1) % ring.length];
+    const cross = Math.abs((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])) / Math.max(1, dist(a, b));
+    return cross > 0.3;
+  }));
+}
+function generateRooms() {
+  generateTimer = null;
+  const segments = wallSegments().map(([a, b]) => [a, b]);
+  const old = rooms.filter((r) => r.auto);
+  const keep = rooms.filter((r) => !r.auto);
+  const selectedAnchor = roomById(selectedId)?.auto ? roomById(selectedId).anchor : null;
+  const faces = segments.length ? wallFaces(segments) : [];
+  const fresh = [];
+  for (const ring of faces) {
+    const anchor = interiorPoint(ring);
+    if (suppressed.some((s) => inRing(ring, s))) continue;
+    fresh.push({ id: newId("T"), name: "", type: "room", ring: ring.map((p) => [round1(p[0]), round1(p[1])]), auto: true, anchor });
+  }
+  // Names and types survive a regeneration: carry them to the area that now holds the old anchor.
+  for (const room of old) {
+    if (!room.name && room.type === "room") continue;
+    const target = fresh.find((f) => !f.name && f.type === "room" && inRing(f.ring, room.anchor || interiorPoint(room.ring)));
+    if (target) { target.name = room.name; target.type = room.type; }
+  }
+  rooms = [...keep, ...fresh];
+  if (selectedAnchor) selectedId = fresh.find((f) => inRing(f.ring, selectedAnchor))?.id || null;
+  else if (selectedId && !roomById(selectedId)) selectedId = null;
+  save();
+  renderScene(); renderOverlay(); renderPanel();
+}
+function scheduleGenerate() {
+  clearTimeout(generateTimer);
+  generateTimer = setTimeout(generateRooms, 120);
+}
+
+// ---- rendering ------------------------------------------------------------------------------------
 function buildScene() {
   planSvg.replaceChildren();
   viewGroup = make("g", {}, planSvg);
   minorPath = make("path", { class: "minor", d: DATA.minor }, viewGroup);
   majorPath = make("path", { class: "major", d: DATA.major }, viewGroup);
   roomGroup = make("g", {}, viewGroup);
+  wallGroup = make("g", {}, viewGroup);
   minorPath.style.display = "none";
 }
 const pathOf = (ring) => "M" + ring.map((p) => p[0] + " " + p[1]).join("L") + "Z";
-function renderRooms() {
+const linePathOf = (pts) => "M" + pts.map((p) => p[0] + " " + p[1]).join("L");
+function renderScene() {
   roomGroup.replaceChildren();
   [...rooms].sort((p, q) => area(q.ring) - area(p.ring)).forEach((room) => {
-    make("path", { class: `room ${room.type}${room.id === selectedId ? " selected" : ""}`, d: pathOf(room.ring), "data-id": room.id }, roomGroup);
+    make("path", { class: `room ${room.type}${room.auto ? " auto" : ""}${room.id === selectedId ? " selected" : ""}`, d: pathOf(room.ring), "data-id": room.id }, roomGroup);
   });
+  wallGroup.replaceChildren();
+  walls.forEach((wall) => make("path", { class: `wall${wall.id === selectedWallId ? " selected" : ""}`, d: linePathOf(wall.pts) }, wallGroup));
 }
 function renderOverlay() {
   if (!overlay) return;
   overlay.replaceChildren();
-  if (showTexts) {
+  if (showTexts && view.z >= 0.05) {
     for (const t of DATA.texts) {
       const [sx, sy] = toScreen([t.x, t.y]);
       if (sx < -40 || sy < -20 || sx > size.w + 40 || sy > size.h + 20) continue;
-      if (view.z < 0.05) break;
       make("text", { class: "src", x: sx, y: sy }, overlay).textContent = t.t;
     }
   }
   for (const room of rooms) {
     if (!room.name) continue;
-    const [sx, sy] = toScreen(centroid(room.ring));
+    const [sx, sy] = toScreen(room.anchor || centroid(room.ring));
     make("text", { class: "label", x: sx, y: sy + 4 }, overlay).textContent = room.name;
   }
-  const selected = roomById(selectedId);
-  if (selected && tool === "select") {
-    selected.ring.forEach((v, i) => {
+  if (tool === "select") {
+    const handles = roomById(selectedId)?.ring || wallById(selectedWallId)?.pts || [];
+    handles.forEach((v, i) => {
       const [sx, sy] = toScreen(v);
       make("circle", { class: "handle" + (i === selectedVertex ? " active" : ""), cx: sx, cy: sy, r: 5 }, overlay);
     });
@@ -382,22 +574,31 @@ function renderOverlay() {
     make("circle", { class: "snap", cx: sx, cy: sy, r: 8, stroke: color }, overlay);
   }
 }
-function draftRing() {
-  if (!draft) return null;
-  const cursor = draft.cursor;
-  if (draft.tool === "rect" && draft.pts.length === 1 && cursor) return rectRing(draft.pts[0], cursor);
-  if (draft.tool === "poly") return cursor ? [...draft.pts, cursor] : draft.pts;
-  if (draft.tool === "semi" && draft.pts.length === 2 && cursor) return semicircleRing(draft.pts[0], draft.pts[1], cursor);
-  if (draft.tool === "semi" && draft.pts.length === 1 && cursor) return [draft.pts[0], cursor];
-  if (draft.tool === "circle" && draft.pts.length === 1 && cursor) return circleRing(draft.pts[0], cursor);
-  return null;
+function draftShape() {
+  if (!draft || !draft.cursor) return null;
+  const cursor = draft.cursor, pts = draft.pts;
+  switch (draft.tool) {
+    case "rect": return pts.length === 1 ? { ring: rectRing(pts[0], cursor), closed: true } : null;
+    case "poly": return { ring: [...pts, cursor], closed: false };
+    case "wall": return { ring: [...pts, cursor], closed: false, wall: true };
+    case "arcwall":
+      if (pts.length === 1) return { ring: [pts[0], cursor], closed: false, wall: true };
+      if (pts.length === 2) return { ring: arcPoints(pts[0], pts[1], cursor), closed: false, wall: true };
+      return null;
+    case "semi":
+      if (pts.length === 2) return { ring: semicircleRing(pts[0], pts[1], cursor), closed: true };
+      if (pts.length === 1) return { ring: [pts[0], cursor], closed: false };
+      return null;
+    case "circle": return pts.length === 1 ? { ring: circleRing(pts[0], cursor), closed: true } : null;
+    default: return null;
+  }
 }
 function drawDraft() {
-  const ring = draftRing();
-  if (!ring || ring.length < 2) return;
-  const d = ring.map((p, i) => { const [sx, sy] = toScreen(p); return (i ? "L" : "M") + sx + " " + sy; }).join("") + (draft.tool === "poly" || ring.length < 3 ? "" : "Z");
-  make("path", { class: "draft", d }, overlay);
-  if (draft.tool === "poly") draft.pts.forEach((p) => { const [sx, sy] = toScreen(p); make("circle", { class: "handle", cx: sx, cy: sy, r: 4 }, overlay); });
+  const shape = draftShape();
+  if (!shape || shape.ring.length < 2) return;
+  const d = shape.ring.map((p, i) => { const [sx, sy] = toScreen(p); return (i ? "L" : "M") + sx + " " + sy; }).join("") + (shape.closed ? "Z" : "");
+  make("path", { class: "draft" + (shape.wall ? " wall" : ""), d }, overlay);
+  if (draft.tool === "poly" || draft.tool === "wall") draft.pts.forEach((p) => { const [sx, sy] = toScreen(p); make("circle", { class: "handle", cx: sx, cy: sy, r: 4 }, overlay); });
 }
 
 function renderPanel() {
@@ -412,7 +613,7 @@ function renderPanel() {
     if (room.id === selectedId) button.setAttribute("aria-current", "true");
     button.textContent = room.name || "（未命名）" + room.id;
     const small = document.createElement("small");
-    small.textContent = `${TYPE_NAMES[room.type]} · 約 ${(area(room.ring) / 10000).toFixed(1)} m² · ${room.ring.length} 個頂點`;
+    small.textContent = `${room.auto ? "由牆生成 · " : ""}${TYPE_NAMES[room.type]} · 約 ${(area(room.ring) / 10000).toFixed(1)} m²`;
     button.append(small);
     li.append(button);
     list.append(li);
@@ -420,10 +621,21 @@ function renderPanel() {
   const props = $("props");
   props.replaceChildren();
   const room = roomById(selectedId);
+  const wall = wallById(selectedWallId);
   const add = (node) => props.append(node);
   const el = (tag, text, attrs = {}) => Object.assign(document.createElement(tag), text === undefined ? {} : { textContent: text }, attrs);
-  if (!room) {
-    add(el("div", "用上方工具在底圖上描出房間。選取房間後，可以在這裡命名、設定類型。"));
+  if (wall) {
+    let length = 0;
+    for (let i = 0; i + 1 < wall.pts.length; i++) length += dist(wall.pts[i], wall.pts[i + 1]);
+    add(el("div", `牆 ${wall.id}：${wall.pts.length} 個頂點，長約 ${(length / 100).toFixed(1)} m${wall.curve ? "（弧形）" : ""}`));
+    add(el("div", "拖曳白點可移動端點；牆圍成封閉區域會自動生成房間。", { className: "note" }));
+    const row = el("div", undefined, { className: "row" });
+    const del = el("button", "刪除這道牆", { type: "button", className: "btn" });
+    del.addEventListener("click", deleteSelected);
+    row.append(del);
+    add(row);
+  } else if (!room) {
+    add(el("div", "用「牆」把牆一條一條畫出來，牆圍成封閉區域就會自動變成房間；也可以用矩形、多邊形、半圓、圓直接描房間。"));
     add(el("div", "描完後按「匯出 JSON」，把檔案交給我整理。", { className: "note" }));
   } else {
     const nameLabel = el("label", "房間名稱");
@@ -433,7 +645,7 @@ function renderPanel() {
       if (!recorded) { pushHistory(); recorded = true; }   // one undo step per rename
       room.name = name.value; save(); renderOverlay();
     });
-    name.addEventListener("change", () => { changed(); });
+    name.addEventListener("change", () => { changed(true, false); });
     nameLabel.append(name);
     add(nameLabel);
     const chips = suggestions(room);
@@ -441,19 +653,18 @@ function renderPanel() {
       const box = el("div", undefined, { className: "chips" });
       for (const text of chips) {
         const b = el("button", text, { type: "button", title: "套用這個名稱" });
-        b.addEventListener("click", () => { pushHistory(); room.name = text; changed(); });
+        b.addEventListener("click", () => { pushHistory(); room.name = text; changed(true, false); });
         box.append(b);
       }
-      const label = el("label", "圖上這個範圍內的文字（點一下套用）");
-      add(label); add(box);
+      add(el("label", "圖上這個範圍內的文字（點一下套用）")); add(box);
     }
     const typeLabel = el("label", "類型");
     const type = el("select");
     for (const [value, text] of Object.entries(TYPE_NAMES)) type.append(new Option(text, value, false, value === room.type));
-    type.addEventListener("change", () => { pushHistory(); room.type = type.value; changed(); });
+    type.addEventListener("change", () => { pushHistory(); room.type = type.value; changed(true, false); });
     typeLabel.append(type);
     add(typeLabel);
-    add(el("div", `面積約 ${(area(room.ring) / 10000).toFixed(1)} m²（以單位為公分推算）`, { className: "note" }));
+    add(el("div", `${room.auto ? "由牆生成。" : "手動描繪。"}面積約 ${(area(room.ring) / 10000).toFixed(1)} m²（以單位為公分推算）`, { className: "note" }));
     const row = el("div", undefined, { className: "row" });
     const del = el("button", "刪除此房間", { type: "button", className: "btn" });
     del.addEventListener("click", deleteSelected);
@@ -461,10 +672,10 @@ function renderPanel() {
     add(row);
   }
   const named = rooms.filter((r) => r.name).length;
-  $("stats").innerHTML = `<span><b>${rooms.length}</b> 個房間</span><span><b>${named}</b> 個已命名</span><span>底圖來源：${DATA.source}</span><span>資料自動儲存在這個瀏覽器</span>`;
+  $("stats").innerHTML = `<span><b>${walls.length}</b> 道牆</span><span><b>${rooms.length}</b> 個房間</span><span><b>${named}</b> 個已命名</span><span>底圖來源：${DATA.source}</span><span>資料自動儲存在這個瀏覽器</span>`;
 }
 
-// ---- actions -------------------------------------------------------------------------
+// ---- actions ---------------------------------------------------------------------------------------------
 function setTool(next) {
   tool = next;
   draft = null;
@@ -475,26 +686,99 @@ function setTool(next) {
   renderOverlay();
 }
 function deleteSelected() {
+  const wall = wallById(selectedWallId);
   const room = roomById(selectedId);
+  if (wall) {
+    pushHistory();
+    if (selectedVertex !== null && wall.pts.length > 2) { wall.pts.splice(selectedVertex, 1); delete wall.curve; selectedVertex = null; }
+    else { walls = walls.filter((w) => w.id !== wall.id); selectedWallId = null; selectedVertex = null; }
+    changed();
+    return;
+  }
   if (!room) return;
   pushHistory();
-  if (selectedVertex !== null && room.ring.length > 3) { room.ring.splice(selectedVertex, 1); delete room.curve; selectedVertex = null; }
-  else { rooms = rooms.filter((r) => r.id !== selectedId); selectedId = null; selectedVertex = null; }
-  changed();
+  if (selectedVertex !== null && room.ring.length > 3) { room.ring.splice(selectedVertex, 1); delete room.curve; room.auto = false; selectedVertex = null; }
+  else {
+    if (room.auto) suppressed.push(room.anchor || interiorPoint(room.ring));
+    rooms = rooms.filter((r) => r.id !== selectedId); selectedId = null; selectedVertex = null;
+  }
+  changed(true, false);
 }
-function finishPoly() {
-  if (draft && draft.pts.length >= 3) { const ring = draft.pts; draft = null; addRoom(ring); }
-  else draft = null;
+function finishPath() {
+  if (!draft) return;
+  const pts = draft.pts;
+  const kind = draft.tool;
+  draft = null;
+  if (kind === "poly" && pts.length >= 3) addRoom(pts);
+  else if (kind === "wall" && pts.length >= 2) addWall(pts);
   renderOverlay();
 }
 
-// ---- tidy: weld vertices, make shared walls coincide, straighten ----------------------
-function tidy() {
-  if (!rooms.length) return;
-  pushHistory();
-  const TOL = 14, AXIS_DEG = 3, MIN_EDGE = 8;
+// ---- tidy ---------------------------------------------------------------------------------------------------
+function tidyWalls() {
+  const TOL = 12, AXIS_DEG = 3;
+  if (!walls.length) return 0;
   const clusters = [];
-  const idsByRoom = rooms.map((room) => room.ring.map((p) => {
+  const ids = walls.map((wall) => wall.pts.map((p) => {
+    let found = clusters.find((c) => dist(c.p, p) <= TOL);
+    if (!found) { found = { p: [p[0], p[1]], n: 0, fixed: false }; clusters.push(found); }
+    found.p = [(found.p[0] * found.n + p[0]) / (found.n + 1), (found.p[1] * found.n + p[1]) / (found.n + 1)];
+    found.n += 1;
+    if (wall.curve) { found.fixed = true; found.p = [p[0], p[1]]; }
+    return clusters.indexOf(found);
+  }));
+  let pulled = 0;
+  clusters.forEach((c) => {
+    if (c.fixed) return;
+    let best = null;
+    for (const key of cellsAround(c.p, TOL)) for (const i of ptGrid.get(key) || []) {
+      const d = dist(c.p, DATA.points[i]);
+      if (d <= TOL && (!best || d < best.d)) best = { d, p: DATA.points[i] };
+    }
+    if (best) { c.p = [best.p[0], best.p[1]]; c.fixed = true; pulled += 1; }
+  });
+  // an end that stops just short of another wall is brought onto it
+  clusters.forEach((c, ci) => {
+    if (c.fixed) return;
+    let best = null;
+    ids.forEach((wallIds, wi) => {
+      if (wallIds.includes(ci)) return;
+      for (let i = 0; i + 1 < wallIds.length; i++) {
+        const hit = closestOnSegment(c.p, clusters[wallIds[i]].p, clusters[wallIds[i + 1]].p);
+        const d = dist(c.p, hit.point);
+        if (d <= TOL && d > 0.2 && (!best || d < best.d)) best = { d, p: hit.point };
+      }
+    });
+    if (best) { c.p = best.p; pulled += 1; }
+  });
+  for (let pass = 0; pass < 3; pass++) ids.forEach((wallIds) => {
+    for (let i = 0; i + 1 < wallIds.length; i++) {
+      const a = clusters[wallIds[i]], b = clusters[wallIds[i + 1]];
+      if (a === b || (a.fixed && b.fixed)) continue;
+      const dx = b.p[0] - a.p[0], dy = b.p[1] - a.p[1];
+      if (Math.hypot(dx, dy) < 20) continue;
+      const angle = Math.abs((Math.atan2(dy, dx) * 180) / Math.PI) % 180;
+      const axis = Math.min(angle, 180 - angle) <= AXIS_DEG ? 1 : Math.abs(angle - 90) <= AXIS_DEG ? 0 : -1;
+      if (axis < 0) continue;
+      const value = a.fixed ? a.p[axis] : b.fixed ? b.p[axis] : (a.p[axis] + b.p[axis]) / 2;
+      if (!a.fixed) a.p[axis] = value;
+      if (!b.fixed) b.p[axis] = value;
+    }
+  });
+  walls.forEach((wall, wi) => {
+    if (wall.curve) return;
+    const next = ids[wi].map((id) => [round1(clusters[id].p[0]), round1(clusters[id].p[1])]);
+    wall.pts = next.filter((p, i) => i === 0 || dist(p, next[i - 1]) > 1);
+  });
+  walls = walls.filter((w) => w.pts.length >= 2);
+  return pulled;
+}
+function tidyRooms() {
+  const TOL = 14, AXIS_DEG = 3, MIN_EDGE = 8;
+  const targets = rooms.filter((r) => !r.auto);
+  if (!targets.length) return { welded: 0, inserted: 0, dropped: 0 };
+  const clusters = [];
+  const idsByRoom = targets.map((room) => room.ring.map((p) => {
     const fixed = !!room.curve;
     let found = clusters.find((c) => dist(c.p, p) <= TOL);
     if (!found) { found = { p: [p[0], p[1]], n: 0, fixed: false }; clusters.push(found); }
@@ -503,7 +787,6 @@ function tidy() {
     if (fixed) { found.fixed = true; found.p = [p[0], p[1]]; }
     return clusters.indexOf(found);
   }));
-  // Pull each cluster onto a wall corner of the drawing when one is close.
   let welded = 0;
   clusters.forEach((c) => {
     if (c.fixed) return;
@@ -514,10 +797,9 @@ function tidy() {
     }
     if (best) { c.p = [best.p[0], best.p[1]]; c.fixed = true; welded += 1; }
   });
-  // T junctions: a corner that sits on another room's edge becomes a vertex of that edge.
   let inserted = 0;
   clusters.forEach((c, ci) => {
-    idsByRoom.forEach((ids, ri) => {
+    idsByRoom.forEach((ids) => {
       if (ids.includes(ci)) return;
       for (let i = 0; i < ids.length; i++) {
         const a = clusters[ids[i]].p, b = clusters[ids[(i + 1) % ids.length]].p;
@@ -530,25 +812,22 @@ function tidy() {
       }
     });
   });
-  // Straighten near-horizontal and near-vertical edges, sharing the corrections.
   for (let pass = 0; pass < 3; pass++) idsByRoom.forEach((ids) => ids.forEach((id, i) => {
     const a = clusters[id], b = clusters[ids[(i + 1) % ids.length]];
     if (a === b || (a.fixed && b.fixed)) return;
     const dx = b.p[0] - a.p[0], dy = b.p[1] - a.p[1];
     if (Math.hypot(dx, dy) < 20) return;
     const angle = Math.abs((Math.atan2(dy, dx) * 180) / Math.PI) % 180;
-    const flat = Math.min(angle, 180 - angle) <= AXIS_DEG, upright = Math.abs(angle - 90) <= AXIS_DEG;
-    const axis = flat ? 1 : upright ? 0 : -1;
+    const axis = Math.min(angle, 180 - angle) <= AXIS_DEG ? 1 : Math.abs(angle - 90) <= AXIS_DEG ? 0 : -1;
     if (axis < 0) return;
     const value = a.fixed ? a.p[axis] : b.fixed ? b.p[axis] : (a.p[axis] + b.p[axis]) / 2;
     if (!a.fixed) a.p[axis] = value;
     if (!b.fixed) b.p[axis] = value;
   }));
-  // Rebuild the rings, dropping repeats, tiny edges and needless straight-through points.
   const use = new Map();
   idsByRoom.forEach((ids) => new Set(ids).forEach((id) => use.set(id, (use.get(id) || 0) + 1)));
   let dropped = 0;
-  rooms.forEach((room, ri) => {
+  targets.forEach((room, ri) => {
     if (room.curve) return;
     let ids = idsByRoom[ri].filter((id, i, arr) => id !== arr[(i + 1) % arr.length]);
     ids = ids.filter((id, i) => dist(clusters[id].p, clusters[ids[(i + 1) % ids.length]].p) >= MIN_EDGE || ids.length <= 3);
@@ -562,21 +841,28 @@ function tidy() {
     });
     if (ids.length >= 3) room.ring = ids.map((id) => [round1(clusters[id].p[0]), round1(clusters[id].p[1])]);
   });
-  rooms.forEach((room, ri) => { if (room.curve) room.ring = room.ring.map((p) => [round1(p[0]), round1(p[1])]); });
   rooms = rooms.filter((room) => room.ring.length >= 3 && area(room.ring) > 100);
+  return { welded, inserted, dropped };
+}
+function tidy() {
+  if (!rooms.length && !walls.length) return;
+  pushHistory();
+  const pulled = tidyWalls();
+  const result = tidyRooms();
   changed();
-  $("hint").textContent = `整理完成：${welded} 個角點吸到牆角、${inserted} 處補上共邊頂點、${dropped} 個多餘頂點移除（可按復原）`;
+  $("hint").textContent = `整理完成：牆端點 ${pulled} 處靠攏或對齊；房間 ${result.welded} 個角點吸到牆角、${result.inserted} 處補上共邊頂點、${result.dropped} 個多餘頂點移除（可按復原）`;
 }
 
-// ---- export / import ---------------------------------------------------------------------
+// ---- export / import ------------------------------------------------------------------------------------------
 function exportJson() {
+  const flip = (p) => [round1(p[0]), round1(-p[1])];
   const payload = {
-    version: 1, title: DATA.title, source: DATA.source, unit: DATA.unit,
-    note: "座標為 DXF 圖面座標（x 向右、y 向上）。type: room 房間 / public 公共區域 / void 挑空採光。",
+    version: 2, title: DATA.title, source: DATA.source, unit: DATA.unit,
+    note: "座標為 DXF 圖面座標（x 向右、y 向上）。walls 是牆的中心線；auto 為 true 的房間是由牆自動生成的。type: room 房間 / public 公共區域 / void 挑空採光。",
+    walls: walls.map((w) => ({ id: w.id, pts: w.pts.map(flip), ...(w.curve ? { curve: true } : {}) })),
     rooms: rooms.map((r) => ({
-      id: r.id, name: r.name, type: r.type,
-      ring: r.ring.map((p) => [round1(p[0]), round1(-p[1])]),
-      ...(r.curve ? { curve: r.curve } : {}),
+      id: r.id, name: r.name, type: r.type, ring: r.ring.map(flip),
+      ...(r.auto ? { auto: true } : {}), ...(r.curve ? { curve: r.curve } : {}),
     })),
   };
   const link = document.createElement("a");
@@ -591,39 +877,54 @@ function importJson(text) {
   const payload = JSON.parse(text);
   if (!Array.isArray(payload.rooms)) throw new Error("格式不正確");
   pushHistory();
+  const flip = (p) => [p[0], -p[1]];
   rooms = payload.rooms.map((r, i) => ({
     id: r.id || "T" + String(i + 1).padStart(3, "0"), name: r.name || "", type: TYPE_NAMES[r.type] ? r.type : "room",
-    ring: r.ring.map((p) => [p[0], -p[1]]), ...(r.curve ? { curve: r.curve } : {}),
+    ring: r.ring.map(flip), ...(r.auto ? { auto: true, anchor: interiorPoint(r.ring.map(flip)) } : {}), ...(r.curve ? { curve: r.curve } : {}),
   }));
-  counter = rooms.length + 1;
-  selectedId = null;
-  changed();
+  walls = (payload.walls || []).map((w, i) => ({ id: w.id || "W" + String(i + 1).padStart(3, "0"), pts: w.pts.map(flip), ...(w.curve ? { curve: true } : {}) }));
+  suppressed = [];
+  counter = rooms.length + walls.length + 1;
+  selectedId = null; selectedWallId = null;
+  changed(true, false);
 }
 
-// ---- pointer handling ------------------------------------------------------------------
-function vertexAt(room, clientX, clientY) {
+// ---- pointer handling -------------------------------------------------------------------------------------------
+function screenPoint(clientX, clientY) {
   const box = stage.getBoundingClientRect();
-  const sx = clientX - box.left, sy = clientY - box.top;
+  return [clientX - box.left, clientY - box.top];
+}
+function vertexAt(points, clientX, clientY) {
+  const [sx, sy] = screenPoint(clientX, clientY);
   let best = null;
-  room.ring.forEach((v, i) => {
+  points.forEach((v, i) => {
     const [vx, vy] = toScreen(v);
     const d = Math.hypot(vx - sx, vy - sy);
     if (d <= 9 && (!best || d < best.d)) best = { d, i };
   });
   return best ? best.i : null;
 }
-function edgeAt(room, clientX, clientY) {
-  const box = stage.getBoundingClientRect();
-  const p = [clientX - box.left, clientY - box.top];
+function edgeAt(points, closed, clientX, clientY) {
+  const p = screenPoint(clientX, clientY);
   let best = null;
-  room.ring.forEach((v, i) => {
-    const a = toScreen(v), b = toScreen(room.ring[(i + 1) % room.ring.length]);
+  const count = closed ? points.length : points.length - 1;
+  for (let i = 0; i < count; i++) {
+    const a = toScreen(points[i]), b = toScreen(points[(i + 1) % points.length]);
     const hit = closestOnSegment(p, a, b);
     const d = dist(p, hit.point);
     if (d <= 8 && (!best || d < best.d)) best = { d, i, t: hit.t };
-  });
+  }
   return best;
 }
+function wallAt(clientX, clientY) {
+  let best = null;
+  for (const wall of walls) {
+    const edge = edgeAt(wall.pts, false, clientX, clientY);
+    if (edge && (!best || edge.d < best.d)) best = { wall, d: edge.d };
+  }
+  return best?.wall || null;
+}
+const mostlyClick = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 6;
 
 stage.addEventListener("contextmenu", (e) => e.preventDefault());
 stage.addEventListener("pointerdown", (e) => {
@@ -632,32 +933,54 @@ stage.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
   const raw = toPlan(e.clientX, e.clientY);
   if (tool === "select") {
-    const room = roomById(selectedId);
-    if (room) {
-      const index = vertexAt(room, e.clientX, e.clientY);
-      if (index !== null) { pushHistory(); selectedVertex = index; drag = { type: "vertex", id: room.id, index }; renderOverlay(); return; }
+    const wall = wallById(selectedWallId), room = roomById(selectedId);
+    const handles = wall?.pts || room?.ring;
+    if (handles) {
+      const index = vertexAt(handles, e.clientX, e.clientY);
+      if (index !== null) {
+        pushHistory(); selectedVertex = index;
+        drag = wall ? { type: "wallVertex", id: wall.id, index } : { type: "vertex", id: room.id, index };
+        renderOverlay();
+        return;
+      }
     }
+    const hitWall = wallAt(e.clientX, e.clientY);
+    if (hitWall) { selectedWallId = hitWall.id; selectedId = null; selectedVertex = null; renderScene(); renderOverlay(); renderPanel(); return; }
     const hit = e.target.closest?.("[data-id]");
     if (hit) {
-      selectedId = hit.dataset.id; selectedVertex = null;
+      selectedId = hit.dataset.id; selectedWallId = null; selectedVertex = null;
       const picked = roomById(selectedId);
       drag = { type: "room", id: selectedId, start: raw, original: picked.ring.map((p) => [...p]), moved: false, recorded: false };
-      renderRooms(); renderOverlay(); renderPanel();
     } else {
-      selectedId = null; selectedVertex = null;
-      drag = { type: "pan", x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, quiet: true };
-      renderRooms(); renderOverlay(); renderPanel();
+      selectedId = null; selectedWallId = null; selectedVertex = null;
+      drag = { type: "pan", x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty };
     }
+    renderScene(); renderOverlay(); renderPanel();
     return;
   }
   const { p } = snap(raw, { from: draft?.pts?.at(-1), axis: e.shiftKey });
+  const press = [e.clientX, e.clientY];
   if (tool === "rect") {
     if (draft && draft.pts.length === 1) { const ring = rectRing(draft.pts[0], p); draft = null; if (Math.abs(ring[0][0] - ring[2][0]) > 5 && Math.abs(ring[0][1] - ring[2][1]) > 5) addRoom(ring); }
-    else { draft = { tool, pts: [p], cursor: p, press: [e.clientX, e.clientY] }; drag = { type: "rect" }; }
-  } else if (tool === "poly") {
-    if (draft && draft.pts.length >= 3 && dist(p, draft.pts[0]) <= 12 / view.z) { finishPoly(); return; }
+    else { draft = { tool, pts: [p], cursor: p, press }; drag = { type: "rect" }; }
+  } else if (tool === "poly" || tool === "wall") {
+    const closing = draft && draft.pts.length >= (tool === "poly" ? 3 : 2) && dist(p, draft.pts[0]) <= 12 / view.z;
+    if (closing) {
+      if (tool === "wall") draft.pts.push([...draft.pts[0]]);
+      finishPath();
+      return;
+    }
     if (!draft) draft = { tool, pts: [], cursor: p };
     draft.pts.push(p);
+  } else if (tool === "arcwall") {
+    if (!draft) draft = { tool, pts: [p], cursor: p };
+    else if (draft.pts.length === 1) draft.pts.push(p);
+    else {
+      const [start, end] = draft.pts;
+      const points = arcPoints(start, end, p);
+      draft = null;
+      addWall(points, true);
+    }
   } else if (tool === "semi") {
     if (!draft) draft = { tool, pts: [p], cursor: p };
     else if (draft.pts.length === 1) draft.pts.push(p);
@@ -669,13 +992,17 @@ stage.addEventListener("pointerdown", (e) => {
     }
   } else if (tool === "circle") {
     if (!draft) draft = { tool, pts: [p], cursor: p };
-    else { const center = draft.pts[0]; const ring = circleRing(center, p); draft = null; if (dist(center, p) > 3) addRoom(ring, { type: "circle", center: [round1(center[0]), round1(-center[1])], radius: round1(dist(center, p)) }); }
+    else {
+      const center = draft.pts[0];
+      const ring = circleRing(center, p);
+      draft = null;
+      if (dist(center, p) > 3) addRoom(ring, { type: "circle", center: [round1(center[0]), round1(-center[1])], radius: round1(dist(center, p)) });
+    }
   }
   renderOverlay();
 });
 stage.addEventListener("pointermove", (e) => {
   const raw = toPlan(e.clientX, e.clientY);
-  cursorPoint = raw;
   if (drag?.type === "pan") {
     view.tx = drag.tx + e.clientX - drag.x; view.ty = drag.ty + e.clientY - drag.y;
     applyView();
@@ -685,9 +1012,19 @@ stage.addEventListener("pointermove", (e) => {
     const room = roomById(drag.id);
     const hit = snap(raw, { excludeRoom: drag.id, excludeIndex: drag.index });
     room.ring[drag.index] = [round1(hit.p[0]), round1(hit.p[1])];
-    delete room.curve;
+    delete room.curve; room.auto = false;
     snapHit = hit;
-    renderRooms(); renderOverlay();
+    renderScene(); renderOverlay();
+    return;
+  }
+  if (drag?.type === "wallVertex") {
+    const wall = wallById(drag.id);
+    const hit = snap(raw, { excludeWall: drag.id, excludeIndex: drag.index });
+    wall.pts[drag.index] = [round1(hit.p[0]), round1(hit.p[1])];
+    delete wall.curve;
+    snapHit = hit;
+    renderScene(); renderOverlay();
+    if (liveRooms) scheduleGenerate();
     return;
   }
   if (drag?.type === "room") {
@@ -697,8 +1034,8 @@ stage.addEventListener("pointermove", (e) => {
     drag.moved = true;
     const room = roomById(drag.id);
     room.ring = drag.original.map((p) => [round1(p[0] + dx), round1(p[1] + dy)]);
-    delete room.curve;
-    renderRooms(); renderOverlay();
+    delete room.curve; room.auto = false;
+    renderScene(); renderOverlay();
     return;
   }
   const hit = tool === "select" ? { p: raw, kind: null } : snap(raw, { from: draft?.pts?.at(-1), axis: e.shiftKey });
@@ -710,32 +1047,31 @@ stage.addEventListener("pointerup", (e) => {
   const finished = drag;
   drag = null;
   stage.classList.remove("panning");
-  if (finished?.type === "vertex") { changed(); return; }
-  if (finished?.type === "room") { if (finished.moved) changed(); return; }
-  if (finished?.type === "rect" && draft) {
-    // Dragged out a rectangle (a plain click leaves the first corner waiting for the second).
-    if (Math.hypot(e.clientX - draft.press[0], e.clientY - draft.press[1]) > 6) {
-      const p = snap(toPlan(e.clientX, e.clientY)).p;
-      const ring = rectRing(draft.pts[0], p);
-      draft = null;
-      if (Math.abs(ring[0][0] - ring[2][0]) > 5 && Math.abs(ring[0][1] - ring[2][1]) > 5) addRoom(ring);
-      renderOverlay();
-    }
+  if (finished?.type === "vertex") { changed(true, false); return; }
+  if (finished?.type === "wallVertex") { changed(); return; }
+  if (finished?.type === "room") { if (finished.moved) changed(true, false); return; }
+  if (finished?.type === "rect" && draft && !mostlyClick([e.clientX, e.clientY], draft.press)) {
+    const p = snap(toPlan(e.clientX, e.clientY)).p;
+    const ring = rectRing(draft.pts[0], p);
+    draft = null;
+    if (Math.abs(ring[0][0] - ring[2][0]) > 5 && Math.abs(ring[0][1] - ring[2][1]) > 5) addRoom(ring);
+    renderOverlay();
   }
 });
 stage.addEventListener("dblclick", (e) => {
-  if (tool === "poly") { if (draft) { draft.pts.pop(); finishPoly(); } return; }
+  if (tool === "poly" || tool === "wall") { if (draft) { draft.pts.pop(); finishPath(); } return; }
   if (tool !== "select") return;
-  const room = roomById(selectedId);
-  if (!room) return;
-  const edge = edgeAt(room, e.clientX, e.clientY);
+  const wall = wallById(selectedWallId), room = roomById(selectedId);
+  const points = wall?.pts || room?.ring;
+  if (!points) return;
+  const edge = edgeAt(points, !wall, e.clientX, e.clientY);
   if (!edge) return;
   pushHistory();
-  const a = room.ring[edge.i], b = room.ring[(edge.i + 1) % room.ring.length];
-  room.ring.splice(edge.i + 1, 0, [round1(a[0] + (b[0] - a[0]) * edge.t), round1(a[1] + (b[1] - a[1]) * edge.t)]);
-  delete room.curve;
+  const a = points[edge.i], b = points[(edge.i + 1) % points.length];
+  points.splice(edge.i + 1, 0, [round1(a[0] + (b[0] - a[0]) * edge.t), round1(a[1] + (b[1] - a[1]) * edge.t)]);
+  if (wall) delete wall.curve; else { delete room.curve; room.auto = false; }
   selectedVertex = edge.i + 1;
-  changed();
+  changed(true, !!wall);
 });
 stage.addEventListener("wheel", (e) => {
   e.preventDefault();
@@ -747,11 +1083,12 @@ stage.addEventListener("wheel", (e) => {
   applyView();
 }, { passive: false });
 
-// ---- toolbar and keys -----------------------------------------------------------------------
+// ---- toolbar and keys -------------------------------------------------------------------------------------------------
 $("tools").addEventListener("click", (e) => { const b = e.target.closest("button[data-tool]"); if (b) setTool(b.dataset.tool); });
 $("undo").addEventListener("click", undo);
 $("redo").addEventListener("click", redo);
 $("tidy").addEventListener("click", tidy);
+$("generate").addEventListener("click", () => { clearTimeout(generateTimer); generateRooms(); });
 $("export").addEventListener("click", exportJson);
 $("import").addEventListener("click", () => $("file").click());
 $("file").addEventListener("change", async (e) => {
@@ -760,28 +1097,31 @@ $("file").addEventListener("change", async (e) => {
   if (!file) return;
   try { importJson(await file.text()); } catch (error) { alert("無法匯入：" + error.message); }
 });
+const flip = (id, on) => $(id).setAttribute("aria-pressed", String(on));
+$("toggle-live").addEventListener("click", () => { liveRooms = !liveRooms; flip("toggle-live", liveRooms); if (liveRooms) scheduleGenerate(); });
 $("toggle-minor").addEventListener("click", (e) => {
   const on = e.currentTarget.getAttribute("aria-pressed") !== "true";
-  e.currentTarget.setAttribute("aria-pressed", String(on));
+  flip("toggle-minor", on);
   minorPath.style.display = on ? "" : "none";
 });
-$("toggle-texts").addEventListener("click", (e) => {
-  showTexts = !showTexts; e.currentTarget.setAttribute("aria-pressed", String(showTexts)); renderOverlay();
+$("toggle-texts").addEventListener("click", () => { showTexts = !showTexts; flip("toggle-texts", showTexts); renderOverlay(); });
+$("toggle-faint").addEventListener("click", (e) => {
+  const on = e.currentTarget.getAttribute("aria-pressed") !== "true";
+  flip("toggle-faint", on);
+  stage.classList.toggle("faint", on);
 });
-$("toggle-snap").addEventListener("click", (e) => {
-  snapOn = !snapOn; e.currentTarget.setAttribute("aria-pressed", String(snapOn)); snapHit = null; renderOverlay();
-});
+$("toggle-snap").addEventListener("click", () => { snapOn = !snapOn; flip("toggle-snap", snapOn); snapHit = null; renderOverlay(); });
 $("list").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-id]");
   if (!b) return;
-  selectedId = b.dataset.id; selectedVertex = null;
+  selectedId = b.dataset.id; selectedWallId = null; selectedVertex = null;
   const room = roomById(selectedId);
   if (room) {
-    const [cx, cy] = centroid(room.ring);
+    const [cx, cy] = room.anchor || centroid(room.ring);
     view.tx = size.w / 2 - view.z * cx; view.ty = size.h / 2 - view.z * cy;
     applyView();
   }
-  renderRooms(); renderOverlay(); renderPanel();
+  renderScene(); renderOverlay(); renderPanel();
 });
 window.addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
@@ -792,24 +1132,24 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   if (e.code === "Space") { spaceDown = true; e.preventDefault(); return; }
-  const tools = { v: "select", r: "rect", p: "poly", c: "semi", o: "circle" };
+  const tools = { v: "select", w: "wall", a: "arcwall", r: "rect", p: "poly", c: "semi", o: "circle" };
   if (tools[key]) setTool(tools[key]);
   else if (key === "escape") { draft = null; selectedVertex = null; renderOverlay(); }
-  else if (key === "enter" && tool === "poly") finishPoly();
-  else if (key === "backspace" && draft?.tool === "poly") { draft.pts.pop(); if (!draft.pts.length) draft = null; renderOverlay(); }
+  else if (key === "enter" && (tool === "poly" || tool === "wall")) finishPath();
+  else if (key === "backspace" && (draft?.tool === "poly" || draft?.tool === "wall")) { draft.pts.pop(); if (!draft.pts.length) draft = null; renderOverlay(); }
   else if ((key === "delete" || key === "backspace") && tool === "select") deleteSelected();
 });
 window.addEventListener("keyup", (e) => { if (e.code === "Space") spaceDown = false; });
 new ResizeObserver(resize).observe(stage);
 
-// ---- start -------------------------------------------------------------------------------------
+// ---- start ---------------------------------------------------------------------------------------------------------------------
 $("title").textContent = DATA.title + " 描圖";
 document.title = DATA.title + " 室內地圖描圖";
 load();
 buildScene();
 setTool("select");
 resize();
-changed(false);
+changed(false, false);
 </script>
 </body>
 </html>
