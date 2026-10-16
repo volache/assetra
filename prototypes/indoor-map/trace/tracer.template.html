@@ -94,20 +94,48 @@
   .pickdot.hover { fill: var(--accent); }
   .ghost { fill: rgba(31, 181, 165, 0.12); stroke: var(--teal); stroke-dasharray: 5 3; stroke-width: 1.6; }
   .ghost.wall { fill: none; stroke-width: 3; }
-  .move { border-top: 1px dashed var(--rule); margin-top: 12px; padding-top: 4px; }
-  .move .title { color: var(--ink); font-size: 12px; font-weight: 700; margin-top: 6px; }
-  .shift-pad { display: grid; gap: 4px; grid-template-areas: ". up ." "left . right" ". down ."; justify-content: center; margin: 8px 0; }
-  .shift-pad button { background: #eef2f9; border: 0; border-radius: 8px; cursor: pointer; font-size: 16px; height: 32px; width: 44px; }
-  .shift-pad button:hover { background: #dfe6f2; }
-  .shift-pad button[aria-label="往上"] { grid-area: up; }
-  .shift-pad button[aria-label="往左"] { grid-area: left; }
-  .shift-pad button[aria-label="往右"] { grid-area: right; }
-  .shift-pad button[aria-label="往下"] { grid-area: down; }
-  .fields { align-items: center; display: flex; flex-wrap: wrap; gap: 6px 8px; margin-top: 6px; }
-  .fields label { align-items: center; color: var(--ink-2); display: inline-flex; font-size: 12px; gap: 4px; margin: 0; }
-  .fields input[type="number"] { border: 1px solid var(--rule); border-radius: 8px; padding: 4px 6px; width: 78px; }
-  .props .btn { background: #eef2f9; }
+  input, select { font-size: 13px; }
+  input::placeholder { color: #9aa4b8; }
+  input[type="search"] { -webkit-appearance: none; appearance: none; }
+  .aside-head { align-items: center; display: flex; justify-content: space-between; padding: 10px 14px 6px; }
+  .aside-head h2 { padding: 0; }
+  .chip { background: #eef2f9; border: 1px solid transparent; border-radius: 999px; color: var(--ink-2); cursor: pointer; font-size: 12px; padding: 3px 10px; }
+  .chip:hover { background: #e2e8f3; }
+  .chip[aria-pressed="true"] { background: #e3f6f3; border-color: var(--teal); color: #0d6f64; font-weight: 700; }
+  .searchbox { padding: 0 12px 6px; }
+  .searchbox input { background: #f6f8fb; border: 1px solid var(--rule); border-radius: 8px; color: var(--ink); font-size: 13px; height: 32px; padding: 0 10px; width: 100%; }
+  .searchbox input:focus { background: #fff; border-color: var(--teal); }
+  .field { margin-top: 12px; }
+  .field > label { margin: 0 0 5px; }
+  .cselect { position: relative; }
+  .cselect-btn { align-items: center; background: #fff; border: 1px solid var(--rule); border-radius: 8px; color: var(--ink); cursor: pointer; display: flex; font-size: 13px; gap: 8px; justify-content: space-between; min-height: 32px; padding: 5px 10px; text-align: left; width: 100%; }
+  .cselect-btn:hover { border-color: #b9c3d8; }
+  .cselect-btn[aria-expanded="true"] { border-color: var(--teal); }
+  .cselect.compact .cselect-btn { min-height: 28px; padding: 3px 9px; width: auto; }
+  .cselect-btn svg { color: var(--muted); flex: none; height: 14px; transition: transform 0.15s; width: 14px; }
+  .cselect-btn[aria-expanded="true"] svg { transform: rotate(180deg); }
+  .cselect-list { background: #fff; border: 1px solid var(--rule); border-radius: 10px; box-shadow: 0 8px 24px rgba(20, 30, 60, 0.16); list-style: none; margin: 0; max-height: 260px; overflow-y: auto; padding: 4px; position: fixed; z-index: 50; }
+  .cselect-list li { align-items: center; border-radius: 7px; cursor: pointer; display: flex; font-size: 13px; gap: 8px; justify-content: space-between; padding: 6px 9px; }
+  .cselect-list li[data-active="true"] { background: #eef2f9; }
+  .cselect-list li[aria-selected="true"] { color: #0d6f64; font-weight: 700; }
+  .cselect-list li[aria-selected="true"]::after { content: "✓"; }
+  .card { background: #fbfcfe; border: 1px solid var(--rule); border-radius: 10px; margin-top: 14px; }
+  .card-head { align-items: center; background: transparent; border: 0; color: var(--ink); cursor: pointer; display: flex; font-size: 13px; font-weight: 700; justify-content: space-between; padding: 9px 12px; width: 100%; }
+  .card-head svg { color: var(--muted); height: 14px; transition: transform 0.15s; width: 14px; }
+  .card-head[aria-expanded="true"] svg { transform: rotate(180deg); }
+  .card-body { border-top: 1px solid var(--rule); display: grid; gap: 12px; padding: 12px; }
+  .card label { align-items: center; color: var(--ink-2); display: inline-flex; font-size: 12px; gap: 5px; margin: 0; }
+  .nudge { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 14px; justify-content: space-between; }
+  .keys { display: flex; gap: 4px; }
+  .keys button { background: #eef2f9; border: 0; border-radius: 8px; color: var(--ink); cursor: pointer; font-size: 15px; height: 32px; width: 34px; }
+  .keys button:hover { background: #dfe6f2; }
+  .card input[type="number"] { background: #fff; border: 1px solid var(--rule); border-radius: 8px; height: 30px; padding: 0 8px; width: 68px; }
+  .card .help { color: var(--muted); font-size: 11.5px; line-height: 1.5; margin: 4px 0 0; }
+  .card details summary { color: var(--ink-2); cursor: pointer; font-size: 12px; }
+  .exact { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .block { width: 100%; }
   .props .btn.accent { background: var(--teal); color: #fff; }
+  .props .btn.accent:hover { background: #17a092; }
   footer { background: #fff; border-top: 1px solid var(--rule); color: var(--ink-2); display: flex; flex-wrap: wrap; font-size: 12px; gap: 4px 18px; padding: 6px 14px; }
   footer b { color: var(--ink); }
 </style>
@@ -131,7 +159,7 @@
   </div>
   <span class="spacer"></span>
   <button type="button" class="btn" id="help" aria-expanded="false" title="顯示操作說明">操作說明</button>
-  <button type="button" class="btn" id="import">匯入</button>
+  <button type="button" class="btn" id="import" title="匯入先前匯出的 JSON（可來自其他樓層，會自動對位）">匯入 JSON</button>
   <button type="button" class="btn primary" id="export">匯出 JSON</button>
   <input type="file" id="file" accept="application/json,.json" hidden />
 </header>
@@ -146,9 +174,10 @@
   </div>
   <span class="sep"></span>
   <span id="wand-opts" hidden>
-    <label class="label-s" title="底圖牆線有門口或小缺口時，魔術棒仍視為封閉的最大缺口寬度">缺口容忍
-      <select id="wand-gap"><option value="auto" selected>自動（逐步放寬）</option><option value="0">0 公分</option><option value="60">60 公分</option><option value="120">120 公分</option><option value="200">200 公分</option><option value="320">320 公分</option></select>
-    </label>
+    <span class="label-s" title="底圖牆線有門口或小缺口時，魔術棒仍視為封閉的最大缺口寬度">缺口容忍</span>
+    <span id="wand-gap-host">
+      <select id="wand-gap" hidden><option value="auto" selected>自動（逐步放寬）</option><option value="0">0 公分</option><option value="60">60 公分</option><option value="120">120 公分</option><option value="200">200 公分</option><option value="320">320 公分</option></select>
+    </span>
     <span class="sep"></span>
   </span>
   <button type="button" class="btn" id="select-all" title="選取所有牆與房間，之後可整組移動、對齊到底圖">全選<kbd>Ctrl+A</kbd></button>
@@ -180,11 +209,11 @@
     </div>
   </div>
   <aside>
-    <h2>房間 <span id="count"></span></h2>
-    <div class="listtools">
-      <input type="search" id="list-q" placeholder="搜尋代碼或名稱…" aria-label="搜尋房間" />
-      <label><input type="checkbox" id="list-unset" /> 只看未設定</label>
+    <div class="aside-head">
+      <h2>房間 <span id="count"></span></h2>
+      <button type="button" class="chip" id="list-unset" aria-pressed="false" title="只列出還沒設定存置地點代碼的房間">只看未設定</button>
     </div>
+    <div class="searchbox"><input type="search" id="list-q" placeholder="搜尋代碼或名稱" aria-label="搜尋房間" autocomplete="off" /></div>
     <ul class="list" id="list"></ul>
     <section class="props" id="props" aria-live="polite"></section>
   </aside>
@@ -231,6 +260,7 @@ let wand = null;                  // a brush stroke in progress: { r, mask, any,
 let wandPreview = null;           // ring (page coordinates) the wand would create
 let wandGap = "auto", wandCache = new Map(), wandTimer = null;
 let stateRev = 0;                 // bumps whenever walls or rooms change, so cached rasters can be dropped
+let moveOpen = null;              // the move-and-align card: null follows the default for what is selected
 let stepCm = 50;                  // how far one nudge moves, typed by the user
 let listQuery = "", listUnset = false;
 let tool = "select";
@@ -251,6 +281,68 @@ const stage = $("stage");
 const planSvg = $("plan");
 const overlay = $("overlay");
 let viewGroup, minorPath, majorPath, roomGroup, wallGroup;
+
+// ---- custom drop-down ----------------------------------------------------------------------------------------
+const CHEVRON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg>';
+let openSelect = null;
+document.addEventListener("pointerdown", (e) => { if (openSelect && !openSelect.contains(e.target)) openSelect.close(); }, true);
+window.addEventListener("resize", () => openSelect?.close());
+/** A drop-down that looks like the rest of the page. options: [[value, text], ...] */
+function customSelect({ options, value, onChange, label, compact = false }) {
+  const root = document.createElement("div");
+  root.className = "cselect" + (compact ? " compact" : "");
+  const button = document.createElement("button");
+  button.type = "button"; button.className = "cselect-btn";
+  button.setAttribute("aria-haspopup", "listbox"); button.setAttribute("aria-expanded", "false");
+  if (label) button.setAttribute("aria-label", label);
+  const text = document.createElement("span");
+  button.append(text);
+  button.insertAdjacentHTML("beforeend", CHEVRON);
+  const list = document.createElement("ul");
+  list.className = "cselect-list"; list.setAttribute("role", "listbox"); list.hidden = true;
+  root.append(button, list);
+  let current = value, active = 0;
+  const items = options.map(([v, label2]) => {
+    const li = document.createElement("li");
+    li.setAttribute("role", "option"); li.textContent = label2; li.dataset.value = v;
+    li.addEventListener("pointerdown", (e) => { e.preventDefault(); choose(v); });
+    list.append(li);
+    return li;
+  });
+  const paint = () => {
+    text.textContent = options.find(([v]) => v === current)?.[1] ?? "";
+    items.forEach((li, i) => { li.setAttribute("aria-selected", String(li.dataset.value === current)); li.dataset.active = String(i === active); });
+  };
+  function choose(v) { const changedValue = v !== current; current = v; close(); paint(); if (changedValue) onChange(v); button.focus(); }
+  function open() {
+    if (openSelect && openSelect !== api) openSelect.close();
+    active = Math.max(0, options.findIndex(([v]) => v === current));
+    list.hidden = false; button.setAttribute("aria-expanded", "true");
+    const box = button.getBoundingClientRect();
+    list.style.minWidth = box.width + "px"; list.style.left = box.left + "px";
+    const room = innerHeight - box.bottom - 12, need = Math.min(260, list.scrollHeight + 10);
+    if (room >= need || room >= box.top) { list.style.top = box.bottom + 4 + "px"; list.style.bottom = ""; }
+    else { list.style.bottom = innerHeight - box.top + 4 + "px"; list.style.top = ""; }
+    openSelect = api; paint();
+  }
+  function close() { list.hidden = true; button.setAttribute("aria-expanded", "false"); if (openSelect === api) openSelect = null; }
+  button.addEventListener("click", () => (list.hidden ? open() : close()));
+  button.addEventListener("keydown", (e) => {
+    const k = e.key;
+    if (k === "ArrowDown" || k === "ArrowUp") {
+      e.preventDefault(); e.stopPropagation();
+      if (list.hidden) { open(); return; }
+      active = (active + (k === "ArrowDown" ? 1 : options.length - 1)) % options.length; paint();
+    } else if (k === "Enter" || k === " ") {
+      e.preventDefault(); e.stopPropagation();
+      if (list.hidden) open(); else choose(options[active][0]);
+    } else if (k === "Escape" && !list.hidden) { e.preventDefault(); e.stopPropagation(); close(); }
+    else e.stopPropagation();
+  });
+  const api = { el: root, close, contains: (n) => root.contains(n) };
+  paint();
+  return api;
+}
 
 // ---- geometry helpers ------------------------------------------------------------
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
@@ -804,46 +896,59 @@ function renderPanel() {
   const add = (node) => props.append(node);
   const el = (tag, text, attrs = {}) => Object.assign(document.createElement(tag), text === undefined ? {} : { textContent: text }, attrs);
   // Moving what is selected: a step the user types, exact offsets, and "put this corner on that point of the drawing".
-  const moveSection = () => {
-    const box = el("div", undefined, { className: "move" });
-    box.append(el("div", "移動所選的物件", { className: "title" }));
-    const pad = el("div", undefined, { className: "shift-pad" });
-    [["往上", "↑", 0, -1], ["往左", "←", -1, 0], ["往右", "→", 1, 0], ["往下", "↓", 0, 1]].forEach(([label, arrow, dx, dy]) => {
-      const b = el("button", arrow, { type: "button", title: `${label}移動 ${stepCm} 公分（也可用鍵盤方向鍵）` });
-      b.setAttribute("aria-label", label);
+  const moveSection = (openByDefault) => {
+    const open = moveOpen === null ? openByDefault : moveOpen;
+    const box = el("section", undefined, { className: "card" });
+    const head = el("button", undefined, { type: "button", className: "card-head" });
+    head.setAttribute("aria-expanded", String(open));
+    head.append(el("span", "移動與對齊"));
+    head.insertAdjacentHTML("beforeend", CHEVRON);
+    head.addEventListener("click", () => { moveOpen = !open; renderPanel(); });
+    box.append(head);
+    if (!open) return box;
+    const body = el("div", undefined, { className: "card-body" });
+    // nudge: four arrows and the distance of one step
+    const nudge = el("div", undefined, { className: "nudge" });
+    const keys = el("div", undefined, { className: "keys" });
+    [["往左", "←", -1, 0], ["往上", "↑", 0, -1], ["往下", "↓", 0, 1], ["往右", "→", 1, 0]].forEach(([name, arrow, dx, dy]) => {
+      const b = el("button", arrow, { type: "button", title: `${name}移動（也可用鍵盤方向鍵，Shift 加大十倍）` });
+      b.setAttribute("aria-label", name);
       b.addEventListener("click", () => moveSelection(dx * stepCm, dy * stepCm));
-      pad.append(b);
+      keys.append(b);
     });
-    box.append(pad);
-    const stepRow = el("div", undefined, { className: "fields" });
-    const stepLabel = el("label", "每次移動 ");
+    const step = el("label", "每次 ");
     const stepInput = el("input", undefined, { type: "number", min: "0.1", step: "any", value: String(stepCm) });
     stepInput.addEventListener("input", () => { const v = Number(stepInput.value); if (v > 0) stepCm = v; });
-    stepLabel.append(stepInput, document.createTextNode(" 公分"));
-    stepRow.append(stepLabel);
-    box.append(stepRow);
-    const offsetRow = el("div", undefined, { className: "fields" });
+    step.append(stepInput, document.createTextNode(" 公分"));
+    nudge.append(keys, step);
+    body.append(nudge);
+    // align to the drawing
+    const alignBox = el("div");
+    const alignButton = el("button", align ? "取消對齊" : "對齊到底圖…", { type: "button", className: "btn accent block" });
+    alignButton.addEventListener("click", () => { if (align) cancelAlign(); else startAlign(); });
+    alignBox.append(alignButton, el("p", "先點所選範圍上的一個頂點，再點底圖要貼齊的端點或邊線。", { className: "help" }));
+    body.append(alignBox);
+    // exact distances stay out of the way until asked for
+    const exact = el("details");
+    exact.append(el("summary", "輸入精確距離"));
+    const fields = el("div", undefined, { className: "exact" });
     const dxInput = el("input", undefined, { type: "number", step: "any", value: "0" });
     const dyInput = el("input", undefined, { type: "number", step: "any", value: "0" });
-    const apply = el("button", "移動這個距離", { type: "button", className: "btn" });
+    const apply = el("button", "移動", { type: "button", className: "btn" });
     apply.addEventListener("click", () => moveSelection(Number(dxInput.value) || 0, -(Number(dyInput.value) || 0)));
-    const lx = el("label", "x "); lx.append(dxInput);
-    const ly = el("label", "y "); ly.append(dyInput);
-    offsetRow.append(lx, ly, apply);
-    box.append(offsetRow);
-    box.append(el("div", "x 向右、y 向上為正，單位公分。移動後可以復原。", { className: "note" }));
-    const alignButton = el("button", align ? "取消對齊" : "對齊到底圖…", { type: "button", className: "btn accent" });
-    alignButton.style.marginTop = "8px";
-    alignButton.addEventListener("click", () => { if (align) cancelAlign(); else startAlign(); });
-    box.append(alignButton);
-    box.append(el("div", "先點所選範圍上的一個頂點，再點底圖上要貼齊的端點或邊線，整組會一起移過去。", { className: "note" }));
+    const lx = el("label", "向右 "); lx.append(dxInput);
+    const ly = el("label", "向上 "); ly.append(dyInput);
+    fields.append(lx, ly, apply);
+    exact.append(fields, el("p", "單位公分，負數代表反方向。", { className: "help" }));
+    body.append(exact);
+    box.append(body);
     return box;
   };
   if (group) {
     const items = selectedItems();
     add(el("div", `已選取 ${items.rooms.length} 個房間、${items.walls.length} 道牆`));
     add(el("div", "可以拖曳任一個已選取的物件整組移動；Shift＋點擊增減選取；Esc 取消選取。", { className: "note" }));
-    add(moveSection());
+    add(moveSection(true));
     const row = el("div", undefined, { className: "row" });
     const del = el("button", "刪除所選", { type: "button", className: "btn" });
     del.addEventListener("click", deleteSelected);
@@ -854,7 +959,7 @@ function renderPanel() {
     for (let i = 0; i + 1 < wall.pts.length; i++) length += dist(wall.pts[i], wall.pts[i + 1]);
     add(el("div", `牆 ${wall.id}：${wall.pts.length} 個頂點，長約 ${(length / 100).toFixed(1)} m${wall.curve ? "（弧形）" : ""}`));
     add(el("div", "拖曳白點可移動端點；牆圍成封閉區域會自動生成房間。", { className: "note" }));
-    add(moveSection());
+    add(moveSection(false));
     const row = el("div", undefined, { className: "row" });
     const del = el("button", "刪除這道牆", { type: "button", className: "btn" });
     del.addEventListener("click", deleteSelected);
@@ -913,14 +1018,15 @@ function renderPanel() {
     else status = `對應主系統「${known.name}」，目前有 ${known.count} 筆財物。` + (room.name && room.name !== known.name ? `（名稱與主系統不同）` : "");
     if (others) status += `另有 ${others} 個房間使用相同代碼（同一存置地點可以由多個房間組成）。`;
     if (status) add(el("div", status, { className: "note" }));
-    const typeLabel = el("label", "類型");
-    const type = el("select");
-    for (const [value, text] of Object.entries(TYPE_NAMES)) type.append(new Option(text, value, false, value === room.type));
-    type.addEventListener("change", () => { pushHistory(); room.type = type.value; changed(true, false); });
-    typeLabel.append(type);
-    add(typeLabel);
-    add(moveSection());
+    const typeField = el("div", undefined, { className: "field" });
+    typeField.append(el("label", "類型"));
+    typeField.append(customSelect({
+      options: Object.entries(TYPE_NAMES), value: room.type, label: "房間類型",
+      onChange: (value) => { pushHistory(); room.type = value; changed(true, false); },
+    }).el);
+    add(typeField);
     add(el("div", `${room.auto ? "由牆生成。" : "手動描繪。"}面積約 ${(roomArea(room) / 10000).toFixed(1)} m²（以單位為公分推算${room.holes?.length ? `，已扣除裡面的 ${room.holes.length} 個房間` : ""}）`, { className: "note" }));
+    add(moveSection(false));
     const row = el("div", undefined, { className: "row" });
     const del = el("button", "刪除此房間", { type: "button", className: "btn" });
     del.addEventListener("click", deleteSelected);
@@ -1195,8 +1301,8 @@ function importJson(text) {
   changed(true, false);
   if (foreign) {
     $("hint").textContent = offset
-      ? `已依底圖自動對位：x ${offset.dx >= 0 ? "+" : ""}${offset.dx}、y ${offset.dy >= 0 ? "+" : ""}${offset.dy} 公分（相符程度 ${Math.round(offset.score * 100)}%）。若有偏差，可用「整體移動」微調；${keepLocations ? "" : "存置地點代碼與名稱已清空。"}`
-      : "這份資料來自其他樓層的底圖，這個檔案沒有對位資訊，位置可能對不上；請用「整體移動」調整。";
+      ? `已依底圖自動對位：x ${offset.dx >= 0 ? "+" : ""}${offset.dx}、y ${offset.dy >= 0 ? "+" : ""}${offset.dy} 公分（相符程度 ${Math.round(offset.score * 100)}%）。若有偏差，可按「全選」後用右側的「移動與對齊」微調；${keepLocations ? "" : "存置地點代碼與名稱已清空。"}`
+      : "這份資料來自其他樓層的底圖，這個檔案沒有對位資訊，位置可能對不上；請按「全選」後用右側的「移動與對齊」調整。";
   }
 }
 
@@ -2008,7 +2114,12 @@ $("undo").addEventListener("click", undo);
 $("redo").addEventListener("click", redo);
 $("tidy").addEventListener("click", tidy);
 $("select-all").addEventListener("click", selectAll);
-$("wand-gap").addEventListener("change", (e) => { wandGap = e.target.value; wandCache.clear(); wandPreview = null; renderOverlay(); });
+$("wand-gap-host").append(customSelect({
+  compact: true, value: wandGap, label: "缺口容忍",
+  options: [["auto", "自動（逐步放寬）"], ["0", "0 公分"], ["60", "60 公分"], ["120", "120 公分"], ["200", "200 公分"], ["320", "320 公分"]],
+  onChange: (value) => { wandGap = value; wandCache.clear(); wandPreview = null; renderOverlay(); },
+}).el);
+$("wand-gap").remove();
 $("zoom-in").addEventListener("click", () => zoomBy(1.4));
 $("zoom-out").addEventListener("click", () => zoomBy(1 / 1.4));
 $("zoom-fit").addEventListener("click", () => { fit(); applyView(); });
@@ -2018,7 +2129,11 @@ $("help").addEventListener("click", () => {
   $("help").setAttribute("aria-expanded", String(!card.hidden));
 });
 $("list-q").addEventListener("input", (e) => { listQuery = e.target.value.trim().toLowerCase(); renderPanel(); });
-$("list-unset").addEventListener("change", (e) => { listUnset = e.target.checked; renderPanel(); });
+$("list-unset").addEventListener("click", (e) => {
+  listUnset = !listUnset;
+  e.currentTarget.setAttribute("aria-pressed", String(listUnset));
+  renderPanel();
+});
 function visibleRooms() {
   return rooms.filter((r) => (!listUnset || !r.locationCode) && (!listQuery || `${r.locationCode} ${r.name}`.toLowerCase().includes(listQuery)));
 }
@@ -2058,7 +2173,7 @@ $("list").addEventListener("click", (e) => {
   renderScene(); renderOverlay(); renderPanel();
 });
 window.addEventListener("keydown", (e) => {
-  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target.closest?.(".cselect")) return;
   const key = e.key.toLowerCase();
   if (e.ctrlKey || e.metaKey) {
     if (key === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
