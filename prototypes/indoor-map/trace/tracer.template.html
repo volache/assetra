@@ -360,7 +360,10 @@ function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify({ rooms, 
 function load() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
-    if (saved) { rooms = saved.rooms || []; walls = saved.walls || []; suppressed = saved.suppressed || []; counter = saved.counter || 1; }
+    if (saved) {
+      rooms = saved.rooms || []; walls = saved.walls || []; suppressed = saved.suppressed || [];
+      counter = Math.max(saved.counter || 1, ...rooms.map((r) => idNumber(r.id)), ...walls.map((w) => idNumber(w.id))) + 1;
+    }
   } catch { /* ignore */ }
 }
 /** Redraw everything.  `regenerate` re-derives the rooms from the walls (when live). */
@@ -375,7 +378,14 @@ function changed(record = true, regenerate = true) {
 }
 
 // ---- rooms and walls ----------------------------------------------------------------------
-const newId = (prefix = "T") => prefix + String(counter++).padStart(3, "0");
+// Ids are only labels inside this file, but they must never repeat: skip any that are taken.
+const idNumber = (id) => parseInt(String(id).slice(1), 10) || 0;
+function newId(prefix = "T") {
+  let id;
+  do id = prefix + String(counter++).padStart(3, "0");
+  while (rooms.some((r) => r.id === id) || walls.some((w) => w.id === id));
+  return id;
+}
 const roomById = (id) => rooms.find((r) => r.id === id);
 const wallById = (id) => walls.find((w) => w.id === id);
 function addRoom(ring, curve) {
@@ -953,7 +963,11 @@ function importJson(text) {
   generated.forEach((r) => { r.anchor = interiorPoint(r.ring, r.holes || []); });
   walls = (payload.walls || []).map((w, i) => ({ id: w.id || "W" + String(i + 1).padStart(3, "0"), pts: w.pts.map(flip), ...(w.curve ? { curve: true } : {}) }));
   suppressed = [];
-  counter = rooms.length + walls.length + 1;
+  // Continue after the highest id in the file, and repair repeated ids from older exports.
+  counter = Math.max(0, ...rooms.map((r) => idNumber(r.id)), ...walls.map((w) => idNumber(w.id))) + 1;
+  const seenRooms = new Set(), seenWalls = new Set();
+  rooms.forEach((r) => { if (seenRooms.has(r.id)) r.id = newId("T"); seenRooms.add(r.id); });
+  walls.forEach((w) => { if (seenWalls.has(w.id)) w.id = newId("W"); seenWalls.add(w.id); });
   selectedId = null; selectedWallId = null;
   changed(true, false);
 }
