@@ -52,7 +52,7 @@ python prototypes/indoor-map/trace/build_tracer.py \
 
 ```json
 {
-  "version": 3, "title": "航廈三樓", "source": "航廈三樓-修改.dxf", "unit": "cm",
+  "version": 4, "title": "航廈三樓", "source": "航廈三樓-修改.dxf", "unit": "cm",
   "walls": [
     { "id": "W001", "pts": [[3479, 4530], [3879, 4530]] }
   ],
@@ -63,7 +63,7 @@ python prototypes/indoor-map/trace/build_tracer.py \
 }
 ```
 
-座標是 DXF 圖面座標（x 向右、y 向上）。房間的 `locationCode` 與 `name` 是主系統的存置地點代碼與名稱；`id` 只是這個檔案內部的流水編號，**不是**存置地點代碼。`walls` 是牆的中心線，弧牆有 `curve: true`；`auto: true` 的房間是由牆生成的；半圓與圓房間會多帶 `curve` 欄位，之後可以還原成精確的圓弧。
+座標是 DXF 圖面座標（x 向右、y 向上）。房間的 `locationCode` 與 `name` 是主系統的存置地點代碼與名稱；`id` 只是這個檔案內部的流水編號，**不是**存置地點代碼。`walls` 是牆的中心線，弧牆有 `curve: true`；`auto: true` 的房間是由牆生成的；`holes` 是這個房間裡面被其他房間完整佔用、面積要扣掉的部分（例如大廳裡四周自己圍牆的小房間）；半圓與圓房間會多帶 `curve` 欄位，之後可以還原成精確的圓弧。
 
 ## 之後的步驟（尚未做）
 

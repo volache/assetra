@@ -202,19 +202,42 @@ function closestOnSegment(p, a, b) {
   return { point: [a[0] + t * dx, a[1] + t * dy], t };
 }
 /** A point that is really inside the ring (the centroid can fall outside an L shape). */
-function interiorPoint(ring) {
+function interiorPoint(ring, holes = []) {
   const c = centroid(ring);
-  if (inRing(ring, c)) return [round1(c[0]), round1(c[1])];
+  if (inRing(ring, c) && !holes.some((h) => inRing(h, c))) return [round1(c[0]), round1(c[1])];
   const y = c[1];
   const xs = [];
-  for (let i = 0; i < ring.length; i++) {
-    const [x1, y1] = ring[i], [x2, y2] = ring[(i + 1) % ring.length];
+  for (const loop of [ring, ...holes]) for (let i = 0; i < loop.length; i++) {
+    const [x1, y1] = loop[i], [x2, y2] = loop[(i + 1) % loop.length];
     if ((y1 > y) !== (y2 > y)) xs.push(x1 + ((y - y1) / (y2 - y1)) * (x2 - x1));
   }
   xs.sort((a, b) => a - b);
   let best = [xs[0], xs[1] ?? xs[0]];
   for (let i = 0; i + 1 < xs.length; i += 2) if (xs[i + 1] - xs[i] > best[1] - best[0]) best = [xs[i], xs[i + 1]];
   return [round1((best[0] + best[1]) / 2), round1(y)];
+}
+const inRoom = (room, p) => inRing(room.ring, p) && !(room.holes || []).some((h) => inRing(h, p));
+const roomArea = (room) => area(room.ring) - (room.holes || []).reduce((sum, h) => sum + area(h), 0);
+const insideOrOn = (ring, p) =>
+  inRing(ring, p) || ring.some((v, i) => dist(p, closestOnSegment(p, v, ring[(i + 1) % ring.length]).point) < 0.6);
+/** A room that lies completely inside a bigger one is a hole in that one (its smallest container). */
+function assignHoles(list) {
+  list.forEach((r) => { r.holes = []; });
+  for (const inner of list) {
+    let owner = null;
+    for (const outer of list) {
+      if (outer === inner || area(outer.ring) <= area(inner.ring)) continue;
+      // Vertices alone are not enough: a room sitting in a notch of the bigger one has all its corners on its
+      // outline but lies outside it.  So the middle of every edge and an interior point must be inside too.
+      const middles = inner.ring.map((p, i) => { const q = inner.ring[(i + 1) % inner.ring.length]; return [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2]; });
+      const contained =
+        inner.ring.every((p) => insideOrOn(outer.ring, p)) &&
+        middles.every((p) => insideOrOn(outer.ring, p)) &&
+        inRing(outer.ring, interiorPoint(inner.ring));
+      if (contained && (!owner || area(outer.ring) < area(owner.ring))) owner = outer;
+    }
+    if (owner) owner.holes.push(inner.ring.map((p) => [p[0], p[1]]));
+  }
 }
 
 // ---- spatial index of the underlay -------------------------------------------------
@@ -504,21 +527,24 @@ function generateRooms() {
   const keep = rooms.filter((r) => !r.auto);
   const selectedAnchor = roomById(selectedId)?.auto ? roomById(selectedId).anchor : null;
   const faces = segments.length ? wallFaces(segments) : [];
-  const fresh = [];
-  for (const ring of faces) {
-    const anchor = interiorPoint(ring);
-    if (suppressed.some((s) => inRing(ring, s))) continue;
-    fresh.push({ id: null, name: "", locationCode: "", type: "room", ring: ring.map((p) => [round1(p[0]), round1(p[1])]), auto: true, anchor });
-  }
+  let fresh = faces.map((ring) => ({
+    id: null, name: "", locationCode: "", type: "room", auto: true,
+    ring: ring.map((p) => [round1(p[0]), round1(p[1])]),
+  }));
+  assignHoles(fresh);                    // a room walled in on its own inside a bigger area is a hole in it
+  fresh.forEach((f) => { f.anchor = interiorPoint(f.ring, f.holes); });
+  fresh = fresh.filter((f) => !suppressed.some((s) => inRoom(f, s)));
   // A generated room keeps its id, location and type when the area that holds its old anchor is still there.
-  for (const room of old) {
-    const target = fresh.find((f) => !f.id && inRing(f.ring, room.anchor || interiorPoint(room.ring)));
+  // Smaller rooms claim first, so a room inside a bigger area is not mistaken for it.
+  const oldBySize = [...old].sort((p, q) => roomArea(p) - roomArea(q));
+  for (const room of oldBySize) {
+    const target = fresh.find((f) => !f.id && inRoom(f, room.anchor || interiorPoint(room.ring, room.holes || [])));
     if (!target) continue;
     target.id = room.id; target.name = room.name; target.locationCode = room.locationCode || ""; target.type = room.type;
   }
   fresh.forEach((f) => { if (!f.id) f.id = newId("T"); });
   rooms = [...keep, ...fresh];
-  if (selectedAnchor) selectedId = fresh.find((f) => inRing(f.ring, selectedAnchor))?.id || null;
+  if (selectedAnchor) selectedId = fresh.find((f) => inRoom(f, selectedAnchor))?.id || null;
   else if (selectedId && !roomById(selectedId)) selectedId = null;
   save();
   renderScene(); renderOverlay(); renderPanel();
@@ -542,8 +568,11 @@ const pathOf = (ring) => "M" + ring.map((p) => p[0] + " " + p[1]).join("L") + "Z
 const linePathOf = (pts) => "M" + pts.map((p) => p[0] + " " + p[1]).join("L");
 function renderScene() {
   roomGroup.replaceChildren();
-  [...rooms].sort((p, q) => area(q.ring) - area(p.ring)).forEach((room) => {
-    make("path", { class: `room ${room.type}${room.auto ? " auto" : ""}${room.id === selectedId ? " selected" : ""}`, d: pathOf(room.ring), "data-id": room.id }, roomGroup);
+  [...rooms].sort((p, q) => roomArea(q) - roomArea(p)).forEach((room) => {
+    make("path", {
+      class: `room ${room.type}${room.auto ? " auto" : ""}${room.id === selectedId ? " selected" : ""}`,
+      d: pathOf(room.ring) + (room.holes || []).map(pathOf).join(""), "fill-rule": "evenodd", "data-id": room.id,
+    }, roomGroup);
   });
   wallGroup.replaceChildren();
   walls.forEach((wall) => make("path", { class: `wall${wall.id === selectedWallId ? " selected" : ""}`, d: linePathOf(wall.pts) }, wallGroup));
@@ -619,7 +648,7 @@ function renderPanel() {
     if (room.id === selectedId) button.setAttribute("aria-current", "true");
     button.textContent = locationTitle(room);
     const small = document.createElement("small");
-    small.textContent = `${room.auto ? "由牆生成 · " : ""}${TYPE_NAMES[room.type]} · 約 ${(area(room.ring) / 10000).toFixed(1)} m²`;
+    small.textContent = `${room.auto ? "由牆生成 · " : ""}${TYPE_NAMES[room.type]} · 約 ${(roomArea(room) / 10000).toFixed(1)} m²`;
     button.append(small);
     li.append(button);
     list.append(li);
@@ -698,7 +727,7 @@ function renderPanel() {
     type.addEventListener("change", () => { pushHistory(); room.type = type.value; changed(true, false); });
     typeLabel.append(type);
     add(typeLabel);
-    add(el("div", `${room.auto ? "由牆生成。" : "手動描繪。"}面積約 ${(area(room.ring) / 10000).toFixed(1)} m²（以單位為公分推算）`, { className: "note" }));
+    add(el("div", `${room.auto ? "由牆生成。" : "手動描繪。"}面積約 ${(roomArea(room) / 10000).toFixed(1)} m²（以單位為公分推算${room.holes?.length ? `，已扣除裡面的 ${room.holes.length} 個房間` : ""}）`, { className: "note" }));
     const row = el("div", undefined, { className: "row" });
     const del = el("button", "刪除此房間", { type: "button", className: "btn" });
     del.addEventListener("click", deleteSelected);
@@ -733,7 +762,7 @@ function deleteSelected() {
   pushHistory();
   if (selectedVertex !== null && room.ring.length > 3) { room.ring.splice(selectedVertex, 1); delete room.curve; room.auto = false; selectedVertex = null; }
   else {
-    if (room.auto) suppressed.push(room.anchor || interiorPoint(room.ring));
+    if (room.auto) suppressed.push(room.anchor || interiorPoint(room.ring, room.holes || []));
     rooms = rooms.filter((r) => r.id !== selectedId); selectedId = null; selectedVertex = null;
   }
   changed(true, false);
@@ -891,12 +920,13 @@ function tidy() {
 function exportJson() {
   const flip = (p) => [round1(p[0]), round1(-p[1])];
   const payload = {
-    version: 3, title: DATA.title, source: DATA.source, unit: DATA.unit,
-    note: "座標為 DXF 圖面座標（x 向右、y 向上）。walls 是牆的中心線；auto 為 true 的房間是由牆自動生成的。每個房間的 locationCode 與 name 是主系統的存置地點代碼與名稱；id 只是這個檔案內部的流水編號，不是存置地點代碼。type: room 房間 / public 公共區域 / void 挑空採光。",
+    version: 4, title: DATA.title, source: DATA.source, unit: DATA.unit,
+    note: "座標為 DXF 圖面座標（x 向右、y 向上）。walls 是牆的中心線；auto 為 true 的房間是由牆自動生成的。holes 是這個房間裡面被其他房間佔用、要扣掉的部分；每個房間的 locationCode 與 name 是主系統的存置地點代碼與名稱；id 只是這個檔案內部的流水編號，不是存置地點代碼。type: room 房間 / public 公共區域 / void 挑空採光。",
     walls: walls.map((w) => ({ id: w.id, pts: w.pts.map(flip), ...(w.curve ? { curve: true } : {}) })),
     rooms: rooms.map((r) => ({
       id: r.id, locationCode: r.locationCode || "", name: r.name, type: r.type, ring: r.ring.map(flip),
       ...(r.auto ? { auto: true } : {}), ...(r.curve ? { curve: r.curve } : {}),
+      ...(r.holes?.length ? { holes: r.holes.map((h) => h.map(flip)) } : {}),
     })),
   };
   const link = document.createElement("a");
@@ -914,8 +944,13 @@ function importJson(text) {
   const flip = (p) => [p[0], -p[1]];
   rooms = payload.rooms.map((r, i) => ({
     id: r.id || "T" + String(i + 1).padStart(3, "0"), name: r.name || "", locationCode: r.locationCode || "", type: TYPE_NAMES[r.type] ? r.type : "room",
-    ring: r.ring.map(flip), ...(r.auto ? { auto: true, anchor: interiorPoint(r.ring.map(flip)) } : {}), ...(r.curve ? { curve: r.curve } : {}),
+    ring: r.ring.map(flip), ...(r.auto ? { auto: true } : {}), ...(r.curve ? { curve: r.curve } : {}),
+    ...(r.holes?.length ? { holes: r.holes.map((h) => h.map(flip)) } : {}),
   }));
+  // Files from before holes existed: work out which generated rooms sit inside bigger ones.
+  const generated = rooms.filter((r) => r.auto);
+  if (payload.rooms.some((r) => r.auto && !("holes" in r)) && (payload.version || 0) < 4) assignHoles(generated);
+  generated.forEach((r) => { r.anchor = interiorPoint(r.ring, r.holes || []); });
   walls = (payload.walls || []).map((w, i) => ({ id: w.id || "W" + String(i + 1).padStart(3, "0"), pts: w.pts.map(flip), ...(w.curve ? { curve: true } : {}) }));
   suppressed = [];
   counter = rooms.length + walls.length + 1;
@@ -990,7 +1025,7 @@ stage.addEventListener("pointerdown", (e) => {
     if (hit) {
       selectedId = hit.dataset.id; selectedWallId = null; selectedVertex = null;
       const picked = roomById(selectedId);
-      drag = { type: "room", id: selectedId, start: raw, original: picked.ring.map((p) => [...p]), moved: false, recorded: false };
+      drag = { type: "room", id: selectedId, start: raw, original: picked.ring.map((p) => [...p]), originalHoles: (picked.holes || []).map((h) => h.map((p) => [...p])), moved: false, recorded: false };
     } else {
       selectedId = null; selectedWallId = null; selectedVertex = null;
       drag = { type: "pan", x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty };
@@ -1078,6 +1113,7 @@ stage.addEventListener("pointermove", (e) => {
     drag.moved = true;
     const room = roomById(drag.id);
     room.ring = drag.original.map((p) => [round1(p[0] + dx), round1(p[1] + dy)]);
+    if (drag.originalHoles?.length) room.holes = drag.originalHoles.map((h) => h.map((p) => [round1(p[0] + dx), round1(p[1] + dy)]));
     delete room.curve; room.auto = false;
     renderScene(); renderOverlay();
     return;
