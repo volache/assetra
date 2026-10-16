@@ -119,6 +119,10 @@
   .cselect-list li[data-active="true"] { background: #eef2f9; }
   .cselect-list li[aria-selected="true"] { color: #0d6f64; font-weight: 700; }
   .cselect-list li[aria-selected="true"]::after { content: "✓"; }
+  .guide { fill: none; stroke: #d6336c; stroke-dasharray: 5 4; stroke-width: 1.1; }
+  .guide-dot { fill: #d6336c; }
+  .trim-line { fill: none; stroke: #d6336c; stroke-dasharray: 7 5; stroke-linecap: round; stroke-width: 4; }
+  .extend-line { fill: none; stroke: var(--teal); stroke-dasharray: 7 5; stroke-linecap: round; stroke-width: 3; }
   .selbar { align-items: center; background: #fff; border: 1px solid var(--rule); border-radius: 12px; box-shadow: 0 4px 16px rgba(20, 30, 60, 0.14); display: flex; flex-wrap: wrap; font-size: 13px; gap: 6px 10px; left: 50%; max-width: calc(100% - 130px); padding: 6px 8px 6px 14px; position: absolute; top: 12px; transform: translateX(-50%); z-index: 4; }
   .selbar[hidden] { display: none; }
   .selbar .count { color: var(--ink); font-weight: 700; white-space: nowrap; }
@@ -153,6 +157,7 @@
     <button type="button" data-tool="semi" aria-pressed="false" title="點直徑兩端，再點一側">半圓<kbd>C</kbd></button>
     <button type="button" data-tool="circle" aria-pressed="false" title="點圓心，再點半徑">圓<kbd>O</kbd></button>
     <button type="button" data-tool="wand" aria-pressed="false" title="魔術棒：點一下房間內部，自動找出封閉範圍；按住拖曳塗抹可合併多處">魔術棒<kbd>M</kbd></button>
+    <button type="button" data-tool="trim" aria-pressed="false" title="修剪／延伸：點牆上要刪掉的一段；按住 Shift 點牆的一端則延伸到最近的牆">修剪<kbd>T</kbd></button>
   </div>
   <div class="group">
     <button type="button" id="undo" title="復原 Ctrl+Z">↶ 復原</button>
@@ -172,6 +177,7 @@
     <button type="button" id="toggle-texts" aria-pressed="true" title="顯示原圖文字">原圖文字</button>
     <button type="button" id="toggle-faint" aria-pressed="false" title="把底圖調淡">淡化底圖</button>
     <button type="button" id="toggle-snap" aria-pressed="true" title="吸附到牆線端點與其他物件">吸附</button>
+    <button type="button" id="toggle-guides" aria-pressed="true" title="拖曳或繪製時，和其他物件的頂點、邊界對齊會顯示參考線並吸附">參考線</button>
   </div>
   <span class="sep"></span>
   <span id="wand-opts" hidden>
@@ -205,8 +211,10 @@
         <dt>框選</dt><dd>選取工具在空白處拖曳；Shift 加選或減選；Ctrl+A 全選；Esc 取消選取</dd>
         <dt>移動</dt><dd>拖曳選取的物件；方向鍵微調（Shift 加大十倍）；步距可在右側自行輸入</dd>
         <dt>對齊底圖</dt><dd>右側「對齊到底圖」：先點選取範圍上的一個頂點，再點底圖的端點或邊線</dd>
+        <dt>修剪延伸</dt><dd>T：點牆上要刪掉的一段（刪到和其他牆或房間邊的交點為止）；Shift＋點牆的一端，延伸到最近的牆、房間邊或底圖牆線</dd>
+        <dt>參考線</dt><dd>拖曳或繪製時，和其他物件的頂點或邊界對齊會出現洋紅色虛線並自動吸附，可用「參考線」開關</dd>
         <dt>編輯</dt><dd>拖曳白點移動頂點；雙擊邊線加點；Delete 刪除；Ctrl+Z、Ctrl+Y 復原重做</dd>
-        <dt>工具</dt><dd>V 選取、W 牆、A 弧牆、R 矩形、P 多邊形、C 半圓、O 圓、M 魔術棒</dd>
+        <dt>工具</dt><dd>V 選取、W 牆、A 弧牆、R 矩形、P 多邊形、C 半圓、O 圓、M 魔術棒、T 修剪或延伸</dd>
       </dl>
     </div>
   </div>
@@ -237,6 +245,7 @@ const HINTS = {
   poly: "逐點描房間外形；Enter、雙擊或點回第一點完成；Backspace 退一點；Shift 鎖定水平／垂直",
   semi: "半圓房間：先點直徑的兩個端點，再把滑鼠移到要凸出的一側後點一下",
   circle: "圓形房間：先點圓心，再點圓周上的任一點",
+  trim: "修剪／延伸：滑鼠移到牆上會預覽（紅色虛線是要刪掉的一段），點一下刪除；按住 Shift 點牆的一端，延伸到最近的牆、房間邊或底圖牆線",
   wand: "魔術棒：游標移到房間內部會預覽，並盡量判斷成矩形、圓、半圓或水平垂直的多邊形；點一下建立；按住拖曳塗抹可把多處合併成一間。圍不起來時先用牆補缺口",
 };
 const SVGNS = "http://www.w3.org/2000/svg";
@@ -262,6 +271,8 @@ let wand = null;                  // a brush stroke in progress: { r, mask, any,
 let wandPreview = null;           // ring (page coordinates) the wand would create
 let wandGap = "auto", wandCache = new Map(), wandTimer = null;
 let stateRev = 0;                 // bumps whenever walls or rooms change, so cached rasters can be dropped
+let guides = [], guidesOn = true;  // alignment guides: [{ a, b }] lines in page coordinates
+let trimPreview = null;
 let stepCm = 50;                  // how far one nudge moves, typed by the user
 let listQuery = "", listUnset = false;
 let tool = "select";
@@ -831,6 +842,21 @@ function renderOverlay() {
   if (wand && wand.path.length > 1) {
     make("path", { d: wand.path.map((p, i) => (i ? "L" : "M") + p[0] + " " + p[1]).join(""), fill: "none", stroke: "#1fb5a5", "stroke-width": 3, "stroke-linecap": "round", opacity: 0.6 }, overlay);
   }
+  if (trimPreview) {
+    if (trimPreview.kind === "trim") {
+      make("path", { class: "trim-line", d: trimPreview.pts.map((q, i) => { const [sx, sy] = toScreen(q); return (i ? "L" : "M") + sx + " " + sy; }).join("") }, overlay);
+    } else {
+      const [fx, fy] = toScreen(trimPreview.from), [tx, ty] = toScreen(trimPreview.to);
+      make("line", { class: "extend-line", x1: fx, y1: fy, x2: tx, y2: ty }, overlay);
+      make("circle", { class: "snap", cx: tx, cy: ty, r: 7, stroke: "#1fb5a5" }, overlay);
+    }
+  }
+  guides.forEach((g) => {
+    const [ax, ay] = toScreen(g.a), [bx, by] = toScreen(g.b);
+    make("line", { class: "guide", x1: ax, y1: ay, x2: bx, y2: by }, overlay);
+    make("circle", { class: "guide-dot", cx: ax, cy: ay, r: 2.5 }, overlay);
+    make("circle", { class: "guide-dot", cx: bx, cy: by, r: 2.5 }, overlay);
+  });
   if (align) drawAlign();
   if (marquee) {
     const x = Math.min(marquee.a[0], marquee.b[0]), y = Math.min(marquee.a[1], marquee.b[1]);
@@ -1042,7 +1068,7 @@ function setTool(next) {
   document.querySelectorAll("#tools button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.tool === tool)));
   stage.classList.toggle("select", tool === "select");
   stage.classList.remove("aligning");
-  align = null; wand = null; wandPreview = null;
+  align = null; wand = null; wandPreview = null; guides = []; trimPreview = null;
   renderSelbar();
   $("wand-opts").hidden = tool !== "wand";
   updateHint();
@@ -1724,6 +1750,189 @@ function wandUp() {
   updateHint();
 }
 
+// ---- alignment guides --------------------------------------------------------------------------------------------
+const bbox9 = (points) => {
+  const xs = points.map((q) => q[0]), ys = points.map((q) => q[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  return [x0, (x0 + x1) / 2, x1].flatMap((x) => [y0, (y0 + y1) / 2, y1].map((y) => [x, y]));
+};
+/** Points other things offer to line up with: their vertices and the edges and middle of their boxes. */
+function guideSources(omit = new Set(), skip = {}) {
+  const list = [];
+  const take = (points) => {
+    const kept = points.filter((q) => !omit.has(q));
+    list.push(...kept);
+    if (points.length > 1) list.push(...bbox9(points));
+  };
+  rooms.forEach((r) => { if (!skip.rooms?.has(r.id)) take(r.ring); });
+  walls.forEach((w) => { if (!skip.walls?.has(w.id)) take(w.pts); });
+  return list;
+}
+/** The smallest nudge that puts any of `refs` on the same x or y as a source, and the lines to draw for it. */
+function guideFit(refs, sources, tol) {
+  let bx = null, by = null;
+  for (const r of refs) for (const s of sources) {
+    const ex = s[0] - r[0], ey = s[1] - r[1];
+    if (Math.abs(ex) <= tol && (bx === null || Math.abs(ex) < Math.abs(bx))) bx = ex;
+    if (Math.abs(ey) <= tol && (by === null || Math.abs(ey) < Math.abs(by))) by = ey;
+  }
+  const dx = bx ?? 0, dy = by ?? 0;
+  const lines = new Map();
+  const grow = (key, axis, value, a, b) => {
+    const entry = lines.get(key) || { axis, value, lo: Infinity, hi: -Infinity };
+    entry.lo = Math.min(entry.lo, a, b); entry.hi = Math.max(entry.hi, a, b);
+    lines.set(key, entry);
+  };
+  for (const r of refs) for (const s of sources) {
+    if (bx !== null && Math.abs(s[0] - (r[0] + dx)) < 0.6) grow("x" + Math.round(s[0] * 2), "x", s[0], r[1] + dy, s[1]);
+    if (by !== null && Math.abs(s[1] - (r[1] + dy)) < 0.6) grow("y" + Math.round(s[1] * 2), "y", s[1], r[0] + dx, s[0]);
+  }
+  const out = [...lines.values()].slice(0, 8).map((l) => (l.axis === "x" ? { a: [l.value, l.lo], b: [l.value, l.hi] } : { a: [l.lo, l.value], b: [l.hi, l.value] }));
+  return { dx, dy, guides: out };
+}
+/** A snapped point that also lines up with other objects when it did not snap to anything itself. */
+function guided(hit, omit = [], extra = []) {
+  guides = [];
+  if (!guidesOn || hit.kind) return hit;
+  const fit = guideFit([hit.p], guideSources(new Set(omit)).concat(extra), 6 / view.z);
+  if (!fit.guides.length) return hit;
+  guides = fit.guides;
+  return { p: [hit.p[0] + fit.dx, hit.p[1] + fit.dy], kind: null };
+}
+const snapForDraw = (raw, e) => {
+  const hit = snap(raw, { from: draft?.pts?.at(-1), axis: e.shiftKey });
+  return e.shiftKey ? hit : guided(hit, [], draft?.pts || []);
+};
+/** Dragging whole rooms or a group: the box of what moves is lined up with the other objects. */
+function dragGuides(d, dx, dy) {
+  guides = [];
+  if (!guidesOn) return { dx, dy };
+  if (!d.refs) {
+    const pts = d.cap ? [...d.cap.rooms.values()].flatMap((o) => o.ring).concat([...d.cap.walls.values()].flat()) : d.original;
+    d.refs = bbox9(pts);
+    d.sources = guideSources(new Set(), d.cap ? { rooms: new Set(d.cap.rooms.keys()), walls: new Set(d.cap.walls.keys()) } : { rooms: new Set([d.id]) });
+  }
+  const fit = guideFit(d.refs.map(([x, y]) => [x + dx, y + dy]), d.sources, 6 / view.z);
+  guides = fit.guides;
+  return { dx: dx + fit.dx, dy: dy + fit.dy };
+}
+
+// ---- trim and extend ---------------------------------------------------------------------------------------------
+/** Everything a wall can be cut by: other walls and the edges of hand-drawn rooms. */
+function trimBoundaries(skipId) {
+  const list = [];
+  walls.forEach((w) => { if (w.id !== skipId) for (let i = 0; i + 1 < w.pts.length; i++) list.push([w.pts[i], w.pts[i + 1]]); });
+  rooms.forEach((r) => { if (!r.auto) [r.ring, ...(r.holes || [])].forEach((ring) => ring.forEach((q, i) => list.push([q, ring[(i + 1) % ring.length]]))); });
+  return list;
+}
+/** Where along a wall (segment index + fraction) other things cross or touch it. */
+function cutPositions(wall, boundaries) {
+  const pts = wall.pts, cuts = [], TOL = 6;
+  for (let i = 0; i + 1 < pts.length; i++) for (const [C, D] of boundaries) {
+    const r = [pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]], s = [D[0] - C[0], D[1] - C[1]];
+    const den = r[0] * s[1] - r[1] * s[0];
+    if (Math.abs(den) < 1e-9) continue;
+    const t = ((C[0] - pts[i][0]) * s[1] - (C[1] - pts[i][1]) * s[0]) / den;
+    const u = ((C[0] - pts[i][0]) * r[1] - (C[1] - pts[i][1]) * r[0]) / den;
+    if (t >= -1e-6 && t <= 1 + 1e-6 && u >= -1e-6 && u <= 1 + 1e-6) cuts.push(i + Math.min(1, Math.max(0, t)));
+  }
+  for (const [C, D] of boundaries) for (const E of [C, D]) for (let i = 0; i + 1 < pts.length; i++) {
+    const hit = closestOnSegment(E, pts[i], pts[i + 1]);
+    if (dist(E, hit.point) <= TOL) cuts.push(i + hit.t);
+  }
+  for (const index of [0, pts.length - 1]) for (const [C, D] of boundaries) {
+    if (dist(pts[index], closestOnSegment(pts[index], C, D).point) <= TOL) { cuts.push(index); break; }
+  }
+  return cuts.sort((a, b) => a - b);
+}
+const pointAlong = (pts, pos) => {
+  const i = Math.max(0, Math.min(pts.length - 2, Math.floor(pos))), f = Math.min(1, pos - i);
+  return [pts[i][0] + (pts[i + 1][0] - pts[i][0]) * f, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * f];
+};
+/** Nearest thing an extended end would meet: other walls, hand-drawn rooms, or a long line of the underlay. */
+function extendTarget(wall, endIndex) {
+  const pts = wall.pts, E = pts[endIndex], neighbour = pts[endIndex === 0 ? 1 : pts.length - 2];
+  const len = dist(E, neighbour);
+  if (len < 1) return null;
+  const d = [(E[0] - neighbour[0]) / len, (E[1] - neighbour[1]) / len], MAX = 4000;
+  let best = null;
+  const test = (C, D) => {
+    const s = [D[0] - C[0], D[1] - C[1]], den = d[0] * s[1] - d[1] * s[0];
+    if (Math.abs(den) < 1e-9) return;
+    const w = [C[0] - E[0], C[1] - E[1]];
+    const t = (w[0] * s[1] - w[1] * s[0]) / den, u = (w[0] * d[1] - w[1] * d[0]) / den;
+    if (t > 1 && t <= MAX && u >= -1e-6 && u <= 1 + 1e-6 && (!best || t < best)) best = t;
+  };
+  trimBoundaries(wall.id).forEach(([C, D]) => test(C, D));
+  const seen = new Set();
+  for (let s = 0; s <= MAX; s += 100) {
+    const q = [E[0] + d[0] * s, E[1] + d[1] * s];
+    for (const key of cellsAround(q, 80)) for (const i of segGrid.get(key) || []) {
+      if (seen.has(i)) continue;
+      seen.add(i);
+      const g = DATA.segments[i];
+      if (Math.hypot(g[2] - g[0], g[3] - g[1]) >= 150) test([g[0], g[1]], [g[2], g[3]]);
+    }
+  }
+  return best ? { endIndex, from: E, to: [round1(E[0] + d[0] * best), round1(E[1] + d[1] * best)] } : null;
+}
+/** What a click here would do: cut away a piece of a wall, or (with Shift) stretch one of its ends. */
+function trimPlan(clientX, clientY, extend) {
+  const wall = wallAt(clientX, clientY);
+  if (!wall) return null;
+  if (extend) {
+    const raw = toPlan(clientX, clientY), last = wall.pts.length - 1;
+    const endIndex = dist(raw, wall.pts[0]) <= dist(raw, wall.pts[last]) ? 0 : last;
+    const target = extendTarget(wall, endIndex);
+    return target ? { kind: "extend", wall, ...target } : { kind: "none", wall, why: "這一端前方沒有可以延伸到的牆、房間邊或底圖牆線" };
+  }
+  const edge = edgeAt(wall.pts, false, clientX, clientY);
+  if (!edge) return null;
+  const pos = edge.i + edge.t, cuts = cutPositions(wall, trimBoundaries(wall.id));
+  const lo = cuts.filter((c) => c < pos - 1e-4).at(-1) ?? null;
+  const hi = cuts.find((c) => c > pos + 1e-4) ?? null;
+  if (lo === null && hi === null) return { kind: "none", wall, why: "這道牆沒有和其他牆或房間邊交會，沒有可修剪的部分（要整道刪除請用 Delete）" };
+  const from = lo ?? 0, to = hi ?? wall.pts.length - 1;
+  const pts = wall.pts, piece = [pointAlong(pts, from)];
+  for (let k = Math.floor(from) + 1; k <= Math.ceil(to) - 1; k++) piece.push(pts[k]);
+  piece.push(pointAlong(pts, to));
+  return { kind: "trim", wall, from, to, pts: piece };
+}
+function trimApply(plan) {
+  const wall = plan.wall;
+  pushHistory();
+  if (plan.kind === "extend") {
+    wall.pts[plan.endIndex] = plan.to;
+    delete wall.curve;
+    changed(true, true);
+    return;
+  }
+  const pts = wall.pts, keep = (list) => (list.length >= 2 && list.some((q, i) => i && dist(q, list[i - 1]) > 5) ? list.map((q) => [round1(q[0]), round1(q[1])]) : null);
+  const left = [], right = [];
+  for (let k = 0; k <= Math.floor(plan.from); k++) left.push(pts[k]);
+  if (plan.from !== Math.floor(plan.from)) left.push(pointAlong(pts, plan.from));
+  if (plan.to !== Math.floor(plan.to)) right.push(pointAlong(pts, plan.to));
+  for (let k = Math.ceil(plan.to); k < pts.length; k++) right.push(pts[k]);
+  const pieces = [plan.from > 1e-4 ? keep(left) : null, plan.to < pts.length - 1 - 1e-4 ? keep(right) : null].filter(Boolean);
+  walls = walls.filter((w) => w.id !== wall.id);
+  pieces.forEach((list, i) => walls.push({ id: i === 0 ? wall.id : newId("W"), pts: list, ...(wall.curve ? { curve: true } : {}) }));
+  group = null; selectedWallId = null; selectedId = null; selectedVertex = null;
+  trimPreview = null;
+  changed(true, true);
+}
+function trimHover(e) {
+  trimPreview = trimPlan(e.clientX, e.clientY, e.shiftKey);
+  if (trimPreview?.kind === "none") { $("hint").textContent = trimPreview.why; trimPreview = null; }
+  else $("hint").textContent = HINTS.trim;
+  renderOverlay();
+}
+function trimClick(e) {
+  const plan = trimPlan(e.clientX, e.clientY, e.shiftKey);
+  if (!plan) return;
+  if (plan.kind === "none") { $("hint").textContent = plan.why; return; }
+  trimApply(plan);
+}
+
 // ---- selection, moving and aligning ------------------------------------------------------------------------------
 const hasSelection = () => { const i = selectedItems(); return i.rooms.length + i.walls.length > 0; };
 function selectedItems() {
@@ -1951,7 +2160,8 @@ stage.addEventListener("pointerdown", (e) => {
     return;
   }
   if (tool === "wand") { wandDown(e, raw); return; }
-  const { p } = snap(raw, { from: draft?.pts?.at(-1), axis: e.shiftKey });
+  if (tool === "trim") { trimClick(e); return; }
+  const { p } = snapForDraw(raw, e);
   const press = [e.clientX, e.clientY];
   if (tool === "rect") {
     if (draft && draft.pts.length === 1) { const ring = rectRing(draft.pts[0], p); draft = null; if (Math.abs(ring[0][0] - ring[2][0]) > 5 && Math.abs(ring[0][1] - ring[2][1]) > 5) addRoom(ring); }
@@ -2004,9 +2214,10 @@ stage.addEventListener("pointermove", (e) => {
   }
   if (drag?.type === "marquee") { marquee.b = screenPoint(e.clientX, e.clientY); renderOverlay(); return; }
   if (drag?.type === "group") {
-    const dx = raw[0] - drag.start[0], dy = raw[1] - drag.start[1];
+    let dx = raw[0] - drag.start[0], dy = raw[1] - drag.start[1];
     if (!drag.moved && Math.hypot(dx, dy) * view.z < 4) return;
     if (!drag.recorded) { pushHistory(); drag.recorded = true; }
+    ({ dx, dy } = dragGuides(drag, dx, dy));
     drag.moved = true;
     placeSelection(drag.cap, dx, dy);
     renderScene(); renderOverlay();
@@ -2024,7 +2235,7 @@ stage.addEventListener("pointermove", (e) => {
   }
   if (drag?.type === "vertex") {
     const room = roomById(drag.id);
-    const hit = snap(raw, { excludeRoom: drag.id, excludeIndex: drag.index });
+    const hit = guided(snap(raw, { excludeRoom: drag.id, excludeIndex: drag.index }), [room.ring[drag.index]]);
     room.ring[drag.index] = [round1(hit.p[0]), round1(hit.p[1])];
     delete room.curve; room.auto = false;
     snapHit = hit;
@@ -2033,7 +2244,7 @@ stage.addEventListener("pointermove", (e) => {
   }
   if (drag?.type === "wallVertex") {
     const wall = wallById(drag.id);
-    const hit = snap(raw, { excludeWall: drag.id, excludeIndex: drag.index });
+    const hit = guided(snap(raw, { excludeWall: drag.id, excludeIndex: drag.index }), [wall.pts[drag.index], ...(drag.joined || []).map(([id, j]) => wallById(id)?.pts[j])]);
     wall.pts[drag.index] = [round1(hit.p[0]), round1(hit.p[1])];
     delete wall.curve;
     for (const [otherId, j] of drag.joined || []) {
@@ -2046,9 +2257,10 @@ stage.addEventListener("pointermove", (e) => {
     return;
   }
   if (drag?.type === "room") {
-    const dx = raw[0] - drag.start[0], dy = raw[1] - drag.start[1];
+    let dx = raw[0] - drag.start[0], dy = raw[1] - drag.start[1];
     if (!drag.moved && Math.hypot(dx, dy) * view.z < 4) return;
     if (!drag.recorded) { pushHistory(); drag.recorded = true; }
+    ({ dx, dy } = dragGuides(drag, dx, dy));
     drag.moved = true;
     const room = roomById(drag.id);
     room.ring = drag.original.map((p) => [round1(p[0] + dx), round1(p[1] + dy)]);
@@ -2058,7 +2270,8 @@ stage.addEventListener("pointermove", (e) => {
     return;
   }
   if (tool === "wand") { wandMove(e, raw); return; }
-  const hit = tool === "select" ? { p: raw, kind: null } : snap(raw, { from: draft?.pts?.at(-1), axis: e.shiftKey });
+  if (tool === "trim") { trimHover(e); return; }
+  const hit = tool === "select" ? { p: raw, kind: null } : snapForDraw(raw, e);
   snapHit = hit;
   if (draft) draft.cursor = hit.p;
   renderOverlay();
@@ -2066,6 +2279,7 @@ stage.addEventListener("pointermove", (e) => {
 stage.addEventListener("pointerup", (e) => {
   const finished = drag;
   drag = null;
+  if (guides.length) { guides = []; renderOverlay(); }
   stage.classList.remove("panning");
   if (finished?.type === "wand") { wandUp(); return; }
   if (finished?.type === "marquee") { const m = marquee; marquee = null; finishMarquee(m); return; }
@@ -2074,7 +2288,8 @@ stage.addEventListener("pointerup", (e) => {
   if (finished?.type === "wallVertex") { changed(); return; }
   if (finished?.type === "room") { if (finished.moved) changed(true, false); return; }
   if (finished?.type === "rect" && draft && !mostlyClick([e.clientX, e.clientY], draft.press)) {
-    const p = snap(toPlan(e.clientX, e.clientY)).p;
+    const p = snapForDraw(toPlan(e.clientX, e.clientY), e).p;
+    guides = [];
     const ring = rectRing(draft.pts[0], p);
     draft = null;
     if (Math.abs(ring[0][0] - ring[2][0]) > 5 && Math.abs(ring[0][1] - ring[2][1]) > 5) addRoom(ring);
@@ -2157,6 +2372,7 @@ $("toggle-faint").addEventListener("click", (e) => {
   flip("toggle-faint", on);
   stage.classList.toggle("faint", on);
 });
+$("toggle-guides").addEventListener("click", () => { guidesOn = !guidesOn; flip("toggle-guides", guidesOn); guides = []; renderOverlay(); });
 $("toggle-snap").addEventListener("click", () => { snapOn = !snapOn; flip("toggle-snap", snapOn); snapHit = null; renderOverlay(); });
 $("list").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-id]");
@@ -2188,10 +2404,11 @@ window.addEventListener("keydown", (e) => {
   }
   if (key === "f") { fit(); applyView(); return; }
   if (key === "?" ) { $("help").click(); return; }
-  const tools = { v: "select", w: "wall", a: "arcwall", r: "rect", p: "poly", c: "semi", o: "circle", m: "wand" };
+  const tools = { v: "select", w: "wall", a: "arcwall", r: "rect", p: "poly", c: "semi", o: "circle", m: "wand", t: "trim" };
   if (tools[key]) setTool(tools[key]);
   else if (key === "escape") {
     if (align) { cancelAlign(); return; }
+    if (guides.length) guides = [];
     if (draft) draft = null;
     else if (hasSelection()) { setSelection([], []); refresh(); return; }
     selectedVertex = null; renderOverlay();
