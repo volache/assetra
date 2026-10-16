@@ -147,7 +147,7 @@
   <span class="sep"></span>
   <span id="wand-opts" hidden>
     <label class="label-s" title="底圖牆線有門口或小缺口時，魔術棒仍視為封閉的最大缺口寬度">缺口容忍
-      <select id="wand-gap"><option value="0">0 公分</option><option value="50">50 公分</option><option value="100" selected>100 公分</option><option value="150">150 公分</option><option value="250">250 公分</option></select>
+      <select id="wand-gap"><option value="auto" selected>自動（逐步放寬）</option><option value="0">0 公分</option><option value="60">60 公分</option><option value="120">120 公分</option><option value="200">200 公分</option><option value="320">320 公分</option></select>
     </label>
     <span class="sep"></span>
   </span>
@@ -206,7 +206,7 @@ const HINTS = {
   poly: "逐點描房間外形；Enter、雙擊或點回第一點完成；Backspace 退一點；Shift 鎖定水平／垂直",
   semi: "半圓房間：先點直徑的兩個端點，再把滑鼠移到要凸出的一側後點一下",
   circle: "圓形房間：先點圓心，再點圓周上的任一點",
-  wand: "魔術棒：游標移到房間內部會預覽範圍，點一下建立房間；按住拖曳塗抹可把多處合併成一間；範圍圍不起來時，調高「缺口容忍」或先用牆補上缺口",
+  wand: "魔術棒：游標移到房間內部會預覽，並盡量判斷成矩形、圓、半圓或水平垂直的多邊形；點一下建立；按住拖曳塗抹可把多處合併成一間。圍不起來時先用牆補缺口",
 };
 const SVGNS = "http://www.w3.org/2000/svg";
 const $ = (id) => document.getElementById(id);
@@ -229,7 +229,7 @@ let align = null;                 // { stage: "pick" | "target", from, cap, curs
 let marquee = null;               // { a, b } in screen pixels
 let wand = null;                  // a brush stroke in progress: { r, mask, any, last, path }
 let wandPreview = null;           // ring (page coordinates) the wand would create
-let wandGap = 100, wandCache = null, wandTimer = null;
+let wandGap = "auto", wandCache = new Map(), wandTimer = null;
 let stateRev = 0;                 // bumps whenever walls or rooms change, so cached rasters can be dropped
 let stepCm = 50;                  // how far one nudge moves, typed by the user
 let listQuery = "", listUnset = false;
@@ -732,7 +732,7 @@ function renderOverlay() {
   }
   if (draft) drawDraft();
   if (wandPreview) {
-    const d = wandPreview.map((p, i) => { const [sx, sy] = toScreen(p); return (i ? "L" : "M") + sx + " " + sy; }).join("") + "Z";
+    const d = wandPreview.ring.map((p, i) => { const [sx, sy] = toScreen(p); return (i ? "L" : "M") + sx + " " + sy; }).join("") + "Z";
     make("path", { class: "ghost", d }, overlay);
   }
   if (wand && wand.path.length > 1) {
@@ -1202,14 +1202,20 @@ function importJson(text) {
 
 // ---- magic wand ------------------------------------------------------------------------------------------------
 // The underlay is drawn on a grid (10 cm per cell) around the cursor.  Lines are drawn fat enough to close door-sized
-// gaps, the area under the cursor is flooded, then grown back to the real lines and traced into a simple outline.
-const WAND = { RES: 10, HALF: 350, MIN_LINE: 60 };
-function wandRaster(center) {
-  const c = wandCache, reach = WAND.HALF * WAND.RES * 0.55;
-  if (c && c.rev === stateRev && c.gap === wandGap && Math.abs(center[0] - c.center[0]) < reach && Math.abs(center[1] - c.center[1]) < reach) return c;
+// gaps (tried in growing sizes when set to automatic), the area under the cursor is flooded, grown back to the real
+// lines, cleaned with an opening, and then fitted with the simplest regular shape that explains it: rectangle,
+// circle, half circle, or a polygon whose sides are squared to the drawing's own grid.
+const WAND = { RES: 10, HALF: 350, MIN_LINE: 60, AUTO: [60, 120, 200] };
+const KIND_NAMES = { rect: "矩形", circle: "圓形", semi: "半圓", polygon: "水平垂直的多邊形" };
+function wandRaster(center, gap) {
+  const reach = WAND.HALF * WAND.RES * 0.55;
+  const first = wandCache.values().next().value;
+  if (first && first.rev !== stateRev) wandCache.clear();
+  const c = wandCache.get(gap);
+  if (c && Math.abs(center[0] - c.center[0]) < reach && Math.abs(center[1] - c.center[1]) < reach) return c;
   const { RES, HALF, MIN_LINE } = WAND, n = HALF * 2;
   const ox = center[0] - HALF * RES, oy = center[1] - HALF * RES;
-  const layers = [1.2, Math.max(1.2, wandGap / RES)].map((width) => {
+  const layers = [1.2, Math.max(1.2, gap / RES)].map((width) => {
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = n;
     const g = canvas.getContext("2d", { willReadFrequently: true });
@@ -1237,9 +1243,11 @@ function wandRaster(center) {
     for (let i = 0; i < flags.length; i++) flags[i] = data[i * 4 + 3] > 40 ? 1 : 0;
     return flags;
   });
-  wandCache = { center, ox, oy, n, thin, thick, rev: stateRev, gap: wandGap };
-  return wandCache;
+  const entry = { center, ox, oy, n, thin, thick, rev: stateRev, gap };
+  wandCache.set(gap, entry);
+  return entry;
 }
+const wandCell = (r, p) => [Math.floor((p[0] - r.ox) / WAND.RES), Math.floor((p[1] - r.oy) / WAND.RES)];
 /** Flood the open area around cell (x, y) into `mask`.  False when there is nothing there or the area is not closed. */
 function wandFill(r, mask, x, y) {
   const { n, thick } = r;
@@ -1261,6 +1269,36 @@ function wandFill(r, mask, x, y) {
   if (leaked) { touched.forEach((i) => { mask[i] = 0; }); return false; }
   return true;
 }
+/** Try the fattest-line sizes in turn (or the one chosen) until the area under `center` is closed. */
+function wandTry(center) {
+  const gaps = wandGap === "auto" ? WAND.AUTO : [Number(wandGap)];
+  for (const gap of gaps) {
+    const r = wandRaster(center, gap), [x, y] = wandCell(r, center), mask = new Uint8Array(r.n * r.n);
+    if (wandFill(r, mask, x, y)) return { r, mask };
+  }
+  return null;
+}
+/** The biggest axis-aligned block of filled cells (classic histogram stack), in grid cells of the cropped mask. */
+function largestRect(cur, w, h) {
+  const heights = new Int32Array(w);
+  let best = { area: 0 };
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) heights[x] = cur[y * w + x] ? heights[x] + 1 : 0;
+    const stack = [];
+    for (let x = 0; x <= w; x++) {
+      const height = x < w ? heights[x] : 0;
+      let start = x;
+      while (stack.length && stack[stack.length - 1].h >= height) {
+        const top = stack.pop();
+        const size = top.h * (x - top.x);
+        if (size > best.area) best = { area: size, x0: top.x, x1: x, y0: y + 1 - top.h, y1: y + 1 };
+        start = top.x;
+      }
+      stack.push({ x: start, h: height });
+    }
+  }
+  return best;
+}
 function douglasPeucker(pts, tol) {
   if (pts.length < 3) return pts;
   const a = pts[0], b = pts[pts.length - 1];
@@ -1272,30 +1310,80 @@ function douglasPeucker(pts, tol) {
   if (far < 0) return [a, b];
   return [...douglasPeucker(pts.slice(0, far + 1), tol).slice(0, -1), ...douglasPeucker(pts.slice(far), tol)];
 }
-/** Outline (page coordinates) of the filled area, grown back to the real lines, simplified and squared up. */
-function wandRing(r, mask) {
-  const { n, thin, ox, oy } = r;
-  let cur = mask;
-  for (let s = Math.round(wandGap / WAND.RES / 2); s > 0; s--) {
-    const next = Uint8Array.from(cur);
-    for (let i = n + 1; i < n * n - n - 1; i++) if (cur[i]) for (const j of [i - 1, i + 1, i - n, i + n]) if (!thin[j]) next[j] = 1;
-    cur = next;
+/** One pass of a 1-D grow (or shrink) over a w x h mask; repeated k times it is a square of radius k. */
+function maskPass(src, w, h, horizontal, grow) {
+  const out = new Uint8Array(src.length);
+  const step = horizontal ? 1 : w;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x;
+    const before = (horizontal ? x > 0 : y > 0) ? src[i - step] : 0;
+    const after = (horizontal ? x < w - 1 : y < h - 1) ? src[i + step] : 0;
+    out[i] = grow ? (src[i] | before | after) : (src[i] & before & after);
   }
-  const W = n + 1, out = new Map();
+  return out;
+}
+/** The direction the drawing's own long lines run in (radians), folded into a quarter turn. */
+function gridAngle(box) {
+  const cx = (box[0] + box[2]) / 2, cy = (box[1] + box[3]) / 2, rad = Math.max(box[2] - box[0], box[3] - box[1]) / 2 + 60;
+  let sx = 0, sy = 0;
+  const seen = new Set();
+  for (const key of cellsAround([cx, cy], rad)) for (const i of segGrid.get(key) || []) {
+    if (seen.has(i)) continue;
+    seen.add(i);
+    const g = DATA.segments[i], len = Math.hypot(g[2] - g[0], g[3] - g[1]);
+    const mx = (g[0] + g[2]) / 2, my = (g[1] + g[3]) / 2;
+    if (len < 60 || mx < box[0] - 60 || mx > box[2] + 60 || my < box[1] - 60 || my > box[3] + 60) continue;
+    const a = Math.atan2(g[3] - g[1], g[2] - g[0]);
+    sx += len * Math.cos(4 * a); sy += len * Math.sin(4 * a);
+  }
+  if (Math.hypot(sx, sy) < 200) return 0;
+  const angle = Math.atan2(sy, sx) / 4;
+  return Math.abs(angle) < (1.5 * Math.PI) / 180 ? 0 : angle;
+}
+/** Move a straight side onto the drawing's own line when one lies within a few centimetres and runs the same way. */
+function snapLine(theta, kind, value, lo, hi) {
+  const c = Math.cos(theta), s = Math.sin(theta);
+  const steps = Math.max(1, Math.ceil((hi - lo) / 150));
+  let best = null;
+  const seen = new Set();
+  for (let k = 0; k <= steps; k++) {
+    const along = lo + ((hi - lo) * k) / steps;
+    const p = kind === "U" ? [along * c - value * s, along * s + value * c] : [value * c - along * s, value * s + along * c];
+    for (const key of cellsAround(p, 20)) for (const i of segGrid.get(key) || []) {
+      if (seen.has(i)) continue;
+      seen.add(i);
+      const g = DATA.segments[i], dx = g[2] - g[0], dy = g[3] - g[1], len = Math.hypot(dx, dy);
+      if (len < 60) continue;
+      const u1 = g[0] * c + g[1] * s, v1 = -g[0] * s + g[1] * c, u2 = g[2] * c + g[3] * s, v2 = -g[2] * s + g[3] * c;
+      const parallel = kind === "U" ? Math.abs(v2 - v1) <= len * 0.035 : Math.abs(u2 - u1) <= len * 0.035;
+      if (!parallel) continue;
+      const level = kind === "U" ? (v1 + v2) / 2 : (u1 + u2) / 2;
+      const a1 = kind === "U" ? u1 : v1, a2 = kind === "U" ? u2 : v2;
+      const overlap = Math.min(hi, Math.max(a1, a2)) - Math.max(lo, Math.min(a1, a2));
+      if (overlap < 30 || Math.abs(level - value) > 18) continue;
+      const score = overlap - Math.abs(level - value) * 5;
+      if (!best || score > best.score) best = { score, level };
+    }
+  }
+  return best ? best.level : value;
+}
+/** Outline of a mask as a loop of grid corners (the biggest closed loop). */
+function traceOutline(cur, w, h) {
+  const W = w + 1, out = new Map();
   const add = (x1, y1, x2, y2) => { const k = y1 * W + x1; if (!out.has(k)) out.set(k, []); out.get(k).push(y2 * W + x2); };
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-    if (!cur[y * n + x]) continue;
-    if (y === 0 || !cur[(y - 1) * n + x]) add(x, y, x + 1, y);
-    if (x === n - 1 || !cur[y * n + x + 1]) add(x + 1, y, x + 1, y + 1);
-    if (y === n - 1 || !cur[(y + 1) * n + x]) add(x + 1, y + 1, x, y + 1);
-    if (x === 0 || !cur[y * n + x - 1]) add(x, y + 1, x, y);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (!cur[y * w + x]) continue;
+    if (y === 0 || !cur[(y - 1) * w + x]) add(x, y, x + 1, y);
+    if (x === w - 1 || !cur[y * w + x + 1]) add(x + 1, y, x + 1, y + 1);
+    if (y === h - 1 || !cur[(y + 1) * w + x]) add(x + 1, y + 1, x, y + 1);
+    if (x === 0 || !cur[y * w + x - 1]) add(x, y + 1, x, y);
   }
   let outline = null, outlineArea = 0;
   for (const [startKey, ends] of out) {
     while (ends.length) {
       const loop = [startKey];
       let key = ends.pop(), guard = 0;
-      while (key !== startKey && guard++ < 200000) {
+      while (key !== startKey && guard++ < 400000) {
         loop.push(key);
         const options = out.get(key);
         if (!options || !options.length) break;
@@ -1307,62 +1395,204 @@ function wandRing(r, mask) {
       if (a > outlineArea) { outlineArea = a; outline = pts; }
     }
   }
-  if (!outline || outline.length < 4) return null;
-  // runs of equal direction collapse first, then Douglas-Peucker removes the staircase of diagonal and curved walls
-  outline = outline.filter((p, i) => {
+  if (!outline) return null;
+  return outline.filter((p, i) => {
     const a = outline[(i + outline.length - 1) % outline.length], b = outline[(i + 1) % outline.length];
     return (p[0] - a[0]) * (b[1] - p[1]) - (p[1] - a[1]) * (b[0] - p[0]) !== 0;
   });
+}
+/** Make the sides of a polygon either run along the drawing's grid or stay as honest diagonals. */
+function squareUp(pts, theta) {
+  const c = Math.cos(theta), s = Math.sin(theta);
+  let loop = pts.map(([x, y]) => [x * c + y * s, -x * s + y * c]);
+  const kindOf = (a, b) => {
+    const angle = Math.atan2(Math.abs(b[1] - a[1]), Math.abs(b[0] - a[0]));
+    return angle <= 0.35 ? "U" : angle >= Math.PI / 2 - 0.35 ? "V" : "D";
+  };
+  // little steps and bumps (door recesses, pillar faces) are flattened: a short side is replaced by its middle
+  for (let guard = 0; guard < 200 && loop.length > 4; guard++) {
+    const i = loop.findIndex((a, k) => { const b = loop[(k + 1) % loop.length]; return dist(a, b) < 40 && kindOf(a, b) !== "D"; });
+    if (i < 0) break;
+    const j = (i + 1) % loop.length, mid = [(loop[i][0] + loop[j][0]) / 2, (loop[i][1] + loop[j][1]) / 2];
+    loop[i] = mid;
+    loop.splice(j, 1);
+  }
+  const edges = loop.map((a, i) => { const b = loop[(i + 1) % loop.length]; return { a, b, kind: kindOf(a, b), len: dist(a, b) }; });
+  // consecutive sides running the same way are one side
+  const groups = [];
+  edges.forEach((e) => {
+    const last = groups.at(-1);
+    if (last && last.kind === e.kind && e.kind !== "D") { last.edges.push(e); last.b = e.b; } else groups.push({ kind: e.kind, edges: [e], a: e.a, b: e.b });
+  });
+  if (groups.length > 1 && groups[0].kind === groups.at(-1).kind && groups[0].kind !== "D") {
+    const tail = groups.pop();
+    groups[0].edges.unshift(...tail.edges); groups[0].a = tail.a;
+  }
+  if (groups.length < 3) return null;
+  groups.forEach((g) => {
+    if (g.kind === "D") return;
+    const total = g.edges.reduce((sum, e) => sum + e.len, 0) || 1;
+    const index = g.kind === "U" ? 1 : 0, along = g.kind === "U" ? 0 : 1;
+    let level = g.edges.reduce((sum, e) => sum + ((e.a[index] + e.b[index]) / 2) * e.len, 0) / total;
+    const coords = g.edges.flatMap((e) => [e.a[along], e.b[along]]);
+    level = snapLine(theta, g.kind, level, Math.min(...coords), Math.max(...coords));
+    g.level = level;
+  });
+  const lineOf = (g) => g.kind === "U" ? { p: [0, g.level], d: [1, 0] } : g.kind === "V" ? { p: [g.level, 0], d: [0, 1] } : { p: g.a, d: [g.b[0] - g.a[0], g.b[1] - g.a[1]] };
+  const ring = groups.map((g, i) => {
+    const prev = groups[(i + groups.length - 1) % groups.length];
+    const L1 = lineOf(prev), L2 = lineOf(g), fallback = g.a;
+    const den = L1.d[0] * L2.d[1] - L1.d[1] * L2.d[0];
+    if (Math.abs(den) < 1e-6 * Math.hypot(...L1.d) * Math.hypot(...L2.d)) return fallback;
+    const k = ((L2.p[0] - L1.p[0]) * L2.d[1] - (L2.p[1] - L1.p[1]) * L2.d[0]) / den;
+    const q = [L1.p[0] + k * L1.d[0], L1.p[1] + k * L1.d[1]];
+    return dist(q, fallback) > 200 ? fallback : q;
+  }).map(([u, v]) => [u * c - v * s, u * s + v * c]);
+  return ring;
+}
+/** The simplest regular shape that explains the flooded area. Returns { ring, curve, kind } or null. */
+function wandShape(r, mask) {
+  const { n, thin, ox, oy, gap } = r, RES = WAND.RES;
+  let x0 = n, y0 = n, x1 = -1, y1 = -1;
+  for (let i = 0; i < mask.length; i++) if (mask[i]) {
+    const x = i % n, y = (i - x) / n;
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  if (x1 < 0) return null;
+  const k = Math.round(gap / RES / 2), pad = k * 2 + 3;
+  const X0 = Math.max(0, x0 - pad), Y0 = Math.max(0, y0 - pad);
+  const W = Math.min(n, x1 + pad + 1) - X0, H = Math.min(n, y1 + pad + 1) - Y0;
+  let cur = new Uint8Array(W * H);
+  const wall = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const src = (Y0 + y) * n + X0 + x; cur[y * W + x] = mask[src]; wall[y * W + x] = thin[src]; }
+  // the fat lines shrank the area by half a gap on every side: grow it back until it meets the real lines
+  for (let step = 0; step < k; step++) {
+    const next = Uint8Array.from(cur);
+    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+      const i = y * W + x;
+      if (!cur[i]) continue;
+      if (!wall[i - 1]) next[i - 1] = 1;
+      if (!wall[i + 1]) next[i + 1] = 1;
+      if (!wall[i - W]) next[i - W] = 1;
+      if (!wall[i + W]) next[i + W] = 1;
+    }
+    cur = next;
+  }
+  // an opening drops whatever is narrower than the gap, such as the bit that leaked into a doorway
+  if (k > 1) {
+    for (let i = 0; i < k; i++) cur = maskPass(cur, W, H, true, false);
+    for (let i = 0; i < k; i++) cur = maskPass(cur, W, H, false, false);
+    for (let i = 0; i < k; i++) cur = maskPass(cur, W, H, true, true);
+    for (let i = 0; i < k; i++) cur = maskPass(cur, W, H, false, true);
+  }
+  const cells = [];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (cur[y * W + x]) cells.push([ox + (X0 + x + 0.5) * RES, oy + (Y0 + y + 0.5) * RES]);
+  const A = cells.length * RES * RES;
+  if (A < 3000) return null;
+  const box = [Infinity, Infinity, -Infinity, -Infinity];
+  cells.forEach(([x, y]) => { box[0] = Math.min(box[0], x); box[1] = Math.min(box[1], y); box[2] = Math.max(box[2], x); box[3] = Math.max(box[3], y); });
+  const theta = gridAngle(box), c = Math.cos(theta), s = Math.sin(theta);
+  const toXY = (u, v) => [u * c - v * s, u * s + v * c];
+  const frame = cells.map(([x, y]) => [x * c + y * s, -x * s + y * c]);
+  let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+  frame.forEach(([u, v]) => { u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v); });
+  u0 -= RES / 2; u1 += RES / 2; v0 -= RES / 2; v1 += RES / 2;
+  const w = u1 - u0, h = v1 - v0;
+  const finish = (ring, kind, curve) => ({ ring: ring.map((p) => [round1(p[0]), round1(p[1])]), kind, curve });
+  // rectangle
+  if (A / (w * h) >= 0.9) {
+    const a = snapLine(theta, "V", u0, v0, v1), b = snapLine(theta, "V", u1, v0, v1);
+    const d = snapLine(theta, "U", v0, a, b), e = snapLine(theta, "U", v1, a, b);
+    return finish([toXY(a, d), toXY(b, d), toXY(b, e), toXY(a, e)], "rect");
+  }
+  // circle
+  const centre = cells.reduce((sum, p) => [sum[0] + p[0] / cells.length, sum[1] + p[1] / cells.length], [0, 0]);
+  const radius = Math.sqrt(A / Math.PI);
+  const inside = cells.reduce((count, p) => count + (dist(p, centre) <= radius ? 1 : 0), 0) * RES * RES;
+  if (w / h > 0.88 && w / h < 1.14 && inside / (A + Math.PI * radius * radius - inside) >= 0.92) {
+    return finish(circleRing(centre, [centre[0] + radius, centre[1]]), "circle", { type: "circle", center: [round1(centre[0]), round1(-centre[1])], radius: round1(radius) });
+  }
+  // half circle: the flat side is one of the four sides of the box, the arc bulges to the other side
+  let semi = null;
+  [["bottom", w, h, [(u0 + u1) / 2, v0], [0, 1]], ["top", w, h, [(u0 + u1) / 2, v1], [0, -1]], ["left", h, w, [u0, (v0 + v1) / 2], [1, 0]], ["right", h, w, [u1, (v0 + v1) / 2], [-1, 0]]].forEach(([, chord, depth, mid, dir]) => {
+    const rr = chord / 2;
+    if (depth < chord * 0.375 || depth > chord * 0.625) return;
+    let inter = 0;
+    frame.forEach(([u, v]) => { const du = u - mid[0], dv = v - mid[1]; if (du * dir[0] + dv * dir[1] >= -RES / 2 && Math.hypot(du, dv) <= rr) inter += 1; });
+    inter *= RES * RES;
+    const iou = inter / (A + (Math.PI * rr * rr) / 2 - inter);
+    if (iou >= 0.9 && (!semi || iou > semi.iou)) semi = { iou, rr, mid, dir };
+  });
+  if (semi) {
+    const along = [-semi.dir[1], semi.dir[0]];
+    const a = toXY(semi.mid[0] - along[0] * semi.rr, semi.mid[1] - along[1] * semi.rr), b = toXY(semi.mid[0] + along[0] * semi.rr, semi.mid[1] + along[1] * semi.rr);
+    const side = toXY(semi.mid[0] + semi.dir[0] * semi.rr, semi.mid[1] + semi.dir[1] * semi.rr);
+    return finish(semicircleRing(a, b, side), "semi", { type: "semicircle", a: [round1(a[0]), round1(-a[1])], b: [round1(b[0]), round1(-b[1])] });
+  }
+  // the biggest rectangle that fits, grown outwards over bites and bumps, as a fallback for rooms that are "mostly a box"
+  let boxy = null;
+  if (theta === 0) {
+    const big = largestRect(cur, W, H);
+    if (big.area) {
+      let { x0: a0, x1: a1, y0: b0, y1: b1 } = big;
+      const filled = (x, y) => (x >= 0 && y >= 0 && x < W && y < H && cur[y * W + x] ? 1 : 0);
+      const strip = (horizontal, at, from, to) => { let count = 0; for (let i = from; i < to; i++) count += horizontal ? filled(i, at) : filled(at, i); return count / Math.max(1, to - from); };
+      for (let guard = 0, grew = true; grew && guard < 400; guard++) {
+        grew = false;
+        if (a0 > 0 && strip(false, a0 - 1, b0, b1) >= 0.6) { a0 -= 1; grew = true; }
+        if (a1 < W && strip(false, a1, b0, b1) >= 0.6) { a1 += 1; grew = true; }
+        if (b0 > 0 && strip(true, b0 - 1, a0, a1) >= 0.6) { b0 -= 1; grew = true; }
+        if (b1 < H && strip(true, b1, a0, a1) >= 0.6) { b1 += 1; grew = true; }
+      }
+      let inside = 0;
+      for (let y = Math.max(0, b0); y < Math.min(H, b1); y++) for (let x = Math.max(0, a0); x < Math.min(W, a1); x++) inside += cur[y * W + x];
+      const iou = inside / (cells.length + (a1 - a0) * (b1 - b0) - inside);
+      const px = (v) => ox + (X0 + v) * RES, py = (v) => oy + (Y0 + v) * RES;
+      const sa = snapLine(0, "V", px(a0), py(b0), py(b1)), sb = snapLine(0, "V", px(a1), py(b0), py(b1));
+      const sd = snapLine(0, "U", py(b0), sa, sb), se = snapLine(0, "U", py(b1), sa, sb);
+      boxy = { iou, ring: [[sa, sd], [sb, sd], [sb, se], [sa, se]] };
+      if (iou >= 0.8) return finish(boxy.ring, "rect");
+    }
+  }
+  // anything else: trace it, drop the staircase, then square the sides up to the drawing's grid
+  const outline = traceOutline(cur, W, H);
+  if (!outline || outline.length < 4) return null;
   let far = 0, farD = -1;
   outline.forEach((p, i) => { const d = dist(p, outline[0]); if (d > farD) { farD = d; far = i; } });
-  const tol = 1.4;
-  let px = [...douglasPeucker(outline.slice(0, far + 1), tol).slice(0, -1), ...douglasPeucker([...outline.slice(far), outline[0]], tol).slice(0, -1)];
-  let pts = px.map(([x, y]) => [ox + x * WAND.RES, oy + y * WAND.RES]);
-  const axis = (4 * Math.PI) / 180;
-  for (let pass = 0; pass < 3; pass++) for (let i = 0; i < pts.length; i++) {
-    const a = pts[i], b = pts[(i + 1) % pts.length];
-    const dx = b[0] - a[0], dy = b[1] - a[1];
-    if (Math.hypot(dx, dy) < 30) continue;
-    const angle = Math.atan2(Math.abs(dy), Math.abs(dx));
-    if (angle < axis) { const v = (a[1] + b[1]) / 2; a[1] = v; b[1] = v; }
-    else if (Math.PI / 2 - angle < axis) { const v = (a[0] + b[0]) / 2; a[0] = v; b[0] = v; }
-  }
-  pts = pts.map((p) => {
-    let best = null;
-    for (const key of cellsAround(p, 25)) for (const i of ptGrid.get(key) || []) {
-      const d = dist(p, DATA.points[i]);
-      if (d <= 25 && (!best || d < best.d)) best = { d, p: DATA.points[i] };
-    }
-    return best ? [best.p[0], best.p[1]] : p;
-  });
-  pts = pts.filter((p, i) => dist(p, pts[(i + pts.length - 1) % pts.length]) > 5);
-  pts = pts.filter((p, i) => {
-    const a = pts[(i + pts.length - 1) % pts.length], b = pts[(i + 1) % pts.length];
+  const px = [...douglasPeucker(outline.slice(0, far + 1), 2).slice(0, -1), ...douglasPeucker([...outline.slice(far), outline[0]], 2).slice(0, -1)];
+  let ring = squareUp(px.map(([x, y]) => [ox + (X0 + x) * RES, oy + (Y0 + y) * RES]), theta);
+  if (!ring) return null;
+  ring = ring.filter((p, i) => dist(p, ring[(i + ring.length - 1) % ring.length]) > 5);
+  ring = ring.filter((p, i) => {
+    const a = ring[(i + ring.length - 1) % ring.length], b = ring[(i + 1) % ring.length];
     return Math.abs((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])) / Math.max(1, dist(a, b)) > 3;
   });
-  if (pts.length < 3 || area(pts) < 3000) return null;
-  return pts.map((p) => [round1(p[0]), round1(p[1])]);
+  if (ring.length < 3 || area(ring) < 3000) return null;
+  // a ragged outline that is still mostly a box is better as the box
+  if (boxy && boxy.iou >= 0.7 && ring.length > 10) return finish(boxy.ring, "rect");
+  return finish(ring, "polygon");
 }
-const wandCell = (r, p) => [Math.round((p[0] - r.ox) / WAND.RES), Math.round((p[1] - r.oy) / WAND.RES)];
+const wandNote = (shape, r) => `魔術棒預覽：${KIND_NAMES[shape.kind]}，約 ${(area(shape.ring) / 10000).toFixed(1)} m²（缺口容忍 ${r.gap} 公分）。點一下建立；按住拖曳可塗抹合併`;
 function wandHover(raw) {
-  const r = wandRaster(raw), [x, y] = wandCell(r, raw);
-  const mask = new Uint8Array(r.n * r.n);
-  wandPreview = wandFill(r, mask, x, y) ? wandRing(r, mask) : null;
+  const found = wandTry(raw);
+  wandPreview = found ? wandShape(found.r, found.mask) : null;
+  $("hint").textContent = wandPreview ? wandNote(wandPreview, found.r) : HINTS.wand;
   renderOverlay();
 }
 function wandAdd(raw) {
   const [x, y] = wandCell(wand.r, raw);
   if (x < 0 || y < 0 || x >= wand.r.n || y >= wand.r.n) return;
   if (wand.mask[y * wand.r.n + x]) return;
-  if (wandFill(wand.r, wand.mask, x, y)) { wand.any = true; wandPreview = wandRing(wand.r, wand.mask); }
+  if (wandFill(wand.r, wand.mask, x, y)) { wand.any = true; wandPreview = wandShape(wand.r, wand.mask); }
   else wand.failed = true;
 }
 function wandDown(e, raw) {
   clearTimeout(wandTimer);
-  const r = wandRaster(raw);
-  wand = { r, mask: new Uint8Array(r.n * r.n), any: false, failed: false, path: [screenPoint(e.clientX, e.clientY)] };
+  const found = wandTry(raw);
+  const r = found ? found.r : wandRaster(raw, wandGap === "auto" ? WAND.AUTO.at(-1) : Number(wandGap));
+  wand = { r, mask: found ? found.mask : new Uint8Array(r.n * r.n), any: !!found, failed: !found, path: [screenPoint(e.clientX, e.clientY)] };
+  if (found) wandPreview = wandShape(r, wand.mask);
   drag = { type: "wand" };
-  wandAdd(raw);
   renderOverlay();
 }
 function wandMove(e, raw) {
@@ -1377,16 +1607,16 @@ function wandMove(e, raw) {
 function wandUp() {
   const stroke = wand;
   wand = null;
-  const ring = stroke?.any ? wandPreview : null;
+  const shape = stroke?.any ? wandPreview : null;
   wandPreview = null;
-  if (!ring) {
+  if (!shape) {
     $("hint").textContent = stroke?.failed
-      ? "這裡圍不起來：底圖有比「缺口容忍」更大的缺口，或範圍太大。可以調高缺口容忍，或先用牆補上缺口再試"
+      ? "這裡圍不起來：底圖的缺口太大、在室外，或範圍太大。可以先用牆補上缺口，或把缺口容忍調大再試"
       : "這裡找不到可以變成房間的範圍";
     renderOverlay();
     return;
   }
-  addRoom(ring);
+  addRoom(shape.ring, shape.curve || undefined);
   updateHint();
 }
 
@@ -1778,7 +2008,7 @@ $("undo").addEventListener("click", undo);
 $("redo").addEventListener("click", redo);
 $("tidy").addEventListener("click", tidy);
 $("select-all").addEventListener("click", selectAll);
-$("wand-gap").addEventListener("change", (e) => { wandGap = Number(e.target.value); wandCache = null; wandPreview = null; renderOverlay(); });
+$("wand-gap").addEventListener("change", (e) => { wandGap = e.target.value; wandCache.clear(); wandPreview = null; renderOverlay(); });
 $("zoom-in").addEventListener("click", () => zoomBy(1.4));
 $("zoom-out").addEventListener("click", () => zoomBy(1 / 1.4));
 $("zoom-fit").addEventListener("click", () => { fit(); applyView(); });
