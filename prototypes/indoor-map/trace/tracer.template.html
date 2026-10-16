@@ -56,7 +56,7 @@
   .list button[aria-current="true"] { background: #fde7df; }
   .list small { color: var(--muted); display: block; font-size: 11px; }
   .props { border-top: 1px solid var(--rule); font-size: 13px; max-height: 48%; overflow-y: auto; padding: 10px 14px; }
-  .props label { color: var(--muted); display: block; font-size: 12px; margin-top: 8px; }
+  .props label { color: var(--muted); display: block; font-size: 12px; margin: 8px 0 5px; }
   .props input[type="text"], .props select { border: 1px solid var(--rule); border-radius: 8px; padding: 6px 8px; width: 100%; }
   .results { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
   .results button { background: #f4f7fc; border: 1px solid var(--rule); border-radius: 8px; cursor: pointer; font-size: 12px; padding: 4px 8px; text-align: left; }
@@ -119,23 +119,24 @@
   .cselect-list li[data-active="true"] { background: #eef2f9; }
   .cselect-list li[aria-selected="true"] { color: #0d6f64; font-weight: 700; }
   .cselect-list li[aria-selected="true"]::after { content: "✓"; }
-  .card { background: #fbfcfe; border: 1px solid var(--rule); border-radius: 10px; margin-top: 14px; }
-  .card-head { align-items: center; background: transparent; border: 0; color: var(--ink); cursor: pointer; display: flex; font-size: 13px; font-weight: 700; justify-content: space-between; padding: 9px 12px; width: 100%; }
-  .card-head svg { color: var(--muted); height: 14px; transition: transform 0.15s; width: 14px; }
-  .card-head[aria-expanded="true"] svg { transform: rotate(180deg); }
-  .card-body { border-top: 1px solid var(--rule); display: grid; gap: 12px; padding: 12px; }
-  .card label { align-items: center; color: var(--ink-2); display: inline-flex; font-size: 12px; gap: 5px; margin: 0; }
-  .nudge { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 14px; justify-content: space-between; }
-  .keys { display: flex; gap: 4px; }
-  .keys button { background: #eef2f9; border: 0; border-radius: 8px; color: var(--ink); cursor: pointer; font-size: 15px; height: 32px; width: 34px; }
-  .keys button:hover { background: #dfe6f2; }
-  .card input[type="number"] { background: #fff; border: 1px solid var(--rule); border-radius: 8px; height: 30px; padding: 0 8px; width: 68px; }
-  .card .help { color: var(--muted); font-size: 11.5px; line-height: 1.5; margin: 4px 0 0; }
-  .card details summary { color: var(--ink-2); cursor: pointer; font-size: 12px; }
-  .exact { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-  .block { width: 100%; }
-  .props .btn.accent { background: var(--teal); color: #fff; }
-  .props .btn.accent:hover { background: #17a092; }
+  .selbar { align-items: center; background: #fff; border: 1px solid var(--rule); border-radius: 12px; box-shadow: 0 4px 16px rgba(20, 30, 60, 0.14); display: flex; flex-wrap: wrap; font-size: 13px; gap: 6px 10px; left: 50%; max-width: calc(100% - 130px); padding: 6px 8px 6px 14px; position: absolute; top: 12px; transform: translateX(-50%); z-index: 4; }
+  .selbar[hidden] { display: none; }
+  .selbar .count { color: var(--ink); font-weight: 700; white-space: nowrap; }
+  .selbar .sep { height: 22px; }
+  .selbar .keys { display: flex; gap: 3px; }
+  .selbar .keys button { background: #eef2f9; border: 0; border-radius: 8px; color: var(--ink); cursor: pointer; font-size: 15px; height: 30px; width: 32px; }
+  .selbar .keys button:hover { background: #dfe6f2; }
+  .selbar label { align-items: center; color: var(--ink-2); display: inline-flex; font-size: 12px; gap: 5px; white-space: nowrap; }
+  .selbar input[type="number"] { background: #fff; border: 1px solid var(--rule); border-radius: 8px; height: 28px; padding: 0 6px; width: 62px; }
+  .selbar .btn { padding: 5px 10px; white-space: nowrap; }
+  .selbar .close { background: transparent; border: 0; border-radius: 8px; color: var(--muted); cursor: pointer; font-size: 16px; height: 30px; width: 30px; }
+  .selbar .close:hover { background: #eef2f9; color: var(--ink); }
+  .selbar .step-note { color: var(--ink); }
+  .btn.danger { background: #fdecea; color: #b5382b; }
+  .btn.danger:hover:not(:disabled) { background: #fadbd7; }
+  .props .row .btn { flex: 1; }
+  .btn.accent { background: var(--teal); color: #fff; }
+  .btn.accent:hover { background: #17a092; }
   footer { background: #fff; border-top: 1px solid var(--rule); color: var(--ink-2); display: flex; flex-wrap: wrap; font-size: 12px; gap: 4px 18px; padding: 6px 14px; }
   footer b { color: var(--ink); }
 </style>
@@ -190,6 +191,7 @@
     <svg id="plan" aria-label="平面圖底圖、牆與房間"></svg>
     <svg id="overlay" class="overlay" aria-hidden="true"></svg>
     <div class="hint" id="hint"></div>
+    <div class="selbar" id="selbar" role="toolbar" aria-label="對所選物件的操作" hidden></div>
     <div class="coords" id="coords"></div>
     <div class="zoom" role="group" aria-label="縮放">
       <button type="button" id="zoom-in" aria-label="放大" title="放大">＋</button>
@@ -260,7 +262,6 @@ let wand = null;                  // a brush stroke in progress: { r, mask, any,
 let wandPreview = null;           // ring (page coordinates) the wand would create
 let wandGap = "auto", wandCache = new Map(), wandTimer = null;
 let stateRev = 0;                 // bumps whenever walls or rooms change, so cached rasters can be dropped
-let moveOpen = null;              // the move-and-align card: null follows the default for what is selected
 let stepCm = 50;                  // how far one nudge moves, typed by the user
 let listQuery = "", listUnset = false;
 let tool = "select";
@@ -870,7 +871,53 @@ function drawDraft() {
 
 const locationTitle = (room) =>
   room.locationCode ? `${room.locationCode}　${room.name || locationByCode.get(room.locationCode)?.name || ""}` : room.name || "（尚未設定存置地點）";
+const domEl = (tag, text, attrs = {}) => Object.assign(document.createElement(tag), text === undefined ? {} : { textContent: text }, attrs);
+/** The bar over the map for whatever is selected: align it to the drawing, nudge it, delete it. */
+function renderSelbar() {
+  const bar = $("selbar");
+  const items = selectedItems();
+  const show = tool === "select" && items.rooms.length + items.walls.length > 0;
+  const signature = show ? `${items.rooms.length}|${items.walls.length}|${align ? align.stage : ""}` : "";
+  bar.hidden = !show;
+  if (bar.dataset.sig === signature) return;       // keep the step field alive while moving things around
+  bar.dataset.sig = signature;
+  bar.replaceChildren();
+  if (!show) return;
+  if (align) {
+    bar.append(domEl("span", align.stage === "pick" ? "對齊 ‧ 第 1 步：點所選範圍上的一個頂點（紅點）" : "對齊 ‧ 第 2 步：點底圖上要貼齊的端點或邊線", { className: "step-note" }));
+    const cancel = domEl("button", "取消　Esc", { type: "button", className: "btn" });
+    cancel.addEventListener("click", cancelAlign);
+    bar.append(cancel);
+    return;
+  }
+  const parts = [];
+  if (items.rooms.length) parts.push(`${items.rooms.length} 個房間`);
+  if (items.walls.length) parts.push(`${items.walls.length} 道牆`);
+  bar.append(domEl("span", "已選取 " + parts.join("、"), { className: "count" }));
+  const alignButton = domEl("button", "對齊到底圖", { type: "button", className: "btn accent", title: "先點所選範圍上的一個頂點，再點底圖要貼齊的端點或邊線，整組會一起移過去" });
+  alignButton.addEventListener("click", startAlign);
+  bar.append(alignButton, domEl("span", undefined, { className: "sep" }));
+  const keys = domEl("div", undefined, { className: "keys" });
+  [["往左", "←", -1, 0], ["往上", "↑", 0, -1], ["往下", "↓", 0, 1], ["往右", "→", 1, 0]].forEach(([name, arrow, dx, dy]) => {
+    const b = domEl("button", arrow, { type: "button", title: `${name}移動一步（也可用鍵盤方向鍵，Shift 加大十倍）` });
+    b.setAttribute("aria-label", name);
+    b.addEventListener("click", () => moveSelection(dx * stepCm, dy * stepCm));
+    keys.append(b);
+  });
+  const step = domEl("label", "一步 ");
+  const stepInput = domEl("input", undefined, { type: "number", min: "0.1", step: "any", value: String(stepCm), title: "方向鍵每按一次移動的距離" });
+  stepInput.addEventListener("input", () => { const v = Number(stepInput.value); if (v > 0) stepCm = v; });
+  step.append(stepInput, document.createTextNode(" 公分"));
+  bar.append(keys, step, domEl("span", undefined, { className: "sep" }));
+  const del = domEl("button", "刪除", { type: "button", className: "btn danger", title: "刪除所選（Delete）" });
+  del.addEventListener("click", deleteSelected);
+  const close = domEl("button", "✕", { type: "button", className: "close", title: "取消選取（Esc）" });
+  close.setAttribute("aria-label", "取消選取");
+  close.addEventListener("click", () => { setSelection([], []); refresh(); });
+  bar.append(del, close);
+}
 function renderPanel() {
+  renderSelbar();
   const list = $("list");
   list.replaceChildren();
   const shown = visibleRooms();
@@ -896,61 +943,13 @@ function renderPanel() {
   const add = (node) => props.append(node);
   const el = (tag, text, attrs = {}) => Object.assign(document.createElement(tag), text === undefined ? {} : { textContent: text }, attrs);
   // Moving what is selected: a step the user types, exact offsets, and "put this corner on that point of the drawing".
-  const moveSection = (openByDefault) => {
-    const open = moveOpen === null ? openByDefault : moveOpen;
-    const box = el("section", undefined, { className: "card" });
-    const head = el("button", undefined, { type: "button", className: "card-head" });
-    head.setAttribute("aria-expanded", String(open));
-    head.append(el("span", "移動與對齊"));
-    head.insertAdjacentHTML("beforeend", CHEVRON);
-    head.addEventListener("click", () => { moveOpen = !open; renderPanel(); });
-    box.append(head);
-    if (!open) return box;
-    const body = el("div", undefined, { className: "card-body" });
-    // nudge: four arrows and the distance of one step
-    const nudge = el("div", undefined, { className: "nudge" });
-    const keys = el("div", undefined, { className: "keys" });
-    [["往左", "←", -1, 0], ["往上", "↑", 0, -1], ["往下", "↓", 0, 1], ["往右", "→", 1, 0]].forEach(([name, arrow, dx, dy]) => {
-      const b = el("button", arrow, { type: "button", title: `${name}移動（也可用鍵盤方向鍵，Shift 加大十倍）` });
-      b.setAttribute("aria-label", name);
-      b.addEventListener("click", () => moveSelection(dx * stepCm, dy * stepCm));
-      keys.append(b);
-    });
-    const step = el("label", "每次 ");
-    const stepInput = el("input", undefined, { type: "number", min: "0.1", step: "any", value: String(stepCm) });
-    stepInput.addEventListener("input", () => { const v = Number(stepInput.value); if (v > 0) stepCm = v; });
-    step.append(stepInput, document.createTextNode(" 公分"));
-    nudge.append(keys, step);
-    body.append(nudge);
-    // align to the drawing
-    const alignBox = el("div");
-    const alignButton = el("button", align ? "取消對齊" : "對齊到底圖…", { type: "button", className: "btn accent block" });
-    alignButton.addEventListener("click", () => { if (align) cancelAlign(); else startAlign(); });
-    alignBox.append(alignButton, el("p", "先點所選範圍上的一個頂點，再點底圖要貼齊的端點或邊線。", { className: "help" }));
-    body.append(alignBox);
-    // exact distances stay out of the way until asked for
-    const exact = el("details");
-    exact.append(el("summary", "輸入精確距離"));
-    const fields = el("div", undefined, { className: "exact" });
-    const dxInput = el("input", undefined, { type: "number", step: "any", value: "0" });
-    const dyInput = el("input", undefined, { type: "number", step: "any", value: "0" });
-    const apply = el("button", "移動", { type: "button", className: "btn" });
-    apply.addEventListener("click", () => moveSelection(Number(dxInput.value) || 0, -(Number(dyInput.value) || 0)));
-    const lx = el("label", "向右 "); lx.append(dxInput);
-    const ly = el("label", "向上 "); ly.append(dyInput);
-    fields.append(lx, ly, apply);
-    exact.append(fields, el("p", "單位公分，負數代表反方向。", { className: "help" }));
-    body.append(exact);
-    box.append(body);
-    return box;
-  };
+
   if (group) {
     const items = selectedItems();
     add(el("div", `已選取 ${items.rooms.length} 個房間、${items.walls.length} 道牆`));
-    add(el("div", "可以拖曳任一個已選取的物件整組移動；Shift＋點擊增減選取；Esc 取消選取。", { className: "note" }));
-    add(moveSection(true));
+    add(el("div", "拖曳任一個已選取的物件可整組移動；上方工具列可以對齊到底圖、用方向鍵微調或刪除；Shift＋點擊增減選取。", { className: "note" }));
     const row = el("div", undefined, { className: "row" });
-    const del = el("button", "刪除所選", { type: "button", className: "btn" });
+    const del = el("button", "刪除所選", { type: "button", className: "btn danger" });
     del.addEventListener("click", deleteSelected);
     row.append(del);
     add(row);
@@ -959,9 +958,8 @@ function renderPanel() {
     for (let i = 0; i + 1 < wall.pts.length; i++) length += dist(wall.pts[i], wall.pts[i + 1]);
     add(el("div", `牆 ${wall.id}：${wall.pts.length} 個頂點，長約 ${(length / 100).toFixed(1)} m${wall.curve ? "（弧形）" : ""}`));
     add(el("div", "拖曳白點可移動端點；牆圍成封閉區域會自動生成房間。", { className: "note" }));
-    add(moveSection(false));
     const row = el("div", undefined, { className: "row" });
-    const del = el("button", "刪除這道牆", { type: "button", className: "btn" });
+    const del = el("button", "刪除這道牆", { type: "button", className: "btn danger" });
     del.addEventListener("click", deleteSelected);
     row.append(del);
     add(row);
@@ -1026,9 +1024,8 @@ function renderPanel() {
     }).el);
     add(typeField);
     add(el("div", `${room.auto ? "由牆生成。" : "手動描繪。"}面積約 ${(roomArea(room) / 10000).toFixed(1)} m²（以單位為公分推算${room.holes?.length ? `，已扣除裡面的 ${room.holes.length} 個房間` : ""}）`, { className: "note" }));
-    add(moveSection(false));
     const row = el("div", undefined, { className: "row" });
-    const del = el("button", "刪除此房間", { type: "button", className: "btn" });
+    const del = el("button", "刪除此房間", { type: "button", className: "btn danger" });
     del.addEventListener("click", deleteSelected);
     row.append(del);
     add(row);
@@ -1046,6 +1043,7 @@ function setTool(next) {
   stage.classList.toggle("select", tool === "select");
   stage.classList.remove("aligning");
   align = null; wand = null; wandPreview = null;
+  renderSelbar();
   $("wand-opts").hidden = tool !== "wand";
   updateHint();
   renderOverlay();
@@ -1892,7 +1890,7 @@ const mostlyClick = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 6;
 
 stage.addEventListener("contextmenu", (e) => e.preventDefault());
 stage.addEventListener("pointerdown", (e) => {
-  if (e.target.closest?.(".zoom, .helpcard")) return;
+  if (e.target.closest?.(".zoom, .helpcard, .selbar")) return;
   stage.setPointerCapture?.(e.pointerId);
   if (e.button === 1 || e.button === 2 || spaceDown) { drag = { type: "pan", x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty }; stage.classList.add("panning"); return; }
   if (e.button !== 0) return;
