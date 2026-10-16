@@ -123,6 +123,7 @@
     <button type="button" data-tool="poly" aria-pressed="false" title="逐點描出任意形狀的房間">多邊形<kbd>P</kbd></button>
     <button type="button" data-tool="semi" aria-pressed="false" title="點直徑兩端，再點一側">半圓<kbd>C</kbd></button>
     <button type="button" data-tool="circle" aria-pressed="false" title="點圓心，再點半徑">圓<kbd>O</kbd></button>
+    <button type="button" data-tool="wand" aria-pressed="false" title="魔術棒：點一下房間內部，自動找出封閉範圍；按住拖曳塗抹可合併多處">魔術棒<kbd>M</kbd></button>
   </div>
   <div class="group">
     <button type="button" id="undo" title="復原 Ctrl+Z">↶ 復原</button>
@@ -144,6 +145,12 @@
     <button type="button" id="toggle-snap" aria-pressed="true" title="吸附到牆線端點與其他物件">吸附</button>
   </div>
   <span class="sep"></span>
+  <span id="wand-opts" hidden>
+    <label class="label-s" title="底圖牆線有門口或小缺口時，魔術棒仍視為封閉的最大缺口寬度">缺口容忍
+      <select id="wand-gap"><option value="0">0 公分</option><option value="50">50 公分</option><option value="100" selected>100 公分</option><option value="150">150 公分</option><option value="250">250 公分</option></select>
+    </label>
+    <span class="sep"></span>
+  </span>
   <button type="button" class="btn" id="select-all" title="選取所有牆與房間，之後可整組移動、對齊到底圖">全選<kbd>Ctrl+A</kbd></button>
   <button type="button" class="btn" id="generate" title="依目前的牆重新產生房間">由牆生成房間</button>
   <button type="button" class="btn" id="tidy" title="頂點靠攏、邊線拉直、相鄰物件共邊">自動整理</button>
@@ -168,7 +175,7 @@
         <dt>移動</dt><dd>拖曳選取的物件；方向鍵微調（Shift 加大十倍）；步距可在右側自行輸入</dd>
         <dt>對齊底圖</dt><dd>右側「對齊到底圖」：先點選取範圍上的一個頂點，再點底圖的端點或邊線</dd>
         <dt>編輯</dt><dd>拖曳白點移動頂點；雙擊邊線加點；Delete 刪除；Ctrl+Z、Ctrl+Y 復原重做</dd>
-        <dt>工具</dt><dd>V 選取、W 牆、A 弧牆、R 矩形、P 多邊形、C 半圓、O 圓</dd>
+        <dt>工具</dt><dd>V 選取、W 牆、A 弧牆、R 矩形、P 多邊形、C 半圓、O 圓、M 魔術棒</dd>
       </dl>
     </div>
   </div>
@@ -199,6 +206,7 @@ const HINTS = {
   poly: "逐點描房間外形；Enter、雙擊或點回第一點完成；Backspace 退一點；Shift 鎖定水平／垂直",
   semi: "半圓房間：先點直徑的兩個端點，再把滑鼠移到要凸出的一側後點一下",
   circle: "圓形房間：先點圓心，再點圓周上的任一點",
+  wand: "魔術棒：游標移到房間內部會預覽範圍，點一下建立房間；按住拖曳塗抹可把多處合併成一間；範圍圍不起來時，調高「缺口容忍」或先用牆補上缺口",
 };
 const SVGNS = "http://www.w3.org/2000/svg";
 const $ = (id) => document.getElementById(id);
@@ -219,6 +227,10 @@ let selectedVertex = null;
 let group = null;                 // { rooms: [ids], walls: [ids] } while several things are selected
 let align = null;                 // { stage: "pick" | "target", from, cap, cursor, hover }
 let marquee = null;               // { a, b } in screen pixels
+let wand = null;                  // a brush stroke in progress: { r, mask, any, last, path }
+let wandPreview = null;           // ring (page coordinates) the wand would create
+let wandGap = 100, wandCache = null, wandTimer = null;
+let stateRev = 0;                 // bumps whenever walls or rooms change, so cached rasters can be dropped
 let stepCm = 50;                  // how far one nudge moves, typed by the user
 let listQuery = "", listUnset = false;
 let tool = "select";
@@ -447,6 +459,7 @@ function load() {
 }
 /** Redraw everything.  `regenerate` re-derives the rooms from the walls (when live). */
 function changed(record = true, regenerate = true) {
+  stateRev += 1;
   if (record) save();
   if (regenerate && liveRooms && walls.length) scheduleGenerate();
   renderScene();
@@ -609,8 +622,36 @@ function wallFaces(segments, minArea = 3000) {
     return cross > 0.3;
   }));
 }
+/** A room drawn by hand that a wall runs all the way through becomes two (or more) rooms. */
+function splitManualRooms() {
+  if (!walls.length) return;
+  const allWalls = wallSegments().map(([a, b]) => [a, b]);
+  const out = [];
+  for (const room of rooms) {
+    if (room.auto) { out.push(room); continue; }
+    const xs = room.ring.map((p) => p[0]), ys = room.ring.map((p) => p[1]);
+    const x0 = Math.min(...xs) - 10, x1 = Math.max(...xs) + 10, y0 = Math.min(...ys) - 10, y1 = Math.max(...ys) + 10;
+    const near = allWalls.filter(([a, b]) => !(Math.max(a[0], b[0]) < x0 || Math.min(a[0], b[0]) > x1 || Math.max(a[1], b[1]) < y0 || Math.min(a[1], b[1]) > y1));
+    if (!near.length) { out.push(room); continue; }
+    const edges = [room.ring, ...(room.holes || [])].flatMap((ring) => ring.map((p, i) => [p, ring[(i + 1) % ring.length]]));
+    const pieces = wallFaces([...edges, ...near], 500).filter((ring) => inRoom(room, interiorPoint(ring)));
+    const total = pieces.reduce((sum, ring) => sum + area(ring), 0);
+    // Only a clean partition counts: pieces that overlap or leave gaps mean the walls did not really cut the room.
+    if (pieces.length < 2 || Math.abs(total - roomArea(room)) > roomArea(room) * 0.02) { out.push(room); continue; }
+    pieces.sort((p, q) => area(q) - area(p));
+    pieces.forEach((ring, i) => {
+      const clean = ring.map((p) => [round1(p[0]), round1(p[1])]);
+      out.push(i === 0
+        ? { ...room, ring: clean, holes: undefined, curve: undefined }
+        : { id: newId("T"), name: "", locationCode: "", type: room.type, ring: clean });
+    });
+  }
+  rooms = out;
+  rooms.forEach((r) => { if (r.holes === undefined) delete r.holes; if (r.curve === undefined) delete r.curve; });
+}
 function generateRooms() {
   generateTimer = null;
+  splitManualRooms();
   const segments = wallSegments().map(([a, b]) => [a, b]);
   const old = rooms.filter((r) => r.auto);
   const keep = rooms.filter((r) => !r.auto);
@@ -690,6 +731,13 @@ function renderOverlay() {
     });
   }
   if (draft) drawDraft();
+  if (wandPreview) {
+    const d = wandPreview.map((p, i) => { const [sx, sy] = toScreen(p); return (i ? "L" : "M") + sx + " " + sy; }).join("") + "Z";
+    make("path", { class: "ghost", d }, overlay);
+  }
+  if (wand && wand.path.length > 1) {
+    make("path", { d: wand.path.map((p, i) => (i ? "L" : "M") + p[0] + " " + p[1]).join(""), fill: "none", stroke: "#1fb5a5", "stroke-width": 3, "stroke-linecap": "round", opacity: 0.6 }, overlay);
+  }
   if (align) drawAlign();
   if (marquee) {
     const x = Math.min(marquee.a[0], marquee.b[0]), y = Math.min(marquee.a[1], marquee.b[1]);
@@ -891,7 +939,8 @@ function setTool(next) {
   document.querySelectorAll("#tools button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.tool === tool)));
   stage.classList.toggle("select", tool === "select");
   stage.classList.remove("aligning");
-  align = null;
+  align = null; wand = null; wandPreview = null;
+  $("wand-opts").hidden = tool !== "wand";
   updateHint();
   renderOverlay();
 }
@@ -1151,6 +1200,196 @@ function importJson(text) {
   }
 }
 
+// ---- magic wand ------------------------------------------------------------------------------------------------
+// The underlay is drawn on a grid (10 cm per cell) around the cursor.  Lines are drawn fat enough to close door-sized
+// gaps, the area under the cursor is flooded, then grown back to the real lines and traced into a simple outline.
+const WAND = { RES: 10, HALF: 350, MIN_LINE: 60 };
+function wandRaster(center) {
+  const c = wandCache, reach = WAND.HALF * WAND.RES * 0.55;
+  if (c && c.rev === stateRev && c.gap === wandGap && Math.abs(center[0] - c.center[0]) < reach && Math.abs(center[1] - c.center[1]) < reach) return c;
+  const { RES, HALF, MIN_LINE } = WAND, n = HALF * 2;
+  const ox = center[0] - HALF * RES, oy = center[1] - HALF * RES;
+  const layers = [1.2, Math.max(1.2, wandGap / RES)].map((width) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = n;
+    const g = canvas.getContext("2d", { willReadFrequently: true });
+    g.strokeStyle = "#000"; g.lineWidth = width; g.lineCap = "round"; g.lineJoin = "round";
+    g.beginPath();
+    return g;
+  });
+  const path = (pts, closed) => layers.forEach((g) => {
+    pts.forEach((p, i) => g[i ? "lineTo" : "moveTo"]((p[0] - ox) / RES, (p[1] - oy) / RES));
+    if (closed) g.closePath();
+  });
+  const seen = new Set();
+  for (const key of cellsAround(center, HALF * RES)) for (const i of segGrid.get(key) || []) {
+    if (seen.has(i)) continue;
+    seen.add(i);
+    const s = DATA.segments[i];
+    if (Math.hypot(s[2] - s[0], s[3] - s[1]) >= MIN_LINE) path([[s[0], s[1]], [s[2], s[3]]], false);
+  }
+  walls.forEach((w) => path(w.pts, false));
+  rooms.forEach((r) => path(r.ring, true));
+  const [thin, thick] = layers.map((g) => {
+    g.stroke();
+    const data = g.getImageData(0, 0, n, n).data;
+    const flags = new Uint8Array(n * n);
+    for (let i = 0; i < flags.length; i++) flags[i] = data[i * 4 + 3] > 40 ? 1 : 0;
+    return flags;
+  });
+  wandCache = { center, ox, oy, n, thin, thick, rev: stateRev, gap: wandGap };
+  return wandCache;
+}
+/** Flood the open area around cell (x, y) into `mask`.  False when there is nothing there or the area is not closed. */
+function wandFill(r, mask, x, y) {
+  const { n, thick } = r;
+  let sx = -1, sy = -1;
+  for (let d = 0; d <= 4 && sx < 0; d++) for (let dy = -d; dy <= d && sx < 0; dy++) for (let dx = -d; dx <= d; dx++) {
+    const xx = x + dx, yy = y + dy;
+    if (xx >= 0 && yy >= 0 && xx < n && yy < n && !thick[yy * n + xx]) { sx = xx; sy = yy; break; }
+  }
+  if (sx < 0) return false;
+  if (mask[sy * n + sx]) return true;
+  const stack = [sy * n + sx], touched = [sy * n + sx];
+  mask[sy * n + sx] = 1;
+  let leaked = false;
+  while (stack.length) {
+    const i = stack.pop(), cx = i % n, cy = (i - cx) / n;
+    if (cx === 0 || cy === 0 || cx === n - 1 || cy === n - 1) { leaked = true; continue; }
+    for (const j of [i - 1, i + 1, i - n, i + n]) if (!thick[j] && !mask[j]) { mask[j] = 1; stack.push(j); touched.push(j); }
+  }
+  if (leaked) { touched.forEach((i) => { mask[i] = 0; }); return false; }
+  return true;
+}
+function douglasPeucker(pts, tol) {
+  if (pts.length < 3) return pts;
+  const a = pts[0], b = pts[pts.length - 1];
+  let far = -1, best = tol;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const d = dist(pts[i], closestOnSegment(pts[i], a, b).point);
+    if (d > best) { best = d; far = i; }
+  }
+  if (far < 0) return [a, b];
+  return [...douglasPeucker(pts.slice(0, far + 1), tol).slice(0, -1), ...douglasPeucker(pts.slice(far), tol)];
+}
+/** Outline (page coordinates) of the filled area, grown back to the real lines, simplified and squared up. */
+function wandRing(r, mask) {
+  const { n, thin, ox, oy } = r;
+  let cur = mask;
+  for (let s = Math.round(wandGap / WAND.RES / 2); s > 0; s--) {
+    const next = Uint8Array.from(cur);
+    for (let i = n + 1; i < n * n - n - 1; i++) if (cur[i]) for (const j of [i - 1, i + 1, i - n, i + n]) if (!thin[j]) next[j] = 1;
+    cur = next;
+  }
+  const W = n + 1, out = new Map();
+  const add = (x1, y1, x2, y2) => { const k = y1 * W + x1; if (!out.has(k)) out.set(k, []); out.get(k).push(y2 * W + x2); };
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    if (!cur[y * n + x]) continue;
+    if (y === 0 || !cur[(y - 1) * n + x]) add(x, y, x + 1, y);
+    if (x === n - 1 || !cur[y * n + x + 1]) add(x + 1, y, x + 1, y + 1);
+    if (y === n - 1 || !cur[(y + 1) * n + x]) add(x + 1, y + 1, x, y + 1);
+    if (x === 0 || !cur[y * n + x - 1]) add(x, y + 1, x, y);
+  }
+  let outline = null, outlineArea = 0;
+  for (const [startKey, ends] of out) {
+    while (ends.length) {
+      const loop = [startKey];
+      let key = ends.pop(), guard = 0;
+      while (key !== startKey && guard++ < 200000) {
+        loop.push(key);
+        const options = out.get(key);
+        if (!options || !options.length) break;
+        key = options.pop();
+      }
+      if (key !== startKey) continue;
+      const pts = loop.map((k) => [k % W, Math.floor(k / W)]);
+      const a = Math.abs(signedArea(pts));
+      if (a > outlineArea) { outlineArea = a; outline = pts; }
+    }
+  }
+  if (!outline || outline.length < 4) return null;
+  // runs of equal direction collapse first, then Douglas-Peucker removes the staircase of diagonal and curved walls
+  outline = outline.filter((p, i) => {
+    const a = outline[(i + outline.length - 1) % outline.length], b = outline[(i + 1) % outline.length];
+    return (p[0] - a[0]) * (b[1] - p[1]) - (p[1] - a[1]) * (b[0] - p[0]) !== 0;
+  });
+  let far = 0, farD = -1;
+  outline.forEach((p, i) => { const d = dist(p, outline[0]); if (d > farD) { farD = d; far = i; } });
+  const tol = 1.4;
+  let px = [...douglasPeucker(outline.slice(0, far + 1), tol).slice(0, -1), ...douglasPeucker([...outline.slice(far), outline[0]], tol).slice(0, -1)];
+  let pts = px.map(([x, y]) => [ox + x * WAND.RES, oy + y * WAND.RES]);
+  const axis = (4 * Math.PI) / 180;
+  for (let pass = 0; pass < 3; pass++) for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    if (Math.hypot(dx, dy) < 30) continue;
+    const angle = Math.atan2(Math.abs(dy), Math.abs(dx));
+    if (angle < axis) { const v = (a[1] + b[1]) / 2; a[1] = v; b[1] = v; }
+    else if (Math.PI / 2 - angle < axis) { const v = (a[0] + b[0]) / 2; a[0] = v; b[0] = v; }
+  }
+  pts = pts.map((p) => {
+    let best = null;
+    for (const key of cellsAround(p, 25)) for (const i of ptGrid.get(key) || []) {
+      const d = dist(p, DATA.points[i]);
+      if (d <= 25 && (!best || d < best.d)) best = { d, p: DATA.points[i] };
+    }
+    return best ? [best.p[0], best.p[1]] : p;
+  });
+  pts = pts.filter((p, i) => dist(p, pts[(i + pts.length - 1) % pts.length]) > 5);
+  pts = pts.filter((p, i) => {
+    const a = pts[(i + pts.length - 1) % pts.length], b = pts[(i + 1) % pts.length];
+    return Math.abs((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])) / Math.max(1, dist(a, b)) > 3;
+  });
+  if (pts.length < 3 || area(pts) < 3000) return null;
+  return pts.map((p) => [round1(p[0]), round1(p[1])]);
+}
+const wandCell = (r, p) => [Math.round((p[0] - r.ox) / WAND.RES), Math.round((p[1] - r.oy) / WAND.RES)];
+function wandHover(raw) {
+  const r = wandRaster(raw), [x, y] = wandCell(r, raw);
+  const mask = new Uint8Array(r.n * r.n);
+  wandPreview = wandFill(r, mask, x, y) ? wandRing(r, mask) : null;
+  renderOverlay();
+}
+function wandAdd(raw) {
+  const [x, y] = wandCell(wand.r, raw);
+  if (x < 0 || y < 0 || x >= wand.r.n || y >= wand.r.n) return;
+  if (wand.mask[y * wand.r.n + x]) return;
+  if (wandFill(wand.r, wand.mask, x, y)) { wand.any = true; wandPreview = wandRing(wand.r, wand.mask); }
+  else wand.failed = true;
+}
+function wandDown(e, raw) {
+  clearTimeout(wandTimer);
+  const r = wandRaster(raw);
+  wand = { r, mask: new Uint8Array(r.n * r.n), any: false, failed: false, path: [screenPoint(e.clientX, e.clientY)] };
+  drag = { type: "wand" };
+  wandAdd(raw);
+  renderOverlay();
+}
+function wandMove(e, raw) {
+  if (drag?.type === "wand" && wand) {
+    const here = screenPoint(e.clientX, e.clientY), last = wand.path.at(-1);
+    if (Math.hypot(here[0] - last[0], here[1] - last[1]) >= 8) { wand.path.push(here); wandAdd(raw); renderOverlay(); }
+    return;
+  }
+  clearTimeout(wandTimer);
+  wandTimer = setTimeout(() => wandHover(raw), 60);
+}
+function wandUp() {
+  const stroke = wand;
+  wand = null;
+  const ring = stroke?.any ? wandPreview : null;
+  wandPreview = null;
+  if (!ring) {
+    $("hint").textContent = stroke?.failed
+      ? "這裡圍不起來：底圖有比「缺口容忍」更大的缺口，或範圍太大。可以調高缺口容忍，或先用牆補上缺口再試"
+      : "這裡找不到可以變成房間的範圍";
+    renderOverlay();
+    return;
+  }
+  addRoom(ring);
+  updateHint();
+}
+
 // ---- selection, moving and aligning ------------------------------------------------------------------------------
 const hasSelection = () => { const i = selectedItems(); return i.rooms.length + i.walls.length > 0; };
 function selectedItems() {
@@ -1377,6 +1616,7 @@ stage.addEventListener("pointerdown", (e) => {
     renderScene(); renderOverlay(); renderPanel();
     return;
   }
+  if (tool === "wand") { wandDown(e, raw); return; }
   const { p } = snap(raw, { from: draft?.pts?.at(-1), axis: e.shiftKey });
   const press = [e.clientX, e.clientY];
   if (tool === "rect") {
@@ -1483,6 +1723,7 @@ stage.addEventListener("pointermove", (e) => {
     renderScene(); renderOverlay();
     return;
   }
+  if (tool === "wand") { wandMove(e, raw); return; }
   const hit = tool === "select" ? { p: raw, kind: null } : snap(raw, { from: draft?.pts?.at(-1), axis: e.shiftKey });
   snapHit = hit;
   if (draft) draft.cursor = hit.p;
@@ -1492,6 +1733,7 @@ stage.addEventListener("pointerup", (e) => {
   const finished = drag;
   drag = null;
   stage.classList.remove("panning");
+  if (finished?.type === "wand") { wandUp(); return; }
   if (finished?.type === "marquee") { const m = marquee; marquee = null; finishMarquee(m); return; }
   if (finished?.type === "group") { if (finished.moved) changed(true, needsRegenerate(finished.cap)); return; }
   if (finished?.type === "vertex") { changed(true, false); return; }
@@ -1536,6 +1778,7 @@ $("undo").addEventListener("click", undo);
 $("redo").addEventListener("click", redo);
 $("tidy").addEventListener("click", tidy);
 $("select-all").addEventListener("click", selectAll);
+$("wand-gap").addEventListener("change", (e) => { wandGap = Number(e.target.value); wandCache = null; wandPreview = null; renderOverlay(); });
 $("zoom-in").addEventListener("click", () => zoomBy(1.4));
 $("zoom-out").addEventListener("click", () => zoomBy(1 / 1.4));
 $("zoom-fit").addEventListener("click", () => { fit(); applyView(); });
@@ -1602,7 +1845,7 @@ window.addEventListener("keydown", (e) => {
   }
   if (key === "f") { fit(); applyView(); return; }
   if (key === "?" ) { $("help").click(); return; }
-  const tools = { v: "select", w: "wall", a: "arcwall", r: "rect", p: "poly", c: "semi", o: "circle" };
+  const tools = { v: "select", w: "wall", a: "arcwall", r: "rect", p: "poly", c: "semi", o: "circle", m: "wand" };
   if (tools[key]) setTool(tools[key]);
   else if (key === "escape") {
     if (align) { cancelAlign(); return; }
