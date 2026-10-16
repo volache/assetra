@@ -58,8 +58,11 @@
   .props { border-top: 1px solid var(--rule); font-size: 13px; max-height: 48%; overflow-y: auto; padding: 10px 14px; }
   .props label { color: var(--muted); display: block; font-size: 12px; margin-top: 8px; }
   .props input[type="text"], .props select { border: 1px solid var(--rule); border-radius: 8px; padding: 6px 8px; width: 100%; }
-  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
-  .chips button { background: #fff5d6; border: 1px solid #ecd88c; border-radius: 999px; cursor: pointer; font-size: 12px; padding: 2px 9px; }
+  .results { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+  .results button { background: #f4f7fc; border: 1px solid var(--rule); border-radius: 8px; cursor: pointer; font-size: 12px; padding: 4px 8px; text-align: left; }
+  .results button:hover { background: #fde7df; }
+  .results small { color: var(--muted); }
+  .two { display: grid; gap: 8px; grid-template-columns: 1fr 1.4fr; }
   .row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .note { background: #eef6ff; border-radius: 8px; color: #2a4a7a; font-size: 12px; margin-top: 8px; padding: 6px 8px; }
   footer { background: #fff; border-top: 1px solid var(--rule); color: var(--ink-2); display: flex; flex-wrap: wrap; font-size: 12px; gap: 4px 18px; padding: 6px 14px; }
@@ -115,6 +118,8 @@
 const DATA = /*__TRACE_DATA__*/null;
 
 const STORE_KEY = "indoor-trace:" + DATA.title + ":" + DATA.source;
+const LOCATIONS = DATA.locations || [];
+const locationByCode = new Map(LOCATIONS.map((l) => [l.code, l]));
 const TYPE_NAMES = { room: "房間", public: "公共區域", void: "挑空／採光" };
 const HINTS = {
   select: "點房間或牆選取；拖曳白點移動頂點；雙擊邊線加點；Delete 刪除；空白處拖曳或按住空白鍵可平移",
@@ -352,7 +357,7 @@ const roomById = (id) => rooms.find((r) => r.id === id);
 const wallById = (id) => walls.find((w) => w.id === id);
 function addRoom(ring, curve) {
   pushHistory();
-  const room = { id: newId("T"), name: "", type: "room", ring: ring.map((p) => [round1(p[0]), round1(p[1])]) };
+  const room = { id: newId("T"), name: "", locationCode: "", type: "room", ring: ring.map((p) => [round1(p[0]), round1(p[1])]) };
   if (curve) room.curve = curve;
   rooms.push(room);
   selectedId = room.id; selectedWallId = null; selectedVertex = null;
@@ -367,9 +372,6 @@ function addWall(pts, curve) {
   walls.push(wall);
   selectedWallId = wall.id; selectedId = null; selectedVertex = null;
   changed();
-}
-function suggestions(room) {
-  return DATA.texts.filter((t) => inRing(room.ring, [t.x, t.y])).map((t) => t.t).filter((v, i, a) => a.indexOf(v) === i).slice(0, 12);
 }
 function semicircleRing(a, b, side, steps = 48) {
   const c = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
@@ -506,14 +508,15 @@ function generateRooms() {
   for (const ring of faces) {
     const anchor = interiorPoint(ring);
     if (suppressed.some((s) => inRing(ring, s))) continue;
-    fresh.push({ id: newId("T"), name: "", type: "room", ring: ring.map((p) => [round1(p[0]), round1(p[1])]), auto: true, anchor });
+    fresh.push({ id: null, name: "", locationCode: "", type: "room", ring: ring.map((p) => [round1(p[0]), round1(p[1])]), auto: true, anchor });
   }
-  // Names and types survive a regeneration: carry them to the area that now holds the old anchor.
+  // A generated room keeps its id, location and type when the area that holds its old anchor is still there.
   for (const room of old) {
-    if (!room.name && room.type === "room") continue;
-    const target = fresh.find((f) => !f.name && f.type === "room" && inRing(f.ring, room.anchor || interiorPoint(room.ring)));
-    if (target) { target.name = room.name; target.type = room.type; }
+    const target = fresh.find((f) => !f.id && inRing(f.ring, room.anchor || interiorPoint(room.ring)));
+    if (!target) continue;
+    target.id = room.id; target.name = room.name; target.locationCode = room.locationCode || ""; target.type = room.type;
   }
+  fresh.forEach((f) => { if (!f.id) f.id = newId("T"); });
   rooms = [...keep, ...fresh];
   if (selectedAnchor) selectedId = fresh.find((f) => inRing(f.ring, selectedAnchor))?.id || null;
   else if (selectedId && !roomById(selectedId)) selectedId = null;
@@ -556,9 +559,10 @@ function renderOverlay() {
     }
   }
   for (const room of rooms) {
-    if (!room.name) continue;
+    const text = room.name || room.locationCode;
+    if (!text) continue;
     const [sx, sy] = toScreen(room.anchor || centroid(room.ring));
-    make("text", { class: "label", x: sx, y: sy + 4 }, overlay).textContent = room.name;
+    make("text", { class: "label", x: sx, y: sy + 4 }, overlay).textContent = text;
   }
   if (tool === "select") {
     const handles = roomById(selectedId)?.ring || wallById(selectedWallId)?.pts || [];
@@ -601,6 +605,8 @@ function drawDraft() {
   if (draft.tool === "poly" || draft.tool === "wall") draft.pts.forEach((p) => { const [sx, sy] = toScreen(p); make("circle", { class: "handle", cx: sx, cy: sy, r: 4 }, overlay); });
 }
 
+const locationTitle = (room) =>
+  room.locationCode ? `${room.locationCode}　${room.name || locationByCode.get(room.locationCode)?.name || ""}` : room.name || "（尚未設定存置地點）";
 function renderPanel() {
   const list = $("list");
   list.replaceChildren();
@@ -611,7 +617,7 @@ function renderPanel() {
     button.type = "button";
     button.dataset.id = room.id;
     if (room.id === selectedId) button.setAttribute("aria-current", "true");
-    button.textContent = room.name || "（未命名）" + room.id;
+    button.textContent = locationTitle(room);
     const small = document.createElement("small");
     small.textContent = `${room.auto ? "由牆生成 · " : ""}${TYPE_NAMES[room.type]} · 約 ${(area(room.ring) / 10000).toFixed(1)} m²`;
     button.append(small);
@@ -636,28 +642,51 @@ function renderPanel() {
     add(row);
   } else if (!room) {
     add(el("div", "用「牆」把牆一條一條畫出來，牆圍成封閉區域就會自動變成房間；也可以用矩形、多邊形、半圓、圓直接描房間。"));
-    add(el("div", "描完後按「匯出 JSON」，把檔案交給我整理。", { className: "note" }));
+    add(el("div", "選取房間後，為它設定存置地點代碼與名稱，主系統才能對應。描完後按「匯出 JSON」，把檔案交給我整理。", { className: "note" }));
   } else {
-    const nameLabel = el("label", "房間名稱");
-    const name = el("input", undefined, { type: "text", value: room.name, placeholder: "例如：會議室" });
-    let recorded = false;
-    name.addEventListener("input", () => {
-      if (!recorded) { pushHistory(); recorded = true; }   // one undo step per rename
-      room.name = name.value; save(); renderOverlay();
+    // 存置地點: the code and name must match the main system, so they can be picked from its list.
+    add(el("label", "存置地點（代碼與名稱需與主系統一致）"));
+    const search = el("input", undefined, { type: "text", placeholder: LOCATIONS.length ? "搜尋存置地點的代碼或名稱…" : "（沒有載入存置地點清單，請在下方手動輸入）" });
+    const results = el("div", undefined, { className: "results" });
+    const used = new Set(rooms.filter((r) => r.id !== room.id && r.locationCode).map((r) => r.locationCode));
+    search.addEventListener("input", () => {
+      results.replaceChildren();
+      const query = search.value.trim().toLowerCase();
+      if (!query) return;
+      LOCATIONS.filter((l) => (l.code + " " + l.name).toLowerCase().includes(query)).slice(0, 8).forEach((l) => {
+        const b = el("button", `${l.code}　${l.name}`, { type: "button" });
+        b.append(el("small", `　${l.count} 筆財物${used.has(l.code) ? "・已用於其他房間" : ""}`));
+        b.addEventListener("click", () => { pushHistory(); room.locationCode = l.code; room.name = l.name; changed(true, false); });
+        results.append(b);
+      });
+      if (!results.children.length) results.append(el("small", "找不到符合的存置地點"));
     });
-    name.addEventListener("change", () => { changed(true, false); });
-    nameLabel.append(name);
-    add(nameLabel);
-    const chips = suggestions(room);
-    if (chips.length) {
-      const box = el("div", undefined, { className: "chips" });
-      for (const text of chips) {
-        const b = el("button", text, { type: "button", title: "套用這個名稱" });
-        b.addEventListener("click", () => { pushHistory(); room.name = text; changed(true, false); });
-        box.append(b);
-      }
-      add(el("label", "圖上這個範圍內的文字（點一下套用）")); add(box);
-    }
+    add(search); add(results);
+    const fields = el("div", undefined, { className: "two" });
+    const bind = (label, field, placeholder) => {
+      const wrap = el("div");
+      wrap.append(el("label", label));
+      const input = el("input", undefined, { type: "text", value: room[field] || "", placeholder });
+      let recorded = false;
+      input.addEventListener("input", () => {
+        if (!recorded) { pushHistory(); recorded = true; }   // one undo step per edit
+        room[field] = input.value; save(); renderOverlay();
+      });
+      input.addEventListener("change", () => { changed(true, false); });
+      wrap.append(input);
+      return wrap;
+    };
+    fields.append(bind("代碼", "locationCode", "例如 *C001"), bind("名稱", "name", "例如 業務組辦公室"));
+    add(fields);
+    const known = room.locationCode ? locationByCode.get(room.locationCode) : null;
+    const others = room.locationCode ? rooms.filter((r) => r.id !== room.id && r.locationCode === room.locationCode).length : 0;
+    let status;
+    if (!room.locationCode) status = "尚未設定代碼，還無法與主系統對應。";
+    else if (!LOCATIONS.length) status = "";
+    else if (!known) status = "這個代碼不在主系統的存置地點清單中，請確認。";
+    else status = `對應主系統「${known.name}」，目前有 ${known.count} 筆財物。` + (room.name && room.name !== known.name ? `（名稱與主系統不同）` : "");
+    if (others) status += `另有 ${others} 個房間使用相同代碼（同一存置地點可以由多個房間組成）。`;
+    if (status) add(el("div", status, { className: "note" }));
     const typeLabel = el("label", "類型");
     const type = el("select");
     for (const [value, text] of Object.entries(TYPE_NAMES)) type.append(new Option(text, value, false, value === room.type));
@@ -671,8 +700,8 @@ function renderPanel() {
     row.append(del);
     add(row);
   }
-  const named = rooms.filter((r) => r.name).length;
-  $("stats").innerHTML = `<span><b>${walls.length}</b> 道牆</span><span><b>${rooms.length}</b> 個房間</span><span><b>${named}</b> 個已命名</span><span>底圖來源：${DATA.source}</span><span>資料自動儲存在這個瀏覽器</span>`;
+  const linked = rooms.filter((r) => r.locationCode).length;
+  $("stats").innerHTML = `<span><b>${walls.length}</b> 道牆</span><span><b>${rooms.length}</b> 個房間</span><span><b>${linked}</b> 個已設定存置地點代碼</span><span>底圖來源：${DATA.source}</span><span>資料自動儲存在這個瀏覽器</span>`;
 }
 
 // ---- actions ---------------------------------------------------------------------------------------------
@@ -857,11 +886,11 @@ function tidy() {
 function exportJson() {
   const flip = (p) => [round1(p[0]), round1(-p[1])];
   const payload = {
-    version: 2, title: DATA.title, source: DATA.source, unit: DATA.unit,
-    note: "座標為 DXF 圖面座標（x 向右、y 向上）。walls 是牆的中心線；auto 為 true 的房間是由牆自動生成的。type: room 房間 / public 公共區域 / void 挑空採光。",
+    version: 3, title: DATA.title, source: DATA.source, unit: DATA.unit,
+    note: "座標為 DXF 圖面座標（x 向右、y 向上）。walls 是牆的中心線；auto 為 true 的房間是由牆自動生成的。每個房間的 locationCode 與 name 是主系統的存置地點代碼與名稱；id 只是這個檔案內部的流水編號，不是存置地點代碼。type: room 房間 / public 公共區域 / void 挑空採光。",
     walls: walls.map((w) => ({ id: w.id, pts: w.pts.map(flip), ...(w.curve ? { curve: true } : {}) })),
     rooms: rooms.map((r) => ({
-      id: r.id, name: r.name, type: r.type, ring: r.ring.map(flip),
+      id: r.id, locationCode: r.locationCode || "", name: r.name, type: r.type, ring: r.ring.map(flip),
       ...(r.auto ? { auto: true } : {}), ...(r.curve ? { curve: r.curve } : {}),
     })),
   };
@@ -879,7 +908,7 @@ function importJson(text) {
   pushHistory();
   const flip = (p) => [p[0], -p[1]];
   rooms = payload.rooms.map((r, i) => ({
-    id: r.id || "T" + String(i + 1).padStart(3, "0"), name: r.name || "", type: TYPE_NAMES[r.type] ? r.type : "room",
+    id: r.id || "T" + String(i + 1).padStart(3, "0"), name: r.name || "", locationCode: r.locationCode || "", type: TYPE_NAMES[r.type] ? r.type : "room",
     ring: r.ring.map(flip), ...(r.auto ? { auto: true, anchor: interiorPoint(r.ring.map(flip)) } : {}), ...(r.curve ? { curve: r.curve } : {}),
   }));
   walls = (payload.walls || []).map((w, i) => ({ id: w.id || "W" + String(i + 1).padStart(3, "0"), pts: w.pts.map(flip), ...(w.curve ? { curve: true } : {}) }));
@@ -939,7 +968,13 @@ stage.addEventListener("pointerdown", (e) => {
       const index = vertexAt(handles, e.clientX, e.clientY);
       if (index !== null) {
         pushHistory(); selectedVertex = index;
-        drag = wall ? { type: "wallVertex", id: wall.id, index } : { type: "vertex", id: room.id, index };
+        if (wall) {
+          // Other walls that end on this same corner follow it, so a joint stays closed.
+          const here = wall.pts[index];
+          const joined = [];
+          walls.forEach((other) => other.pts.forEach((p, j) => { if (!(other.id === wall.id && j === index) && dist(p, here) <= 1) joined.push([other.id, j]); }));
+          drag = { type: "wallVertex", id: wall.id, index, joined };
+        } else drag = { type: "vertex", id: room.id, index };
         renderOverlay();
         return;
       }
@@ -1022,6 +1057,10 @@ stage.addEventListener("pointermove", (e) => {
     const hit = snap(raw, { excludeWall: drag.id, excludeIndex: drag.index });
     wall.pts[drag.index] = [round1(hit.p[0]), round1(hit.p[1])];
     delete wall.curve;
+    for (const [otherId, j] of drag.joined || []) {
+      const other = wallById(otherId);
+      if (other) { other.pts[j] = [round1(hit.p[0]), round1(hit.p[1])]; delete other.curve; }
+    }
     snapHit = hit;
     renderScene(); renderOverlay();
     if (liveRooms) scheduleGenerate();

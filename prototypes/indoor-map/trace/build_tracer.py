@@ -43,7 +43,16 @@ def main():
     parser.add_argument("dxf")
     parser.add_argument("output")
     parser.add_argument("--title", default="")
+    parser.add_argument(
+        "--locations",
+        default="",
+        help='JSON list of existing 存置地點: [{"code": "*C001", "name": "業務組辦公室", "count": 92}]',
+    )
     args = parser.parse_args()
+
+    locations = []
+    if args.locations and Path(args.locations).exists():
+        locations = json.loads(Path(args.locations).read_text(encoding="utf-8"))
 
     doc = ezdxf.readfile(args.dxf)
     major, minor, snap_segments, points, texts = [], [], [], set(), []
@@ -52,7 +61,8 @@ def main():
         kind = entity.dxftype()
         try:
             if kind == "TEXT":
-                value = entity.dxf.text.strip()
+                # Some drawings carry text bytes that are not valid characters; drop those.
+                value = "".join(c for c in entity.dxf.text if not 0xD800 <= ord(c) <= 0xDFFF).strip()
                 if value:
                     texts.append({"t": value, "x": round(entity.dxf.insert.x, 1), "y": round(-entity.dxf.insert.y, 1)})
                 continue
@@ -92,6 +102,7 @@ def main():
         "segments": [[round(p[0], 1), round(-p[1], 1), round(q[0], 1), round(-q[1], 1)] for p, q in snap_segments],
         "points": [[x, -y] for x, y in sorted(points)],
         "texts": texts,
+        "locations": locations,
     }
     template = (HERE / "tracer.template.html").read_text(encoding="utf-8")
     html = template.replace("/*__TRACE_DATA__*/null", json.dumps(data, ensure_ascii=False, separators=(",", ":")))
@@ -100,7 +111,8 @@ def main():
     out.write_text(html, encoding="utf-8")
     print(
         f"wrote {out} | main lines {len(major)}, minor {len(minor)}, "
-        f"snap segments {len(data['segments'])}, snap points {len(data['points'])}, texts {len(texts)}",
+        f"snap segments {len(data['segments'])}, snap points {len(data['points'])}, texts {len(texts)}, "
+        f"locations {len(locations)}",
         file=sys.stderr,
     )
 
