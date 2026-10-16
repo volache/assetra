@@ -36,7 +36,11 @@ python prototypes/indoor-map/trace/build_tracer.py "data/private/floorplans/宿�
 python prototypes/indoor-map/trace/build_tracer.py "data/private/floorplans/航廈二樓不含外部.dxf" "data/private/indoor-map/floors/航廈二樓_描圖.html" --title 航廈二樓 --locations data/private/indoor-map/locations.json --align "data/private/floorplans/航廈三樓-修改.dxf"
 ```
 
-匯入來自其他底圖的 JSON 時，會自動平移對位，並詢問要保留還是清空存置地點代碼與名稱；位置有偏差可用標頭的「整體移動」微調（可復原）。
+匯入來自其他底圖的 JSON 時，會自動平移對位，並詢問要保留還是清空存置地點代碼與名稱；位置有偏差，可用 Ctrl+A（或「全選」）選取全部，再用右側的移動面板微調，或用「對齊到底圖」（先點選取範圍上的頂點，再點底圖的端點或邊線）貼齊。
+
+### 框選與群組
+
+選取工具在空白處拖曳可框選（Shift 加選或減選）；選取多個物件後可整組拖曳、用方向鍵微調（步距自行輸入，Shift ×10）、輸入 x/y 距離移動，或對齊到底圖。右鍵、中鍵或空白鍵拖曳平移，F 縮放至全部。
 
 
 `--locations` 是主系統現有存置地點的清單（代碼、名稱、財物筆數），由資料庫匯出成 JSON：
