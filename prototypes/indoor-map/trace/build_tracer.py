@@ -39,39 +39,11 @@ def path_data(segments):
     return "".join(parts)
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("dxf")
-    parser.add_argument("output")
-    parser.add_argument("--title", default="")
-    parser.add_argument(
-        "--locations",
-        default="",
-        help='JSON list of existing 存置地點: [{"code": "*C001", "name": "業務組辦公室", "count": 92}]',
-    )
-    parser.add_argument(
-        "--crop",
-        default="",
-        help="x0,y0,x1,y1 in drawing units: keep only what lies inside (one floor of a file that holds several)",
-    )
-    parser.add_argument(
-        "--align",
-        action="append",
-        default=[],
-        help="another floor's DXF: work out how its coordinates line up with this drawing (repeatable)",
-    )
-    parser.add_argument("--regions", action="store_true", help="list the separate drawings in the file and exit")
-    args = parser.parse_args()
-    crop = [float(v) for v in args.crop.split(",")] if args.crop else None
+def read_floor(dxf, crop=None):
+    """The lines, snap data and texts of one drawing (optionally one cropped region of it)."""
     inside = lambda x, y: crop is None or (crop[0] <= x <= crop[2] and crop[1] <= y <= crop[3])
-
-    locations = []
-    if args.locations and Path(args.locations).exists():
-        locations = json.loads(Path(args.locations).read_text(encoding="utf-8"))
-
-    doc = ezdxf.readfile(args.dxf)
+    doc = ezdxf.readfile(dxf)
     major, minor, snap_segments, points, texts = [], [], [], set(), []
-    xs, ys = [], []
     for entity in doc.modelspace():
         kind = entity.dxftype()
         try:
@@ -103,7 +75,66 @@ def main():
                 points.update([(round(curve[0][0]), round(curve[0][1])), (round(curve[-1][0]), round(curve[-1][1]))])
         except Exception:
             continue
+    return major, minor, snap_segments, points, texts
+
+
+def floor_record(dxf, title, crop=None, label=None):
+    """Everything the page needs for one floor, as a JSON-ready dict (the offset is filled in later)."""
+    major, minor, snap_segments, points, texts = read_floor(dxf, crop)
+    xs = [x for group in (major, minor) for segment in group for x, _ in segment]
+    ys = [-y for group in (major, minor) for segment in group for _, y in segment]
+    return {
+        "id": title,
+        "title": title,
+        "label": label or title,
+        "source": Path(dxf).name,
+        "unit": "cm",
+        "bounds": [min(xs), min(ys), max(xs), max(ys)],
+        "major": path_data(major),
+        "minor": path_data(minor),
+        "segments": [[round(p[0], 1), round(-p[1], 1), round(q[0], 1), round(-q[1], 1)] for p, q in snap_segments],
+        "points": [[x, -y] for x, y in sorted(points)],
+        "texts": texts,
+        "offset": [0, 0],
+    }
+
+
+def write_page(building, output):
+    template = (HERE / "tracer.template.html").read_text(encoding="utf-8")
+    html = template.replace("/*__TRACE_DATA__*/null", json.dumps(building, ensure_ascii=False, separators=(",", ":")))
+    out = Path(output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(html, encoding="utf-8")
+    return out
+
+
+def load_locations(path):
+    if path and Path(path).exists():
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    return []
+
+
+def main():
+    parser = argparse.ArgumentParser(description="One floor. For several floors in one page use build_building.py.")
+    parser.add_argument("dxf")
+    parser.add_argument("output")
+    parser.add_argument("--title", default="")
+    parser.add_argument(
+        "--locations",
+        default="",
+        help='JSON list of existing 存置地點: [{"code": "*C001", "name": "業務組辦公室", "count": 92}]',
+    )
+    parser.add_argument(
+        "--crop",
+        default="",
+        help="x0,y0,x1,y1 in drawing units: keep only what lies inside (one floor of a file that holds several)",
+    )
+    parser.add_argument("--regions", action="store_true", help="list the separate drawings in the file and exit")
+    args = parser.parse_args()
+    crop = [float(v) for v in args.crop.split(",")] if args.crop else None
+
     if args.regions:
+        major, *_ = read_floor(args.dxf, crop)
         from shapely.geometry import LineString
         from shapely.ops import unary_union
 
@@ -117,50 +148,10 @@ def main():
         for weight, box in sorted(found, key=lambda f: -f[0]):
             print(f"{weight:6d} lines  crop {box[0]},{box[1]},{box[2]},{box[3]}  size {(box[2]-box[0])/100:.0f} x {(box[3]-box[1])/100:.0f} m")
         return
-    for group in (major, minor):
-        for segment in group:
-            for x, y in segment:
-                xs.append(x)
-                ys.append(-y)
-
-    alignments = {}
-    for other in args.align:
-        if Path(other).name == Path(args.dxf).name:
-            continue
-        from align_floors import align
-
-        result = align(args.dxf, other, crop)
-        # A weak or ambiguous match is not worth applying on its own.
-        if result["score"] >= 0.4 and result["score"] >= result["runnerUp"] * 1.1:
-            alignments[Path(other).name] = result
-            print(f"aligned {Path(other).name}: dx {result['dx']}, dy {result['dy']}, score {result['score']}", file=sys.stderr)
-        else:
-            print(f"no clear match for {Path(other).name} (score {result['score']}, next {result['runnerUp']})", file=sys.stderr)
-
-    data = {
-        "title": args.title or Path(args.dxf).stem,
-        "source": Path(args.dxf).name,
-        "unit": "cm",
-        "bounds": [min(xs), min(ys), max(xs), max(ys)],
-        "major": path_data(major),
-        "minor": path_data(minor),
-        "segments": [[round(p[0], 1), round(-p[1], 1), round(q[0], 1), round(-q[1], 1)] for p, q in snap_segments],
-        "points": [[x, -y] for x, y in sorted(points)],
-        "texts": texts,
-        "locations": locations,
-        "alignments": alignments,
-    }
-    template = (HERE / "tracer.template.html").read_text(encoding="utf-8")
-    html = template.replace("/*__TRACE_DATA__*/null", json.dumps(data, ensure_ascii=False, separators=(",", ":")))
-    out = Path(args.output)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(html, encoding="utf-8")
-    print(
-        f"wrote {out} | main lines {len(major)}, minor {len(minor)}, "
-        f"snap segments {len(data['segments'])}, snap points {len(data['points'])}, texts {len(texts)}, "
-        f"locations {len(locations)}",
-        file=sys.stderr,
-    )
+    title = args.title or Path(args.dxf).stem
+    floor = floor_record(args.dxf, title, crop)
+    out = write_page({"name": title, "locations": load_locations(args.locations), "floors": [floor]}, args.output)
+    print(f"wrote {out} | segments {len(floor['segments'])}, points {len(floor['points'])}, texts {len(floor['texts'])}", file=sys.stderr)
 
 
 if __name__ == "__main__":

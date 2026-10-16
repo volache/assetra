@@ -80,14 +80,15 @@ def best_shifts(a, b, top=4):
         sy = int(r) if r < a.shape[0] else int(r) - rows
         sx = int(c) if c < a.shape[1] else int(c) - cols
         found.append((float(work[r, c]) / float(b.sum()), sx, sy))
-        work[max(0, r - 15): r + 16, max(0, c - 15): c + 16] = -1.0
+        # the correlation wraps around, so a peak at one edge has its neighbours at the other edge
+        work[np.ix_(np.arange(r - 15, r + 16) % rows, np.arange(c - 15, c + 16) % cols)] = -1.0
     return found
 
 
-def align(reference_path, moving_path, reference_crop=None):
+def align(reference_path, moving_path, reference_crop=None, moving_crop=None):
     """Offset (dx, dy) that moves the moving drawing onto the reference one, with its score and the runner-up's."""
     a, ax0, ay1 = raster(long_lines(reference_path, reference_crop))
-    b, bx0, by1 = raster(long_lines(moving_path))
+    b, bx0, by1 = raster(long_lines(moving_path, moving_crop))
     found = best_shifts(a, b, top=2)
     score, sx, sy = found[0]
     return {

@@ -123,6 +123,11 @@
   .guide-dot { fill: #d6336c; }
   .trim-line { fill: none; stroke: #d6336c; stroke-dasharray: 7 5; stroke-linecap: round; stroke-width: 4; }
   .extend-line { fill: none; stroke: var(--teal); stroke-dasharray: 7 5; stroke-linecap: round; stroke-width: 3; }
+  #floors button { align-items: baseline; display: inline-flex; gap: 5px; }
+  #floors .badge { color: var(--muted); font-size: 10.5px; font-weight: 400; }
+  .savechip { background: #e8f6f1; border: 1px solid transparent; border-radius: 999px; color: #0d6f64; cursor: pointer; font-size: 12px; padding: 4px 11px; white-space: nowrap; }
+  .savechip.warn { background: #fff3e0; color: #9a5b00; }
+  .savechip:disabled { cursor: default; }
   .selbar { align-items: center; background: #fff; border: 1px solid var(--rule); border-radius: 12px; box-shadow: 0 4px 16px rgba(20, 30, 60, 0.14); display: flex; flex-wrap: wrap; font-size: 13px; gap: 6px 10px; left: 12px; margin-inline: auto; max-width: calc(100% - 76px); padding: 6px 8px 6px 14px; position: absolute; right: 64px; top: 12px; width: max-content; z-index: 4; }
   .selbar[hidden] { display: none; }
   .selbar .count { color: var(--ink); font-weight: 700; white-space: nowrap; }
@@ -148,6 +153,7 @@
 <body>
 <header>
   <h1 id="title"></h1>
+  <div class="group" id="floors" role="group" aria-label="樓層" hidden></div>
   <div class="group" role="group" aria-label="工具" id="tools">
     <button type="button" data-tool="select" aria-pressed="true" title="選取、拖曳頂點、雙擊邊線加點">選取<kbd>V</kbd></button>
     <button type="button" data-tool="wall" aria-pressed="false" title="畫牆：逐點點出，線段會被當成牆">牆<kbd>W</kbd></button>
@@ -164,6 +170,7 @@
     <button type="button" id="redo" title="重做 Ctrl+Y">↷ 重做</button>
   </div>
   <span class="spacer"></span>
+  <button type="button" class="savechip" id="save-status" hidden></button>
   <button type="button" class="btn" id="help" aria-expanded="false" title="顯示操作說明">操作說明</button>
   <button type="button" class="btn" id="import" title="匯入先前匯出的 JSON（可來自其他樓層，會自動對位）">匯入 JSON</button>
   <button type="button" class="btn primary" id="export">匯出 JSON</button>
@@ -173,6 +180,7 @@
   <span class="label-s">顯示</span>
   <div class="group" role="group" aria-label="顯示與行為">
     <button type="button" id="toggle-live" aria-pressed="true" title="牆圍成封閉區域時，自動產生房間">即時生成房間</button>
+    <button type="button" id="toggle-underlay" aria-pressed="true" title="顯示或關閉整張底圖（B）。關閉時不會吸附到底圖，魔術棒、延伸也不再參考底圖，只看你描的牆與房間">底圖</button>
     <button type="button" id="toggle-minor" aria-pressed="false" title="顯示短線（門、傢俱等）">短線</button>
     <button type="button" id="toggle-texts" aria-pressed="true" title="顯示原圖文字">原圖文字</button>
     <button type="button" id="toggle-faint" aria-pressed="false" title="把底圖調淡">淡化底圖</button>
@@ -231,10 +239,9 @@
 <footer id="stats"></footer>
 
 <script>
-const DATA = /*__TRACE_DATA__*/null;
-
-const STORE_KEY = "indoor-trace:" + DATA.title + ":" + DATA.source;
-const LOCATIONS = DATA.locations || [];
+const BUILDING = /*__TRACE_DATA__*/null;      // { name, locations, floors: [...] }
+const LOCATIONS = BUILDING.locations || [];
+let DATA = null;                              // the floor being traced: title, source, bounds, linework, texts, offset
 const locationByCode = new Map(LOCATIONS.map((l) => [l.code, l]));
 const TYPE_NAMES = { room: "房間", public: "公共區域", void: "挑空／採光" };
 const HINTS = {
@@ -292,7 +299,10 @@ let generateTimer = null;
 const stage = $("stage");
 const planSvg = $("plan");
 const overlay = $("overlay");
-let viewGroup, minorPath, majorPath, roomGroup, wallGroup;
+let viewGroup, underlayGroup, minorPath, majorPath, roomGroup, wallGroup;
+let underlayOn = true;            // the drawing is shown, snapped to and read by the wand
+const segsAt = (key) => (underlayOn ? segGrid.get(key) || [] : []);
+const ptsAt = (key) => (underlayOn ? ptGrid.get(key) || [] : []);
 
 // ---- custom drop-down ----------------------------------------------------------------------------------------
 const CHEVRON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg>';
@@ -435,6 +445,8 @@ function assignHoles(list) {
 const CELL = 150;
 const segGrid = new Map(), ptGrid = new Map();
 const cellKey = (x, y) => Math.floor(x / CELL) + "," + Math.floor(y / CELL);
+function buildIndex() {
+  segGrid.clear(); ptGrid.clear();
 DATA.segments.forEach((s, i) => {
   const [x1, y1, x2, y2] = s;
   for (let cx = Math.floor(Math.min(x1, x2) / CELL); cx <= Math.floor(Math.max(x1, x2) / CELL); cx++)
@@ -449,6 +461,7 @@ DATA.points.forEach((p, i) => {
   if (!ptGrid.has(key)) ptGrid.set(key, []);
   ptGrid.get(key).push(i);
 });
+}
 function cellsAround([x, y], r) {
   const keys = [];
   for (let cx = Math.floor((x - r) / CELL); cx <= Math.floor((x + r) / CELL); cx++)
@@ -484,7 +497,7 @@ function snap(point, options = {}) {
     if (options.excludeWall === wall.id && options.excludeIndex === i) return;
     offer(v, dist(p, v), "vertex");
   }));
-  for (const key of cellsAround(p, r)) for (const i of ptGrid.get(key) || []) offer(DATA.points[i], dist(p, DATA.points[i]), "corner");
+  for (const key of cellsAround(p, r)) for (const i of ptsAt(key)) offer(DATA.points[i], dist(p, DATA.points[i]), "corner");
   if (best) return { p: best.p, kind: best.kind };
   const er = 9 / view.z;
   let edge = null;
@@ -504,7 +517,7 @@ function snap(point, options = {}) {
     offerEdge(a, b, "edge");
   }
   const seen = new Set();
-  for (const key of cellsAround(p, er)) for (const i of segGrid.get(key) || []) {
+  for (const key of cellsAround(p, er)) for (const i of segsAt(key)) {
     if (seen.has(i)) continue;
     seen.add(i);
     const s = DATA.segments[i];
@@ -526,6 +539,7 @@ function fit() {
   view.ty = (size.h - view.z * (y0 + y1)) / 2;
 }
 function applyView() {
+  if (!viewGroup) return;
   viewGroup.setAttribute("transform", `translate(${view.tx} ${view.ty}) scale(${view.z})`);
   renderOverlay();
 }
@@ -534,7 +548,7 @@ function resize() {
   const first = size.w === 1000 && size.h === 700;
   size = { w: box.width, h: box.height };
   for (const s of [planSvg, overlay]) s.setAttribute("viewBox", `0 0 ${size.w} ${size.h}`);
-  if (first) fit();
+  if (first && DATA) fit();
   applyView();
 }
 
@@ -551,15 +565,211 @@ function restore(json) {
 }
 function undo() { if (!history.length) return; future.push(snapshot()); restore(history.pop()); }
 function redo() { if (!future.length) return; history.push(snapshot()); restore(future.pop()); }
-function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify({ rooms, walls, suppressed, counter })); } catch { /* private mode */ } }
-function load() {
+// ---- floors and storage ---------------------------------------------------------------------------------------
+// One page holds every floor of a building.  The floor being edited lives in the variables above; the others are
+// kept in memory once visited.  Everything is saved to IndexedDB, and in Chrome or Edge also to .rooms.json files in a
+// folder the user picked, which is the copy to rely on.
+const FLOORS = BUILDING.floors;
+let floorId = null;
+const floorMemory = new Map();            // id -> { rooms, walls, suppressed, counter, history, future, view }
+const dirtyFloors = new Set();
+let projectRecord = { floors: {} };       // what IndexedDB holds: { floors: { id: { rooms, walls, suppressed, counter, savedAt } } }
+let dirHandle = null, dirReady = false, lastFile = 0, storageNote = "";
+let flushTimer = null;
+const canPickFolder = typeof window.showDirectoryPicker === "function";
+
+let dbPromise = null;
+const openDb = () => new Promise((resolve, reject) => {
+  const request = indexedDB.open("indoor-trace", 1);
+  request.onupgradeneeded = () => { request.result.createObjectStore("projects"); request.result.createObjectStore("handles"); };
+  request.onsuccess = () => resolve(request.result);
+  request.onerror = () => reject(request.error);
+});
+async function idb(store, mode, run) {
+  dbPromise ??= openDb();
+  const db = await dbPromise;
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, mode);
+    const request = run(tx.objectStore(store));
+    tx.oncomplete = () => resolve(request.result);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+const idbGet = (store, key) => idb(store, "readonly", (s) => s.get(key));
+const idbPut = (store, key, value) => idb(store, "readwrite", (s) => s.put(value, key));
+
+const emptyState = () => ({ rooms: [], walls: [], suppressed: [], counter: 1 });
+const stateOf = (id) => (id === floorId ? { rooms, walls, suppressed, counter } : floorMemory.get(id) || projectRecord.floors[id] || emptyState());
+const hasContent = (id) => { const s = stateOf(id); return !!(s.rooms?.length || s.walls?.length); };
+function applyState(state) {
+  rooms = state.rooms || []; walls = state.walls || []; suppressed = state.suppressed || [];
+  counter = Math.max(state.counter || 1, ...rooms.map((r) => idNumber(r.id)), ...walls.map((w) => idNumber(w.id))) + 1;
+}
+function save() { dirtyFloors.add(floorId); clearTimeout(flushTimer); flushTimer = setTimeout(flush, 700); }
+async function flush() {
+  flushTimer = null;
+  const ids = [...dirtyFloors];
+  dirtyFloors.clear();
+  if (!ids.length) return;
+  const now = Date.now();
   try {
-    const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
-    if (saved) {
-      rooms = saved.rooms || []; walls = saved.walls || []; suppressed = saved.suppressed || [];
-      counter = Math.max(saved.counter || 1, ...rooms.map((r) => idNumber(r.id)), ...walls.map((w) => idNumber(w.id))) + 1;
+    for (const id of ids) {
+      const s = stateOf(id);
+      projectRecord.floors[id] = { rooms: s.rooms, walls: s.walls, suppressed: s.suppressed, counter: s.counter, savedAt: now };
     }
+    await idbPut("projects", BUILDING.name, projectRecord);
+    storageNote = "";
+  } catch (error) { storageNote = "瀏覽器儲存空間寫入失敗：" + error.message; }
+  if (dirHandle && dirReady) {
+    try { for (const id of ids) await writeFloorFile(id); lastFile = Date.now(); }
+    catch (error) { dirReady = false; storageNote = "寫入資料夾失敗，請重新授權：" + error.message; }
+  }
+  renderSaveStatus();
+}
+window.addEventListener("pagehide", () => { if (dirtyFloors.size) flush(); });
+document.addEventListener("visibilitychange", () => { if (document.hidden && dirtyFloors.size) flush(); });
+
+const floorFileName = (floor) => floor.title + ".rooms.json";
+async function writeFloorFile(id) {
+  const floor = FLOORS.find((f) => f.id === id);
+  const handle = await dirHandle.getFileHandle(floorFileName(floor), { create: true });
+  const writer = await handle.createWritable();
+  await writer.write(JSON.stringify(payloadFor(floor, stateOf(id)), null, 2));
+  await writer.close();
+}
+/** Pull in files from the folder that are newer than what the browser holds, then write out the rest. */
+async function syncFromFolder() {
+  const found = [];
+  for (const floor of FLOORS) {
+    let file;
+    try { file = await (await dirHandle.getFileHandle(floorFileName(floor))).getFile(); } catch { continue; }
+    const savedAt = projectRecord.floors[floor.id]?.savedAt || 0;
+    if (!hasContent(floor.id) || file.lastModified > savedAt + 2000) found.push({ floor, file });
+  }
+  const replacing = found.filter(({ floor }) => hasContent(floor.id));
+  let take = found;
+  if (replacing.length && !confirm(`資料夾裡有比瀏覽器更新的資料：${replacing.map((r) => r.floor.label || r.floor.title).join("、")}。\n\n按「確定」載入資料夾的版本（會取代瀏覽器裡這些樓層目前的內容）；按「取消」則保留瀏覽器的版本並寫回資料夾。`)) {
+    take = found.filter(({ floor }) => !hasContent(floor.id));
+  }
+  const loaded = new Set();
+  for (const { floor, file } of take) {
+    try {
+      const payload = JSON.parse(await file.text());
+      const state = convertPayload(payload, shiftFor(payload, floor), true);
+      projectRecord.floors[floor.id] = { ...state, savedAt: file.lastModified };
+      floorMemory.delete(floor.id);
+      loaded.add(floor.id);
+      if (floor.id === floorId) { applyState(state); history = []; future = []; selectedId = null; selectedWallId = null; group = null; changed(false, false); }
+    } catch { /* an unreadable file is left alone */ }
+  }
+  FLOORS.forEach((f) => { if (!loaded.has(f.id) && hasContent(f.id)) dirtyFloors.add(f.id); });
+  if (dirtyFloors.size) { clearTimeout(flushTimer); await flush(); }
+  try { await idbPut("projects", BUILDING.name, projectRecord); } catch { /* ignore */ }
+}
+async function connectFolder() {
+  if (!canPickFolder) return;
+  if (dirHandle && dirReady && !confirm(`目前存到資料夾「${dirHandle.name}」。要改選其他資料夾嗎？`)) return;
+  try { dirHandle = await showDirectoryPicker({ id: "indoor-trace", mode: "readwrite" }); } catch { return; }
+  dirReady = true;
+  try { await idbPut("handles", BUILDING.name, dirHandle); } catch { /* the folder just has to be picked again next time */ }
+  await syncFromFolder();
+  renderSaveStatus();
+}
+async function reauthorizeFolder() {
+  try { dirReady = (await dirHandle.requestPermission({ mode: "readwrite" })) === "granted"; } catch { dirReady = false; }
+  if (dirReady) await syncFromFolder();
+  renderSaveStatus();
+}
+function renderSaveStatus() {
+  const chip = $("save-status");
+  chip.hidden = false;
+  chip.disabled = false;
+  let text, warn = true, title;
+  if (!canPickFolder) { text = "只存在這個瀏覽器"; title = "這個瀏覽器不能直接寫入資料夾；請改用 Chrome 或 Edge，或定期按「匯出 JSON」備份"; chip.disabled = true; }
+  else if (!dirHandle) { text = "選擇專案資料夾"; title = "目前只存在這個瀏覽器，清除瀏覽資料就會消失。選一個資料夾，之後每次變動都會自動寫成 .rooms.json"; }
+  else if (!dirReady) { text = "資料夾需要重新授權"; title = `「${dirHandle.name}」要重新允許寫入（瀏覽器重開後都需要點一次）`; }
+  else {
+    warn = false;
+    const seconds = Math.round((Date.now() - lastFile) / 1000);
+    const ago = !lastFile ? "" : seconds < 10 ? " · 剛剛" : seconds < 90 ? ` · ${seconds} 秒前` : ` · ${Math.round(seconds / 60)} 分鐘前`;
+    text = `已存到「${dirHandle.name}」${ago}`;
+    title = "每次變動都會自動寫入這個資料夾；點一下可改選其他資料夾";
+  }
+  if (storageNote) title += "\n" + storageNote;
+  chip.textContent = text; chip.title = title;
+  chip.classList.toggle("warn", warn);
+}
+$("save-status").addEventListener("click", () => { if (!dirHandle) connectFolder(); else if (!dirReady) reauthorizeFolder(); else connectFolder(); });
+setInterval(renderSaveStatus, 15000);
+
+async function initStorage() {
+  try { projectRecord = (await idbGet("projects", BUILDING.name)) || projectRecord; } catch (error) { storageNote = "瀏覽器儲存空間無法使用：" + error.message; }
+  projectRecord.floors ??= {};
+  try { dirHandle = (await idbGet("handles", BUILDING.name)) || null; } catch { dirHandle = null; }
+  if (dirHandle) {
+    try { dirReady = (await dirHandle.queryPermission({ mode: "readwrite" })) === "granted"; } catch { dirReady = false; }
+    if (dirReady) { try { await syncFromFolder(); } catch (error) { dirReady = false; storageNote = error.message; } }
+  }
+}
+/** The floor's saved work: this browser's copy, an older per-floor save, or the seed that was built into the page. */
+function savedStateFor(floor) {
+  const saved = projectRecord.floors[floor.id];
+  if (saved) return structuredClone(saved);
+  try {
+    const legacy = JSON.parse(localStorage.getItem(`indoor-trace:${floor.title}:${floor.source}`) || "null");
+    if (legacy) { dirtyFloors.add(floor.id); return legacy; }
   } catch { /* ignore */ }
+  if (floor.seed) { dirtyFloors.add(floor.id); return convertPayload(floor.seed, shiftFor(floor.seed, floor), true); }
+  return null;
+}
+const roomCountOf = (id) => stateOf(id).rooms?.length || 0;
+
+function enterFloor(id) {
+  const floor = FLOORS.find((f) => f.id === id);
+  if (floorId) floorMemory.set(floorId, { rooms, walls, suppressed, counter, history, future, view: { ...view } });
+  floorId = id;
+  DATA = floor;
+  buildIndex();
+  const memory = floorMemory.get(id);
+  if (memory) { applyState(memory); history = memory.history; future = memory.future; }
+  else { applyState(savedStateFor(floor) || emptyState()); history = []; future = []; }
+  selectedId = null; selectedWallId = null; selectedVertex = null; group = null; align = null; marquee = null;
+  draft = null; drag = null; wand = null; wandPreview = null; snapHit = null; guides = []; trimPreview = null;
+  clearTimeout(generateTimer); wandCache.clear();
+  try { localStorage.setItem("indoor-trace-last:" + BUILDING.name, id); } catch { /* ignore */ }
+  document.title = `${BUILDING.name} ${floor.label || floor.title} 室內地圖描圖`;
+  buildScene();
+  if (memory?.view) view = { ...memory.view }; else fit();
+  setTool("select");
+  applyView();
+  changed(false, false);
+  if (dirtyFloors.size) save();
+}
+function switchFloor(id) {
+  if (id === floorId) return;
+  enterFloor(id);
+}
+function renderFloors() {
+  const box = $("floors");
+  box.hidden = FLOORS.length < 2;
+  box.replaceChildren();
+  FLOORS.forEach((floor) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("aria-pressed", String(floor.id === floorId));
+    button.append(document.createTextNode(floor.label || floor.title));
+    const count = roomCountOf(floor.id);
+    if (count) { const badge = document.createElement("small"); badge.className = "badge"; badge.textContent = String(count); button.append(badge); }
+    button.addEventListener("click", () => switchFloor(floor.id));
+    box.append(button);
+  });
+}
+/** Where another floor's drawing sits relative to this one's, in drawing units, or null when that is not known. */
+function shiftFor(payload, floor) {
+  const from = FLOORS.find((f) => f.title === payload.title) || FLOORS.find((f) => f.source === payload.source && f.title === floor.title) || FLOORS.find((f) => f.source === payload.source);
+  if (!from || from === floor) return [0, 0];
+  if (!from.offset || !floor.offset) return null;
+  return [from.offset[0] - floor.offset[0], from.offset[1] - floor.offset[1]];
 }
 /** Redraw everything.  `regenerate` re-derives the rooms from the walls (when live). */
 function changed(record = true, regenerate = true) {
@@ -767,7 +977,15 @@ function generateRooms() {
   }));
   assignHoles(fresh);                    // a room walled in on its own inside a bigger area is a hole in it
   fresh.forEach((f) => { f.anchor = interiorPoint(f.ring, f.holes); });
-  fresh = fresh.filter((f) => !suppressed.some((s) => inRoom(f, s)));
+  // A room that was deleted hands its space back to the bigger room around it (that room's hole closes).
+  const gone = fresh.filter((f) => suppressed.some((s) => inRoom(f, s)));
+  fresh = fresh.filter((f) => !gone.includes(f));
+  const ringKey = (ring) => ring.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(";");
+  const goneKeys = new Set(gone.map((g) => ringKey(g.ring)));
+  fresh.forEach((f) => {
+    const kept = (f.holes || []).filter((h) => !goneKeys.has(ringKey(h)));
+    if (kept.length !== (f.holes || []).length) { f.holes = kept; f.anchor = interiorPoint(f.ring, f.holes); }
+  });
   // A generated room keeps its id, location and type when the area that holds its old anchor is still there.
   // Smaller rooms claim first, so a room inside a bigger area is not mistaken for it.
   const oldBySize = [...old].sort((p, q) => roomArea(p) - roomArea(q));
@@ -792,11 +1010,13 @@ function scheduleGenerate() {
 function buildScene() {
   planSvg.replaceChildren();
   viewGroup = make("g", {}, planSvg);
-  minorPath = make("path", { class: "minor", d: DATA.minor }, viewGroup);
-  majorPath = make("path", { class: "major", d: DATA.major }, viewGroup);
+  underlayGroup = make("g", {}, viewGroup);
+  minorPath = make("path", { class: "minor", d: DATA.minor }, underlayGroup);
+  majorPath = make("path", { class: "major", d: DATA.major }, underlayGroup);
+  underlayGroup.style.display = underlayOn ? "" : "none";
   roomGroup = make("g", {}, viewGroup);
   wallGroup = make("g", {}, viewGroup);
-  minorPath.style.display = "none";
+  minorPath.style.display = $("toggle-minor").getAttribute("aria-pressed") === "true" ? "" : "none";
 }
 const pathOf = (ring) => "M" + ring.map((p) => p[0] + " " + p[1]).join("L") + "Z";
 const linePathOf = (pts) => "M" + pts.map((p) => p[0] + " " + p[1]).join("L");
@@ -814,7 +1034,7 @@ function renderScene() {
 function renderOverlay() {
   if (!overlay) return;
   overlay.replaceChildren();
-  if (showTexts && view.z >= 0.05) {
+  if (showTexts && underlayOn && view.z >= 0.05) {
     for (const t of DATA.texts) {
       const [sx, sy] = toScreen([t.x, t.y]);
       if (sx < -40 || sy < -20 || sx > size.w + 40 || sy > size.h + 20) continue;
@@ -1057,7 +1277,8 @@ function renderPanel() {
     add(row);
   }
   const linked = rooms.filter((r) => r.locationCode).length;
-  $("stats").innerHTML = `<span><b>${walls.length}</b> 道牆</span><span><b>${rooms.length}</b> 個房間</span><span><b>${linked}</b> 個已設定存置地點代碼</span><span>底圖來源：${DATA.source}</span><span>資料自動儲存在這個瀏覽器</span>`;
+  $("stats").innerHTML = `<span><b>${walls.length}</b> 道牆</span><span><b>${rooms.length}</b> 個房間</span><span><b>${linked}</b> 個已設定存置地點代碼</span><span>底圖來源：${DATA.source}</span>`;
+  renderFloors();
 }
 
 // ---- actions ---------------------------------------------------------------------------------------------
@@ -1110,7 +1331,7 @@ function deleteSelected() {
     if (room.auto) suppressed.push(room.anchor || interiorPoint(room.ring, room.holes || []));
     rooms = rooms.filter((r) => r.id !== selectedId); selectedId = null; selectedVertex = null;
   }
-  changed(true, false);
+  changed(true, !!room.auto);
 }
 function finishPath() {
   if (!draft) return;
@@ -1139,7 +1360,7 @@ function tidyWalls() {
   clusters.forEach((c) => {
     if (c.fixed) return;
     let best = null;
-    for (const key of cellsAround(c.p, TOL)) for (const i of ptGrid.get(key) || []) {
+    for (const key of cellsAround(c.p, TOL)) for (const i of ptsAt(key)) {
       const d = dist(c.p, DATA.points[i]);
       if (d <= TOL && (!best || d < best.d)) best = { d, p: DATA.points[i] };
     }
@@ -1199,7 +1420,7 @@ function tidyRooms() {
   clusters.forEach((c) => {
     if (c.fixed) return;
     let best = null;
-    for (const key of cellsAround(c.p, TOL)) for (const i of ptGrid.get(key) || []) {
+    for (const key of cellsAround(c.p, TOL)) for (const i of ptsAt(key)) {
       const d = dist(c.p, DATA.points[i]);
       if (d <= TOL && (!best || d < best.d)) best = { d, p: DATA.points[i] };
     }
@@ -1262,18 +1483,22 @@ function tidy() {
 }
 
 // ---- export / import ------------------------------------------------------------------------------------------
-function exportJson() {
+/** A floor's work in the exported file format: drawing coordinates, x right and y up. */
+function payloadFor(floor, state) {
   const flip = (p) => [round1(p[0]), round1(-p[1])];
-  const payload = {
-    version: 4, title: DATA.title, source: DATA.source, unit: DATA.unit,
+  return {
+    version: 4, title: floor.title, source: floor.source, unit: floor.unit,
     note: "座標為 DXF 圖面座標（x 向右、y 向上）。walls 是牆的中心線；auto 為 true 的房間是由牆自動生成的。holes 是這個房間裡面被其他房間佔用、要扣掉的部分；每個房間的 locationCode 與 name 是主系統的存置地點代碼與名稱；id 只是這個檔案內部的流水編號，不是存置地點代碼。type: room 房間 / public 公共區域 / void 挑空採光。",
-    walls: walls.map((w) => ({ id: w.id, pts: w.pts.map(flip), ...(w.curve ? { curve: true } : {}) })),
-    rooms: rooms.map((r) => ({
+    walls: (state.walls || []).map((w) => ({ id: w.id, pts: w.pts.map(flip), ...(w.curve ? { curve: true } : {}) })),
+    rooms: (state.rooms || []).map((r) => ({
       id: r.id, locationCode: r.locationCode || "", name: r.name, type: r.type, ring: r.ring.map(flip),
       ...(r.auto ? { auto: true } : {}), ...(r.curve ? { curve: r.curve } : {}),
       ...(r.holes?.length ? { holes: r.holes.map((h) => h.map(flip)) } : {}),
     })),
   };
+}
+function exportJson() {
+  const payload = payloadFor(DATA, { rooms, walls });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }));
   link.download = DATA.title + ".rooms.json";
@@ -1288,45 +1513,49 @@ function moveCurve(curve, dx, dy) {
   ["a", "b", "center"].forEach((k) => { if (curve[k]) out[k] = [round1(curve[k][0] + dx), round1(curve[k][1] + dy)]; });
   return out;
 }
-function importJson(text) {
-  const payload = JSON.parse(text);
+/** An exported file as editor state.  `shift` moves it (drawing units) when it was drawn on another floor's drawing. */
+function convertPayload(payload, shift, keepLocations) {
   if (!Array.isArray(payload.rooms)) throw new Error("格式不正確");
-  // Rooms drawn on another floor's drawing sit in that file's own coordinates.  When this page knows how
-  // the two drawings line up (--align), they are moved onto this floor's underlay as they come in.
-  const foreign = payload.source && payload.source !== DATA.source;
-  const offset = foreign ? (DATA.alignments || {})[payload.source] : null;
-  let keepLocations = true;
-  if (foreign) {
-    keepLocations = confirm(
-      `這份資料是在「${payload.source}」上描的，不是目前的「${DATA.source}」。\n\n` +
-      "要保留房間的存置地點代碼與名稱嗎？\n・按「確定」：保留（例如同一層的備份）\n・按「取消」：只沿用形狀，代碼與名稱清空（例如拿其他樓層的外形來描這一層）"
-    );
-  }
-  pushHistory();
-  const shiftX = offset ? offset.dx : 0, shiftY = offset ? offset.dy : 0;
+  const [shiftX, shiftY] = shift || [0, 0];
   const flip = (p) => [p[0] + shiftX, -(p[1] + shiftY)];
-  rooms = payload.rooms.map((r, i) => ({
+  const list = payload.rooms.map((r, i) => ({
     id: r.id || "T" + String(i + 1).padStart(3, "0"), name: keepLocations ? r.name || "" : "", locationCode: keepLocations ? r.locationCode || "" : "", type: TYPE_NAMES[r.type] ? r.type : "room",
     ring: r.ring.map(flip), ...(r.auto ? { auto: true } : {}), ...(r.curve ? { curve: moveCurve(r.curve, shiftX, shiftY) } : {}),
     ...(r.holes?.length ? { holes: r.holes.map((h) => h.map(flip)) } : {}),
   }));
   // Files from before holes existed: work out which generated rooms sit inside bigger ones.
-  const generated = rooms.filter((r) => r.auto);
+  const generated = list.filter((r) => r.auto);
   if (payload.rooms.some((r) => r.auto && !("holes" in r)) && (payload.version || 0) < 4) assignHoles(generated);
   generated.forEach((r) => { r.anchor = interiorPoint(r.ring, r.holes || []); });
-  walls = (payload.walls || []).map((w, i) => ({ id: w.id || "W" + String(i + 1).padStart(3, "0"), pts: w.pts.map(flip), ...(w.curve ? { curve: true } : {}) }));
-  suppressed = [];
+  const wallList = (payload.walls || []).map((w, i) => ({ id: w.id || "W" + String(i + 1).padStart(3, "0"), pts: w.pts.map(flip), ...(w.curve ? { curve: true } : {}) }));
   // Continue after the highest id in the file, and repair repeated ids from older exports.
-  counter = Math.max(0, ...rooms.map((r) => idNumber(r.id)), ...walls.map((w) => idNumber(w.id))) + 1;
+  let next = Math.max(0, ...list.map((r) => idNumber(r.id)), ...wallList.map((w) => idNumber(w.id))) + 1;
   const seenRooms = new Set(), seenWalls = new Set();
-  rooms.forEach((r) => { if (seenRooms.has(r.id)) r.id = newId("T"); seenRooms.add(r.id); });
-  walls.forEach((w) => { if (seenWalls.has(w.id)) w.id = newId("W"); seenWalls.add(w.id); });
+  list.forEach((r) => { if (seenRooms.has(r.id)) r.id = "T" + String(next++).padStart(3, "0"); seenRooms.add(r.id); });
+  wallList.forEach((w) => { if (seenWalls.has(w.id)) w.id = "W" + String(next++).padStart(3, "0"); seenWalls.add(w.id); });
+  return { rooms: list, walls: wallList, suppressed: [], counter: next };
+}
+function importJson(text) {
+  const payload = JSON.parse(text);
+  if (!Array.isArray(payload.rooms)) throw new Error("格式不正確");
+  // A file from another floor sits in that floor's own drawing coordinates; the page knows how the drawings line up.
+  const foreign = (payload.title && payload.title !== DATA.title) || (payload.source && payload.source !== DATA.source);
+  const shift = foreign ? shiftFor(payload, DATA) : [0, 0];
+  let keepLocations = true;
+  if (foreign) {
+    keepLocations = confirm(
+      `這份資料是在「${payload.title || payload.source}」上描的，不是目前的「${DATA.title}」。\n\n` +
+      "要保留房間的存置地點代碼與名稱嗎？\n・按「確定」：保留（例如同一層的備份）\n・按「取消」：只沿用形狀，代碼與名稱清空（例如拿其他樓層的外形來描這一層）"
+    );
+  }
+  pushHistory();
+  applyState(convertPayload(payload, shift, keepLocations));
   selectedId = null; selectedWallId = null; group = null; align = null;
   changed(true, false);
   if (foreign) {
-    $("hint").textContent = offset
-      ? `已依底圖自動對位：x ${offset.dx >= 0 ? "+" : ""}${offset.dx}、y ${offset.dy >= 0 ? "+" : ""}${offset.dy} 公分（相符程度 ${Math.round(offset.score * 100)}%）。若有偏差，可按「全選」後用右側的「移動與對齊」微調；${keepLocations ? "" : "存置地點代碼與名稱已清空。"}`
-      : "這份資料來自其他樓層的底圖，這個檔案沒有對位資訊，位置可能對不上；請按「全選」後用右側的「移動與對齊」調整。";
+    $("hint").textContent = shift
+      ? `已依底圖對位：x ${shift[0] >= 0 ? "+" : ""}${shift[0]}、y ${shift[1] >= 0 ? "+" : ""}${shift[1]} 公分。若有偏差，可按「全選」後用上方工具列微調；${keepLocations ? "" : "存置地點代碼與名稱已清空。"}`
+      : "這份資料來自另一張底圖，頁面沒有兩者的對位資訊，位置可能對不上；請按「全選」後用上方工具列調整。";
   }
 }
 
@@ -1358,7 +1587,7 @@ function wandRaster(center, gap) {
     if (closed) g.closePath();
   });
   const seen = new Set();
-  for (const key of cellsAround(center, HALF * RES)) for (const i of segGrid.get(key) || []) {
+  for (const key of cellsAround(center, HALF * RES)) for (const i of segsAt(key)) {
     if (seen.has(i)) continue;
     seen.add(i);
     const s = DATA.segments[i];
@@ -1457,7 +1686,7 @@ function gridAngle(box) {
   const cx = (box[0] + box[2]) / 2, cy = (box[1] + box[3]) / 2, rad = Math.max(box[2] - box[0], box[3] - box[1]) / 2 + 60;
   let sx = 0, sy = 0;
   const seen = new Set();
-  for (const key of cellsAround([cx, cy], rad)) for (const i of segGrid.get(key) || []) {
+  for (const key of cellsAround([cx, cy], rad)) for (const i of segsAt(key)) {
     if (seen.has(i)) continue;
     seen.add(i);
     const g = DATA.segments[i], len = Math.hypot(g[2] - g[0], g[3] - g[1]);
@@ -1479,7 +1708,7 @@ function snapLine(theta, kind, value, lo, hi) {
   for (let k = 0; k <= steps; k++) {
     const along = lo + ((hi - lo) * k) / steps;
     const p = kind === "U" ? [along * c - value * s, along * s + value * c] : [value * c - along * s, value * s + along * c];
-    for (const key of cellsAround(p, 20)) for (const i of segGrid.get(key) || []) {
+    for (const key of cellsAround(p, 20)) for (const i of segsAt(key)) {
       if (seen.has(i)) continue;
       seen.add(i);
       const g = DATA.segments[i], dx = g[2] - g[0], dy = g[3] - g[1], len = Math.hypot(dx, dy);
@@ -1867,7 +2096,7 @@ function extendTarget(wall, endIndex) {
   const seen = new Set();
   for (let s = 0; s <= MAX; s += 100) {
     const q = [E[0] + d[0] * s, E[1] + d[1] * s];
-    for (const key of cellsAround(q, 80)) for (const i of segGrid.get(key) || []) {
+    for (const key of cellsAround(q, 80)) for (const i of segsAt(key)) {
       if (seen.has(i)) continue;
       seen.add(i);
       const g = DATA.segments[i];
@@ -2361,6 +2590,13 @@ $("file").addEventListener("change", async (e) => {
 });
 const flip = (id, on) => $(id).setAttribute("aria-pressed", String(on));
 $("toggle-live").addEventListener("click", () => { liveRooms = !liveRooms; flip("toggle-live", liveRooms); if (liveRooms) scheduleGenerate(); });
+$("toggle-underlay").addEventListener("click", (e) => {
+  underlayOn = !underlayOn;
+  flip("toggle-underlay", underlayOn);
+  underlayGroup.style.display = underlayOn ? "" : "none";
+  wandCache.clear(); wandPreview = null; snapHit = null;
+  renderOverlay();
+});
 $("toggle-minor").addEventListener("click", (e) => {
   const on = e.currentTarget.getAttribute("aria-pressed") !== "true";
   flip("toggle-minor", on);
@@ -2402,6 +2638,12 @@ window.addEventListener("keydown", (e) => {
     moveSelection(key === "arrowleft" ? -step : key === "arrowright" ? step : 0, key === "arrowup" ? -step : key === "arrowdown" ? step : 0);
     return;
   }
+  if ((key === "[" || key === "]") && FLOORS.length > 1) {
+    const at = FLOORS.findIndex((f) => f.id === floorId);
+    switchFloor(FLOORS[(at + (key === "]" ? 1 : FLOORS.length - 1)) % FLOORS.length].id);
+    return;
+  }
+  if (key === "b") { $("toggle-underlay").click(); return; }
   if (key === "f") { fit(); applyView(); return; }
   if (key === "?" ) { $("help").click(); return; }
   const tools = { v: "select", w: "wall", a: "arcwall", r: "rect", p: "poly", c: "semi", o: "circle", m: "wand", t: "trim" };
@@ -2421,13 +2663,16 @@ window.addEventListener("keyup", (e) => { if (e.code === "Space") spaceDown = fa
 new ResizeObserver(resize).observe(stage);
 
 // ---- start ---------------------------------------------------------------------------------------------------------------------
-$("title").textContent = DATA.title + " 描圖";
-document.title = DATA.title + " 室內地圖描圖";
-load();
-buildScene();
-setTool("select");
-resize();
-changed(false, false);
+$("title").textContent = BUILDING.name + " 描圖";
+if (!canPickFolder) $("save-status").hidden = false;
+(async function start() {
+  await initStorage();
+  let first = FLOORS[0].id;
+  try { const last = localStorage.getItem("indoor-trace-last:" + BUILDING.name); if (last && FLOORS.some((f) => f.id === last)) first = last; } catch { /* ignore */ }
+  enterFloor(first);
+  resize();
+  renderSaveStatus();
+})();
 </script>
 </body>
 </html>
