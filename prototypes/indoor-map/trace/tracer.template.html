@@ -1,0 +1,815 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>室內地圖描圖工具</title>
+<style>
+  :root {
+    --ink: #172033; --ink-2: #44506a; --muted: #7a859c; --rule: #d8dfeb; --paper: #f6f8fb;
+    --accent: #e0654a; --teal: #1fb5a5; --room: rgba(31, 181, 165, 0.16); --room-line: #139688;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--paper); color: var(--ink); display: grid; font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif; grid-template-rows: auto minmax(0, 1fr) auto; }
+  header { align-items: center; background: #fff; border-bottom: 1px solid var(--rule); display: flex; flex-wrap: wrap; gap: 8px 12px; padding: 8px 14px; }
+  header h1 { font-size: 16px; margin: 0 6px 0 0; }
+  .group { align-items: center; background: #eef2f9; border-radius: 10px; display: inline-flex; padding: 3px; }
+  button, select, input { font: inherit; }
+  .group button, .btn { background: transparent; border: 0; border-radius: 8px; color: var(--ink-2); cursor: pointer; font-size: 13px; padding: 6px 11px; }
+  .group button[aria-pressed="true"] { background: #fff; box-shadow: 0 1px 3px rgba(20, 30, 60, 0.2); color: var(--ink); font-weight: 700; }
+  .group button kbd { background: rgba(0, 0, 0, 0.07); border-radius: 4px; font-size: 10px; margin-left: 4px; padding: 0 4px; }
+  .btn { background: #eef2f9; }
+  .btn.primary { background: var(--ink); color: #fff; }
+  .btn:disabled { cursor: not-allowed; opacity: 0.4; }
+  .spacer { flex: 1; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; min-height: 0; }
+  .stage { background: #fff; cursor: crosshair; min-height: 0; overflow: hidden; position: relative; touch-action: none; }
+  .stage.select { cursor: default; }
+  .stage.panning { cursor: grabbing; }
+  .stage svg { height: 100%; left: 0; position: absolute; top: 0; width: 100%; }
+  .stage .overlay { pointer-events: none; }
+  .minor { fill: none; stroke: #c3cadb; stroke-width: 0.6; vector-effect: non-scaling-stroke; }
+  .major { fill: none; stroke: #6b7694; stroke-width: 0.9; vector-effect: non-scaling-stroke; }
+  .stage.faint .minor, .stage.faint .major { opacity: 0.55; }
+  .room { fill: var(--room); stroke: var(--room-line); stroke-linejoin: round; stroke-width: 1.4; vector-effect: non-scaling-stroke; }
+  .room.public { fill: rgba(120, 140, 200, 0.14); stroke: #5f74bd; }
+  .room.void { fill: rgba(255, 255, 255, 0.35); stroke: #8a95b3; stroke-dasharray: 6 4; }
+  .room.selected { fill: rgba(224, 101, 74, 0.22); stroke: var(--accent); stroke-width: 2.2; }
+  .room:hover { fill: rgba(255, 190, 90, 0.28); }
+  .draft { fill: rgba(224, 101, 74, 0.12); stroke: var(--accent); stroke-dasharray: 5 4; stroke-width: 1.6; }
+  .handle { fill: #fff; stroke: var(--accent); stroke-width: 2; }
+  .handle.active { fill: var(--accent); }
+  .snap { fill: none; stroke-width: 2; }
+  .label { fill: var(--ink); font-size: 12px; paint-order: stroke; stroke: rgba(255, 255, 255, 0.9); stroke-linejoin: round; stroke-width: 3px; text-anchor: middle; }
+  .src { fill: #8a6d00; font-size: 10px; paint-order: stroke; stroke: rgba(255, 255, 255, 0.85); stroke-width: 2.5px; text-anchor: middle; }
+  .hint { background: rgba(23, 32, 51, 0.88); border-radius: 8px; bottom: 10px; color: #fff; font-size: 12px; left: 12px; padding: 6px 10px; position: absolute; }
+  aside { background: #fff; border-left: 1px solid var(--rule); display: flex; flex-direction: column; min-height: 0; }
+  aside h2 { font-size: 13px; margin: 0; padding: 10px 14px 4px; }
+  .list { flex: 1; list-style: none; margin: 0; min-height: 0; overflow-y: auto; padding: 0 8px 8px; }
+  .list button { background: transparent; border: 0; border-radius: 8px; color: inherit; cursor: pointer; display: block; font-size: 13px; padding: 5px 10px; text-align: left; width: 100%; }
+  .list button:hover { background: #eef2f9; }
+  .list button[aria-current="true"] { background: #fde7df; }
+  .list small { color: var(--muted); display: block; font-size: 11px; }
+  .props { border-top: 1px solid var(--rule); font-size: 13px; max-height: 48%; overflow-y: auto; padding: 10px 14px; }
+  .props label { color: var(--muted); display: block; font-size: 12px; margin-top: 8px; }
+  .props input[type="text"], .props select { border: 1px solid var(--rule); border-radius: 8px; padding: 6px 8px; width: 100%; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .chips button { background: #fff5d6; border: 1px solid #ecd88c; border-radius: 999px; cursor: pointer; font-size: 12px; padding: 2px 9px; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .note { background: #eef6ff; border-radius: 8px; color: #2a4a7a; font-size: 12px; margin-top: 8px; padding: 6px 8px; }
+  footer { background: #fff; border-top: 1px solid var(--rule); color: var(--ink-2); display: flex; flex-wrap: wrap; font-size: 12px; gap: 4px 18px; padding: 6px 14px; }
+  footer b { color: var(--ink); }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title"></h1>
+  <div class="group" role="group" aria-label="工具" id="tools">
+    <button type="button" data-tool="select" aria-pressed="true" title="選取、拖曳頂點、雙擊邊線加點">選取<kbd>V</kbd></button>
+    <button type="button" data-tool="rect" aria-pressed="false" title="拖曳或點兩個對角">矩形<kbd>R</kbd></button>
+    <button type="button" data-tool="poly" aria-pressed="false" title="逐點描出任意形狀">多邊形<kbd>P</kbd></button>
+    <button type="button" data-tool="semi" aria-pressed="false" title="點直徑兩端，再點一側">半圓<kbd>C</kbd></button>
+    <button type="button" data-tool="circle" aria-pressed="false" title="點圓心，再點半徑">圓<kbd>O</kbd></button>
+  </div>
+  <div class="group">
+    <button type="button" id="undo" title="復原 Ctrl+Z">復原</button>
+    <button type="button" id="redo" title="重做 Ctrl+Y">重做</button>
+  </div>
+  <div class="group" role="group" aria-label="顯示">
+    <button type="button" id="toggle-minor" aria-pressed="false" title="顯示短線（門、傢俱等）">短線</button>
+    <button type="button" id="toggle-texts" aria-pressed="true" title="顯示原圖文字">原圖文字</button>
+    <button type="button" id="toggle-snap" aria-pressed="true" title="吸附到牆線端點與其他房間">吸附</button>
+  </div>
+  <button type="button" class="btn" id="tidy" title="頂點靠攏、邊線拉直、相鄰房間共邊">自動整理</button>
+  <span class="spacer"></span>
+  <button type="button" class="btn" id="import">匯入</button>
+  <button type="button" class="btn primary" id="export">匯出 JSON</button>
+  <input type="file" id="file" accept="application/json,.json" hidden />
+</header>
+
+<main>
+  <div class="stage select" id="stage">
+    <svg id="plan" aria-label="平面圖底圖與描繪的房間"></svg>
+    <svg id="overlay" class="overlay" aria-hidden="true"></svg>
+    <div class="hint" id="hint"></div>
+  </div>
+  <aside>
+    <h2>房間 <span id="count"></span></h2>
+    <ul class="list" id="list"></ul>
+    <section class="props" id="props" aria-live="polite"></section>
+  </aside>
+</main>
+<footer id="stats"></footer>
+
+<script>
+const DATA = /*__TRACE_DATA__*/null;
+
+const STORE_KEY = "indoor-trace:" + DATA.title + ":" + DATA.source;
+const TYPE_NAMES = { room: "房間", public: "公共區域", void: "挑空／採光" };
+const HINTS = {
+  select: "點房間選取；拖曳白點移動頂點；雙擊邊線加點；Delete 刪除頂點或房間；空白處拖曳或按住空白鍵可平移",
+  rect: "按住拖曳畫矩形，或依序點兩個對角；Esc 取消",
+  poly: "依序點出各頂點；Enter、雙擊或點回第一點完成；Backspace 退一點；按住 Shift 鎖定水平／垂直",
+  semi: "先點直徑的兩個端點，再把滑鼠移到要凸出的一側後點一下",
+  circle: "先點圓心，再點圓周上的任一點",
+};
+const SVGNS = "http://www.w3.org/2000/svg";
+const $ = (id) => document.getElementById(id);
+const make = (name, attrs = {}, parent) => {
+  const node = document.createElementNS(SVGNS, name);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  if (parent) parent.append(node);
+  return node;
+};
+
+// ---- state ---------------------------------------------------------------------
+let rooms = [];
+let selectedId = null;
+let selectedVertex = null;
+let tool = "select";
+let draft = null;                 // { tool, pts: [...], cursor: [x, y], rectStart?: [x, y] }
+let drag = null;
+let view = { z: 1, tx: 0, ty: 0 };
+let size = { w: 1000, h: 700 };
+let snapOn = true;
+let showTexts = true;
+let spaceDown = false;
+let cursorPoint = null;
+let snapHit = null;
+let history = [], future = [];
+let counter = 1;
+
+const stage = $("stage");
+const planSvg = $("plan");
+const overlay = $("overlay");
+let viewGroup, minorPath, majorPath, roomGroup;
+
+// ---- small geometry helpers -----------------------------------------------------
+const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+const round1 = (v) => Math.round(v * 10) / 10;
+function area(ring) {
+  let sum = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const [x1, y1] = ring[i], [x2, y2] = ring[(i + 1) % ring.length];
+    sum += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(sum) / 2;
+}
+function centroid(ring) {
+  let a = 0, cx = 0, cy = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const [x1, y1] = ring[i], [x2, y2] = ring[(i + 1) % ring.length];
+    const cross = x1 * y2 - x2 * y1;
+    a += cross; cx += (x1 + x2) * cross; cy += (y1 + y2) * cross;
+  }
+  if (Math.abs(a) < 1e-6) return ring[0];
+  return [cx / (3 * a), cy / (3 * a)];
+}
+function inRing(ring, [x, y]) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+function closestOnSegment(p, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const len2 = dx * dx + dy * dy;
+  const t = len2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2)) : 0;
+  return { point: [a[0] + t * dx, a[1] + t * dy], t };
+}
+
+// ---- spatial index for the underlay ----------------------------------------------
+const CELL = 150;
+const segGrid = new Map(), ptGrid = new Map();
+const cellKey = (x, y) => Math.floor(x / CELL) + "," + Math.floor(y / CELL);
+DATA.segments.forEach((s, i) => {
+  const [x1, y1, x2, y2] = s;
+  const x0 = Math.floor(Math.min(x1, x2) / CELL), x3 = Math.floor(Math.max(x1, x2) / CELL);
+  const y0 = Math.floor(Math.min(y1, y2) / CELL), y3 = Math.floor(Math.max(y1, y2) / CELL);
+  for (let cx = x0; cx <= x3; cx++) for (let cy = y0; cy <= y3; cy++) {
+    const key = cx + "," + cy;
+    if (!segGrid.has(key)) segGrid.set(key, []);
+    segGrid.get(key).push(i);
+  }
+});
+DATA.points.forEach((p, i) => {
+  const key = cellKey(p[0], p[1]);
+  if (!ptGrid.has(key)) ptGrid.set(key, []);
+  ptGrid.get(key).push(i);
+});
+function cellsAround([x, y], r) {
+  const keys = [];
+  for (let cx = Math.floor((x - r) / CELL); cx <= Math.floor((x + r) / CELL); cx++)
+    for (let cy = Math.floor((y - r) / CELL); cy <= Math.floor((y + r) / CELL); cy++) keys.push(cx + "," + cy);
+  return keys;
+}
+
+// ---- snapping --------------------------------------------------------------------
+function snap(point, options = {}) {
+  let p = point;
+  if (options.from && options.axis) {
+    const dx = p[0] - options.from[0], dy = p[1] - options.from[1];
+    const angle = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
+    const length = Math.hypot(dx, dy);
+    p = [options.from[0] + Math.cos(angle) * length, options.from[1] + Math.sin(angle) * length];
+  }
+  if (!snapOn) return { p, kind: null };
+  const r = 12 / view.z;
+  let best = null;
+  const offer = (candidate, d, kind) => { if (d <= r && (!best || d < best.d)) best = { p: candidate, d, kind }; };
+  rooms.forEach((room) => room.ring.forEach((v, i) => {
+    if (options.excludeRoom === room.id && options.excludeIndex === i) return;
+    offer(v, dist(p, v), "vertex");
+  }));
+  for (const key of cellsAround(p, r)) for (const i of ptGrid.get(key) || []) offer(DATA.points[i], dist(p, DATA.points[i]), "corner");
+  if (best) return { p: best.p, kind: best.kind };
+  const er = 9 / view.z;
+  let edge = null;
+  const offerEdge = (a, b, kind) => {
+    const hit = closestOnSegment(p, a, b);
+    const d = dist(p, hit.point);
+    if (d <= er && (!edge || d < edge.d)) edge = { p: hit.point, d, kind };
+  };
+  rooms.forEach((room) => room.ring.forEach((v, i) => {
+    if (options.excludeRoom === room.id && (options.excludeIndex === i || options.excludeIndex === (i + 1) % room.ring.length)) return;
+    offerEdge(v, room.ring[(i + 1) % room.ring.length], "edge");
+  }));
+  const seen = new Set();
+  for (const key of cellsAround(p, er)) for (const i of segGrid.get(key) || []) {
+    if (seen.has(i)) continue;
+    seen.add(i);
+    const s = DATA.segments[i];
+    offerEdge([s[0], s[1]], [s[2], s[3]], "wall");
+  }
+  return edge ? { p: edge.p, kind: edge.kind } : { p, kind: null };
+}
+
+// ---- view ------------------------------------------------------------------------
+const toPlan = (clientX, clientY) => {
+  const box = stage.getBoundingClientRect();
+  return [(clientX - box.left - view.tx) / view.z, (clientY - box.top - view.ty) / view.z];
+};
+const toScreen = ([x, y]) => [view.tx + x * view.z, view.ty + y * view.z];
+function fit() {
+  const [x0, y0, x1, y1] = DATA.bounds;
+  view.z = Math.min((size.w - 80) / (x1 - x0), (size.h - 80) / (y1 - y0));
+  view.tx = (size.w - view.z * (x0 + x1)) / 2;
+  view.ty = (size.h - view.z * (y0 + y1)) / 2;
+}
+function applyView() {
+  viewGroup.setAttribute("transform", `translate(${view.tx} ${view.ty}) scale(${view.z})`);
+  renderOverlay();
+}
+function resize() {
+  const box = stage.getBoundingClientRect();
+  const first = size.w === 1000 && size.h === 700;
+  size = { w: box.width, h: box.height };
+  for (const s of [planSvg, overlay]) s.setAttribute("viewBox", `0 0 ${size.w} ${size.h}`);
+  if (first) fit();
+  applyView();
+}
+
+// ---- history and storage -----------------------------------------------------------
+const snapshot = () => JSON.stringify(rooms);
+function pushHistory() { history.push(snapshot()); if (history.length > 120) history.shift(); future = []; }
+function restore(json) {
+  rooms = JSON.parse(json);
+  if (!rooms.some((r) => r.id === selectedId)) { selectedId = null; selectedVertex = null; }
+  changed(false);
+}
+function undo() { if (!history.length) return; future.push(snapshot()); restore(history.pop()); }
+function redo() { if (!future.length) return; history.push(snapshot()); restore(future.pop()); }
+function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify({ rooms, counter })); } catch { /* private mode */ } }
+function load() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
+    if (saved) { rooms = saved.rooms || []; counter = saved.counter || rooms.length + 1; }
+  } catch { /* ignore */ }
+}
+function changed(record = true) {
+  if (record) save();
+  renderRooms();
+  renderOverlay();
+  renderPanel();
+  $("undo").disabled = !history.length;
+  $("redo").disabled = !future.length;
+}
+
+// ---- rooms -------------------------------------------------------------------------
+const newId = () => "T" + String(counter++).padStart(3, "0");
+function addRoom(ring, curve) {
+  pushHistory();
+  const room = { id: newId(), name: "", type: "room", ring: ring.map((p) => [round1(p[0]), round1(p[1])]) };
+  if (curve) room.curve = curve;
+  rooms.push(room);
+  selectedId = room.id;
+  selectedVertex = null;
+  changed();
+}
+const roomById = (id) => rooms.find((r) => r.id === id);
+function suggestions(room) {
+  return DATA.texts.filter((t) => inRing(room.ring, [t.x, t.y])).map((t) => t.t).filter((v, i, a) => a.indexOf(v) === i).slice(0, 12);
+}
+function semicircleRing(a, b, side, steps = 48) {
+  const c = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const r = dist(a, b) / 2;
+  if (r < 1) return [];
+  const u = [(a[0] - c[0]) / r, (a[1] - c[1]) / r];
+  let n = [-u[1], u[0]];
+  if (n[0] * (side[0] - c[0]) + n[1] * (side[1] - c[1]) < 0) n = [-n[0], -n[1]];
+  const ring = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = (Math.PI * i) / steps;
+    ring.push([c[0] + r * (Math.cos(t) * u[0] + Math.sin(t) * n[0]), c[1] + r * (Math.cos(t) * u[1] + Math.sin(t) * n[1])]);
+  }
+  return ring;
+}
+function circleRing(center, edge, steps = 72) {
+  const r = dist(center, edge);
+  return Array.from({ length: steps }, (_, i) => {
+    const t = (2 * Math.PI * i) / steps;
+    return [center[0] + r * Math.cos(t), center[1] + r * Math.sin(t)];
+  });
+}
+const rectRing = (a, b) => [[a[0], a[1]], [b[0], a[1]], [b[0], b[1]], [a[0], b[1]]];
+
+// ---- rendering ---------------------------------------------------------------------
+function buildScene() {
+  planSvg.replaceChildren();
+  viewGroup = make("g", {}, planSvg);
+  minorPath = make("path", { class: "minor", d: DATA.minor }, viewGroup);
+  majorPath = make("path", { class: "major", d: DATA.major }, viewGroup);
+  roomGroup = make("g", {}, viewGroup);
+  minorPath.style.display = "none";
+}
+const pathOf = (ring) => "M" + ring.map((p) => p[0] + " " + p[1]).join("L") + "Z";
+function renderRooms() {
+  roomGroup.replaceChildren();
+  [...rooms].sort((p, q) => area(q.ring) - area(p.ring)).forEach((room) => {
+    make("path", { class: `room ${room.type}${room.id === selectedId ? " selected" : ""}`, d: pathOf(room.ring), "data-id": room.id }, roomGroup);
+  });
+}
+function renderOverlay() {
+  if (!overlay) return;
+  overlay.replaceChildren();
+  if (showTexts) {
+    for (const t of DATA.texts) {
+      const [sx, sy] = toScreen([t.x, t.y]);
+      if (sx < -40 || sy < -20 || sx > size.w + 40 || sy > size.h + 20) continue;
+      if (view.z < 0.05) break;
+      make("text", { class: "src", x: sx, y: sy }, overlay).textContent = t.t;
+    }
+  }
+  for (const room of rooms) {
+    if (!room.name) continue;
+    const [sx, sy] = toScreen(centroid(room.ring));
+    make("text", { class: "label", x: sx, y: sy + 4 }, overlay).textContent = room.name;
+  }
+  const selected = roomById(selectedId);
+  if (selected && tool === "select") {
+    selected.ring.forEach((v, i) => {
+      const [sx, sy] = toScreen(v);
+      make("circle", { class: "handle" + (i === selectedVertex ? " active" : ""), cx: sx, cy: sy, r: 5 }, overlay);
+    });
+  }
+  if (draft) drawDraft();
+  if (snapHit && snapHit.kind) {
+    const [sx, sy] = toScreen(snapHit.p);
+    const color = { vertex: "#e0654a", corner: "#1fb5a5", edge: "#c08a00", wall: "#7a6bd6" }[snapHit.kind];
+    make("circle", { class: "snap", cx: sx, cy: sy, r: 8, stroke: color }, overlay);
+  }
+}
+function draftRing() {
+  if (!draft) return null;
+  const cursor = draft.cursor;
+  if (draft.tool === "rect" && draft.pts.length === 1 && cursor) return rectRing(draft.pts[0], cursor);
+  if (draft.tool === "poly") return cursor ? [...draft.pts, cursor] : draft.pts;
+  if (draft.tool === "semi" && draft.pts.length === 2 && cursor) return semicircleRing(draft.pts[0], draft.pts[1], cursor);
+  if (draft.tool === "semi" && draft.pts.length === 1 && cursor) return [draft.pts[0], cursor];
+  if (draft.tool === "circle" && draft.pts.length === 1 && cursor) return circleRing(draft.pts[0], cursor);
+  return null;
+}
+function drawDraft() {
+  const ring = draftRing();
+  if (!ring || ring.length < 2) return;
+  const d = ring.map((p, i) => { const [sx, sy] = toScreen(p); return (i ? "L" : "M") + sx + " " + sy; }).join("") + (draft.tool === "poly" || ring.length < 3 ? "" : "Z");
+  make("path", { class: "draft", d }, overlay);
+  if (draft.tool === "poly") draft.pts.forEach((p) => { const [sx, sy] = toScreen(p); make("circle", { class: "handle", cx: sx, cy: sy, r: 4 }, overlay); });
+}
+
+function renderPanel() {
+  const list = $("list");
+  list.replaceChildren();
+  $("count").textContent = `（${rooms.length}）`;
+  [...rooms].sort((p, q) => (p.name || "￿").localeCompare(q.name || "￿", "zh-Hant")).forEach((room) => {
+    const li = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.id = room.id;
+    if (room.id === selectedId) button.setAttribute("aria-current", "true");
+    button.textContent = room.name || "（未命名）" + room.id;
+    const small = document.createElement("small");
+    small.textContent = `${TYPE_NAMES[room.type]} · 約 ${(area(room.ring) / 10000).toFixed(1)} m² · ${room.ring.length} 個頂點`;
+    button.append(small);
+    li.append(button);
+    list.append(li);
+  });
+  const props = $("props");
+  props.replaceChildren();
+  const room = roomById(selectedId);
+  const add = (node) => props.append(node);
+  const el = (tag, text, attrs = {}) => Object.assign(document.createElement(tag), text === undefined ? {} : { textContent: text }, attrs);
+  if (!room) {
+    add(el("div", "用上方工具在底圖上描出房間。選取房間後，可以在這裡命名、設定類型。"));
+    add(el("div", "描完後按「匯出 JSON」，把檔案交給我整理。", { className: "note" }));
+  } else {
+    const nameLabel = el("label", "房間名稱");
+    const name = el("input", undefined, { type: "text", value: room.name, placeholder: "例如：會議室" });
+    let recorded = false;
+    name.addEventListener("input", () => {
+      if (!recorded) { pushHistory(); recorded = true; }   // one undo step per rename
+      room.name = name.value; save(); renderOverlay();
+    });
+    name.addEventListener("change", () => { changed(); });
+    nameLabel.append(name);
+    add(nameLabel);
+    const chips = suggestions(room);
+    if (chips.length) {
+      const box = el("div", undefined, { className: "chips" });
+      for (const text of chips) {
+        const b = el("button", text, { type: "button", title: "套用這個名稱" });
+        b.addEventListener("click", () => { pushHistory(); room.name = text; changed(); });
+        box.append(b);
+      }
+      const label = el("label", "圖上這個範圍內的文字（點一下套用）");
+      add(label); add(box);
+    }
+    const typeLabel = el("label", "類型");
+    const type = el("select");
+    for (const [value, text] of Object.entries(TYPE_NAMES)) type.append(new Option(text, value, false, value === room.type));
+    type.addEventListener("change", () => { pushHistory(); room.type = type.value; changed(); });
+    typeLabel.append(type);
+    add(typeLabel);
+    add(el("div", `面積約 ${(area(room.ring) / 10000).toFixed(1)} m²（以單位為公分推算）`, { className: "note" }));
+    const row = el("div", undefined, { className: "row" });
+    const del = el("button", "刪除此房間", { type: "button", className: "btn" });
+    del.addEventListener("click", deleteSelected);
+    row.append(del);
+    add(row);
+  }
+  const named = rooms.filter((r) => r.name).length;
+  $("stats").innerHTML = `<span><b>${rooms.length}</b> 個房間</span><span><b>${named}</b> 個已命名</span><span>底圖來源：${DATA.source}</span><span>資料自動儲存在這個瀏覽器</span>`;
+}
+
+// ---- actions -------------------------------------------------------------------------
+function setTool(next) {
+  tool = next;
+  draft = null;
+  snapHit = null;
+  document.querySelectorAll("#tools button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.tool === tool)));
+  stage.classList.toggle("select", tool === "select");
+  $("hint").textContent = HINTS[tool];
+  renderOverlay();
+}
+function deleteSelected() {
+  const room = roomById(selectedId);
+  if (!room) return;
+  pushHistory();
+  if (selectedVertex !== null && room.ring.length > 3) { room.ring.splice(selectedVertex, 1); delete room.curve; selectedVertex = null; }
+  else { rooms = rooms.filter((r) => r.id !== selectedId); selectedId = null; selectedVertex = null; }
+  changed();
+}
+function finishPoly() {
+  if (draft && draft.pts.length >= 3) { const ring = draft.pts; draft = null; addRoom(ring); }
+  else draft = null;
+  renderOverlay();
+}
+
+// ---- tidy: weld vertices, make shared walls coincide, straighten ----------------------
+function tidy() {
+  if (!rooms.length) return;
+  pushHistory();
+  const TOL = 14, AXIS_DEG = 3, MIN_EDGE = 8;
+  const clusters = [];
+  const idsByRoom = rooms.map((room) => room.ring.map((p) => {
+    const fixed = !!room.curve;
+    let found = clusters.find((c) => dist(c.p, p) <= TOL);
+    if (!found) { found = { p: [p[0], p[1]], n: 0, fixed: false }; clusters.push(found); }
+    found.p = [(found.p[0] * found.n + p[0]) / (found.n + 1), (found.p[1] * found.n + p[1]) / (found.n + 1)];
+    found.n += 1;
+    if (fixed) { found.fixed = true; found.p = [p[0], p[1]]; }
+    return clusters.indexOf(found);
+  }));
+  // Pull each cluster onto a wall corner of the drawing when one is close.
+  let welded = 0;
+  clusters.forEach((c) => {
+    if (c.fixed) return;
+    let best = null;
+    for (const key of cellsAround(c.p, TOL)) for (const i of ptGrid.get(key) || []) {
+      const d = dist(c.p, DATA.points[i]);
+      if (d <= TOL && (!best || d < best.d)) best = { d, p: DATA.points[i] };
+    }
+    if (best) { c.p = [best.p[0], best.p[1]]; c.fixed = true; welded += 1; }
+  });
+  // T junctions: a corner that sits on another room's edge becomes a vertex of that edge.
+  let inserted = 0;
+  clusters.forEach((c, ci) => {
+    idsByRoom.forEach((ids, ri) => {
+      if (ids.includes(ci)) return;
+      for (let i = 0; i < ids.length; i++) {
+        const a = clusters[ids[i]].p, b = clusters[ids[(i + 1) % ids.length]].p;
+        const hit = closestOnSegment(c.p, a, b);
+        if (hit.t > 0.001 && hit.t < 0.999 && dist(c.p, hit.point) <= TOL && dist(c.p, a) > TOL && dist(c.p, b) > TOL) {
+          ids.splice(i + 1, 0, ci);
+          inserted += 1;
+          break;
+        }
+      }
+    });
+  });
+  // Straighten near-horizontal and near-vertical edges, sharing the corrections.
+  for (let pass = 0; pass < 3; pass++) idsByRoom.forEach((ids) => ids.forEach((id, i) => {
+    const a = clusters[id], b = clusters[ids[(i + 1) % ids.length]];
+    if (a === b || (a.fixed && b.fixed)) return;
+    const dx = b.p[0] - a.p[0], dy = b.p[1] - a.p[1];
+    if (Math.hypot(dx, dy) < 20) return;
+    const angle = Math.abs((Math.atan2(dy, dx) * 180) / Math.PI) % 180;
+    const flat = Math.min(angle, 180 - angle) <= AXIS_DEG, upright = Math.abs(angle - 90) <= AXIS_DEG;
+    const axis = flat ? 1 : upright ? 0 : -1;
+    if (axis < 0) return;
+    const value = a.fixed ? a.p[axis] : b.fixed ? b.p[axis] : (a.p[axis] + b.p[axis]) / 2;
+    if (!a.fixed) a.p[axis] = value;
+    if (!b.fixed) b.p[axis] = value;
+  }));
+  // Rebuild the rings, dropping repeats, tiny edges and needless straight-through points.
+  const use = new Map();
+  idsByRoom.forEach((ids) => new Set(ids).forEach((id) => use.set(id, (use.get(id) || 0) + 1)));
+  let dropped = 0;
+  rooms.forEach((room, ri) => {
+    if (room.curve) return;
+    let ids = idsByRoom[ri].filter((id, i, arr) => id !== arr[(i + 1) % arr.length]);
+    ids = ids.filter((id, i) => dist(clusters[id].p, clusters[ids[(i + 1) % ids.length]].p) >= MIN_EDGE || ids.length <= 3);
+    ids = ids.filter((id, i) => {
+      if (use.get(id) > 1 || clusters[id].fixed) return true;
+      const a = clusters[ids[(i + ids.length - 1) % ids.length]].p, b = clusters[ids[(i + 1) % ids.length]].p, p = clusters[id].p;
+      const cross = Math.abs((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])) / Math.max(1, dist(a, b));
+      const keep = cross > 3;
+      if (!keep) dropped += 1;
+      return keep;
+    });
+    if (ids.length >= 3) room.ring = ids.map((id) => [round1(clusters[id].p[0]), round1(clusters[id].p[1])]);
+  });
+  rooms.forEach((room, ri) => { if (room.curve) room.ring = room.ring.map((p) => [round1(p[0]), round1(p[1])]); });
+  rooms = rooms.filter((room) => room.ring.length >= 3 && area(room.ring) > 100);
+  changed();
+  $("hint").textContent = `整理完成：${welded} 個角點吸到牆角、${inserted} 處補上共邊頂點、${dropped} 個多餘頂點移除（可按復原）`;
+}
+
+// ---- export / import ---------------------------------------------------------------------
+function exportJson() {
+  const payload = {
+    version: 1, title: DATA.title, source: DATA.source, unit: DATA.unit,
+    note: "座標為 DXF 圖面座標（x 向右、y 向上）。type: room 房間 / public 公共區域 / void 挑空採光。",
+    rooms: rooms.map((r) => ({
+      id: r.id, name: r.name, type: r.type,
+      ring: r.ring.map((p) => [round1(p[0]), round1(-p[1])]),
+      ...(r.curve ? { curve: r.curve } : {}),
+    })),
+  };
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }));
+  link.download = DATA.title + ".rooms.json";
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(link.href), 5000);
+}
+function importJson(text) {
+  const payload = JSON.parse(text);
+  if (!Array.isArray(payload.rooms)) throw new Error("格式不正確");
+  pushHistory();
+  rooms = payload.rooms.map((r, i) => ({
+    id: r.id || "T" + String(i + 1).padStart(3, "0"), name: r.name || "", type: TYPE_NAMES[r.type] ? r.type : "room",
+    ring: r.ring.map((p) => [p[0], -p[1]]), ...(r.curve ? { curve: r.curve } : {}),
+  }));
+  counter = rooms.length + 1;
+  selectedId = null;
+  changed();
+}
+
+// ---- pointer handling ------------------------------------------------------------------
+function vertexAt(room, clientX, clientY) {
+  const box = stage.getBoundingClientRect();
+  const sx = clientX - box.left, sy = clientY - box.top;
+  let best = null;
+  room.ring.forEach((v, i) => {
+    const [vx, vy] = toScreen(v);
+    const d = Math.hypot(vx - sx, vy - sy);
+    if (d <= 9 && (!best || d < best.d)) best = { d, i };
+  });
+  return best ? best.i : null;
+}
+function edgeAt(room, clientX, clientY) {
+  const box = stage.getBoundingClientRect();
+  const p = [clientX - box.left, clientY - box.top];
+  let best = null;
+  room.ring.forEach((v, i) => {
+    const a = toScreen(v), b = toScreen(room.ring[(i + 1) % room.ring.length]);
+    const hit = closestOnSegment(p, a, b);
+    const d = dist(p, hit.point);
+    if (d <= 8 && (!best || d < best.d)) best = { d, i, t: hit.t };
+  });
+  return best;
+}
+
+stage.addEventListener("contextmenu", (e) => e.preventDefault());
+stage.addEventListener("pointerdown", (e) => {
+  stage.setPointerCapture?.(e.pointerId);
+  if (e.button === 1 || e.button === 2 || spaceDown) { drag = { type: "pan", x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty }; stage.classList.add("panning"); return; }
+  if (e.button !== 0) return;
+  const raw = toPlan(e.clientX, e.clientY);
+  if (tool === "select") {
+    const room = roomById(selectedId);
+    if (room) {
+      const index = vertexAt(room, e.clientX, e.clientY);
+      if (index !== null) { pushHistory(); selectedVertex = index; drag = { type: "vertex", id: room.id, index }; renderOverlay(); return; }
+    }
+    const hit = e.target.closest?.("[data-id]");
+    if (hit) {
+      selectedId = hit.dataset.id; selectedVertex = null;
+      const picked = roomById(selectedId);
+      drag = { type: "room", id: selectedId, start: raw, original: picked.ring.map((p) => [...p]), moved: false, recorded: false };
+      renderRooms(); renderOverlay(); renderPanel();
+    } else {
+      selectedId = null; selectedVertex = null;
+      drag = { type: "pan", x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, quiet: true };
+      renderRooms(); renderOverlay(); renderPanel();
+    }
+    return;
+  }
+  const { p } = snap(raw, { from: draft?.pts?.at(-1), axis: e.shiftKey });
+  if (tool === "rect") {
+    if (draft && draft.pts.length === 1) { const ring = rectRing(draft.pts[0], p); draft = null; if (Math.abs(ring[0][0] - ring[2][0]) > 5 && Math.abs(ring[0][1] - ring[2][1]) > 5) addRoom(ring); }
+    else { draft = { tool, pts: [p], cursor: p, press: [e.clientX, e.clientY] }; drag = { type: "rect" }; }
+  } else if (tool === "poly") {
+    if (draft && draft.pts.length >= 3 && dist(p, draft.pts[0]) <= 12 / view.z) { finishPoly(); return; }
+    if (!draft) draft = { tool, pts: [], cursor: p };
+    draft.pts.push(p);
+  } else if (tool === "semi") {
+    if (!draft) draft = { tool, pts: [p], cursor: p };
+    else if (draft.pts.length === 1) draft.pts.push(p);
+    else {
+      const [a, b] = draft.pts;
+      const ring = semicircleRing(a, b, p);
+      draft = null;
+      if (ring.length) addRoom(ring, { type: "semicircle", a: [round1(a[0]), round1(-a[1])], b: [round1(b[0]), round1(-b[1])] });
+    }
+  } else if (tool === "circle") {
+    if (!draft) draft = { tool, pts: [p], cursor: p };
+    else { const center = draft.pts[0]; const ring = circleRing(center, p); draft = null; if (dist(center, p) > 3) addRoom(ring, { type: "circle", center: [round1(center[0]), round1(-center[1])], radius: round1(dist(center, p)) }); }
+  }
+  renderOverlay();
+});
+stage.addEventListener("pointermove", (e) => {
+  const raw = toPlan(e.clientX, e.clientY);
+  cursorPoint = raw;
+  if (drag?.type === "pan") {
+    view.tx = drag.tx + e.clientX - drag.x; view.ty = drag.ty + e.clientY - drag.y;
+    applyView();
+    return;
+  }
+  if (drag?.type === "vertex") {
+    const room = roomById(drag.id);
+    const hit = snap(raw, { excludeRoom: drag.id, excludeIndex: drag.index });
+    room.ring[drag.index] = [round1(hit.p[0]), round1(hit.p[1])];
+    delete room.curve;
+    snapHit = hit;
+    renderRooms(); renderOverlay();
+    return;
+  }
+  if (drag?.type === "room") {
+    const dx = raw[0] - drag.start[0], dy = raw[1] - drag.start[1];
+    if (!drag.moved && Math.hypot(dx, dy) * view.z < 4) return;
+    if (!drag.recorded) { pushHistory(); drag.recorded = true; }
+    drag.moved = true;
+    const room = roomById(drag.id);
+    room.ring = drag.original.map((p) => [round1(p[0] + dx), round1(p[1] + dy)]);
+    delete room.curve;
+    renderRooms(); renderOverlay();
+    return;
+  }
+  const hit = tool === "select" ? { p: raw, kind: null } : snap(raw, { from: draft?.pts?.at(-1), axis: e.shiftKey });
+  snapHit = hit;
+  if (draft) draft.cursor = hit.p;
+  renderOverlay();
+});
+stage.addEventListener("pointerup", (e) => {
+  const finished = drag;
+  drag = null;
+  stage.classList.remove("panning");
+  if (finished?.type === "vertex") { changed(); return; }
+  if (finished?.type === "room") { if (finished.moved) changed(); return; }
+  if (finished?.type === "rect" && draft) {
+    // Dragged out a rectangle (a plain click leaves the first corner waiting for the second).
+    if (Math.hypot(e.clientX - draft.press[0], e.clientY - draft.press[1]) > 6) {
+      const p = snap(toPlan(e.clientX, e.clientY)).p;
+      const ring = rectRing(draft.pts[0], p);
+      draft = null;
+      if (Math.abs(ring[0][0] - ring[2][0]) > 5 && Math.abs(ring[0][1] - ring[2][1]) > 5) addRoom(ring);
+      renderOverlay();
+    }
+  }
+});
+stage.addEventListener("dblclick", (e) => {
+  if (tool === "poly") { if (draft) { draft.pts.pop(); finishPoly(); } return; }
+  if (tool !== "select") return;
+  const room = roomById(selectedId);
+  if (!room) return;
+  const edge = edgeAt(room, e.clientX, e.clientY);
+  if (!edge) return;
+  pushHistory();
+  const a = room.ring[edge.i], b = room.ring[(edge.i + 1) % room.ring.length];
+  room.ring.splice(edge.i + 1, 0, [round1(a[0] + (b[0] - a[0]) * edge.t), round1(a[1] + (b[1] - a[1]) * edge.t)]);
+  delete room.curve;
+  selectedVertex = edge.i + 1;
+  changed();
+});
+stage.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const box = stage.getBoundingClientRect();
+  const px = e.clientX - box.left, py = e.clientY - box.top;
+  const z = Math.min(40, Math.max(0.02, view.z * Math.exp(-e.deltaY * 0.0016)));
+  const k = z / view.z;
+  view.tx = px - k * (px - view.tx); view.ty = py - k * (py - view.ty); view.z = z;
+  applyView();
+}, { passive: false });
+
+// ---- toolbar and keys -----------------------------------------------------------------------
+$("tools").addEventListener("click", (e) => { const b = e.target.closest("button[data-tool]"); if (b) setTool(b.dataset.tool); });
+$("undo").addEventListener("click", undo);
+$("redo").addEventListener("click", redo);
+$("tidy").addEventListener("click", tidy);
+$("export").addEventListener("click", exportJson);
+$("import").addEventListener("click", () => $("file").click());
+$("file").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  try { importJson(await file.text()); } catch (error) { alert("無法匯入：" + error.message); }
+});
+$("toggle-minor").addEventListener("click", (e) => {
+  const on = e.currentTarget.getAttribute("aria-pressed") !== "true";
+  e.currentTarget.setAttribute("aria-pressed", String(on));
+  minorPath.style.display = on ? "" : "none";
+});
+$("toggle-texts").addEventListener("click", (e) => {
+  showTexts = !showTexts; e.currentTarget.setAttribute("aria-pressed", String(showTexts)); renderOverlay();
+});
+$("toggle-snap").addEventListener("click", (e) => {
+  snapOn = !snapOn; e.currentTarget.setAttribute("aria-pressed", String(snapOn)); snapHit = null; renderOverlay();
+});
+$("list").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-id]");
+  if (!b) return;
+  selectedId = b.dataset.id; selectedVertex = null;
+  const room = roomById(selectedId);
+  if (room) {
+    const [cx, cy] = centroid(room.ring);
+    view.tx = size.w / 2 - view.z * cx; view.ty = size.h / 2 - view.z * cy;
+    applyView();
+  }
+  renderRooms(); renderOverlay(); renderPanel();
+});
+window.addEventListener("keydown", (e) => {
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+  const key = e.key.toLowerCase();
+  if (e.ctrlKey || e.metaKey) {
+    if (key === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
+    else if (key === "y" || (key === "z" && e.shiftKey)) { e.preventDefault(); redo(); }
+    return;
+  }
+  if (e.code === "Space") { spaceDown = true; e.preventDefault(); return; }
+  const tools = { v: "select", r: "rect", p: "poly", c: "semi", o: "circle" };
+  if (tools[key]) setTool(tools[key]);
+  else if (key === "escape") { draft = null; selectedVertex = null; renderOverlay(); }
+  else if (key === "enter" && tool === "poly") finishPoly();
+  else if (key === "backspace" && draft?.tool === "poly") { draft.pts.pop(); if (!draft.pts.length) draft = null; renderOverlay(); }
+  else if ((key === "delete" || key === "backspace") && tool === "select") deleteSelected();
+});
+window.addEventListener("keyup", (e) => { if (e.code === "Space") spaceDown = false; });
+new ResizeObserver(resize).observe(stage);
+
+// ---- start -------------------------------------------------------------------------------------
+$("title").textContent = DATA.title + " 描圖";
+document.title = DATA.title + " 室內地圖描圖";
+load();
+buildScene();
+setTool("select");
+resize();
+changed(false);
+</script>
+</body>
+</html>
