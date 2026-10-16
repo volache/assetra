@@ -28,6 +28,17 @@ python prototypes/indoor-map/trace/build_tracer.py "data/private/floorplans/宿�
 python prototypes/indoor-map/trace/build_tracer.py "data/private/floorplans/宿舍一樓及二樓.dxf"   "data/private/indoor-map/floors/宿舍一樓_描圖.html" --title 宿舍一樓 --crop 600,2000,9550,10600   --locations data/private/indoor-map/locations.json
 ```
 
+### 套用其他樓層的形狀（對位）
+
+各樓層外牆大致相同，但不同 DXF 的座標原點不一樣，直接匯入其他樓層的 JSON 會落在很遠的地方。建置時加上 `--align 其他樓層.dxf`（可重複），會用長牆線做 FFT 比對算出平移量（`trace/align_floors.py` 也可單獨執行）；比對不夠明確（分數 < 0.4 或和第二名差不到 10%）就不採用。
+
+```bash
+python prototypes/indoor-map/trace/build_tracer.py "data/private/floorplans/航廈二樓不含外部.dxf" "data/private/indoor-map/floors/航廈二樓_描圖.html" --title 航廈二樓 --locations data/private/indoor-map/locations.json --align "data/private/floorplans/航廈三樓-修改.dxf"
+```
+
+匯入來自其他底圖的 JSON 時，會自動平移對位，並詢問要保留還是清空存置地點代碼與名稱；位置有偏差可用標頭的「整體移動」微調（可復原）。
+
+
 `--locations` 是主系統現有存置地點的清單（代碼、名稱、財物筆數），由資料庫匯出成 JSON：
 `[{"code": "*C001", "name": "業務組辦公室", "count": 92}, ...]`。沒有提供時，代碼與名稱只能手動輸入。清單含內部資料，放在 `data/private/`。
 

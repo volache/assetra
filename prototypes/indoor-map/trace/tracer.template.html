@@ -65,6 +65,17 @@
   .two { display: grid; gap: 8px; grid-template-columns: 1fr 1.4fr; }
   .row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .note { background: #eef6ff; border-radius: 8px; color: #2a4a7a; font-size: 12px; margin-top: 8px; padding: 6px 8px; }
+  .shift { position: relative; }
+  .shift-panel { background: #fff; border: 1px solid var(--rule); border-radius: 12px; display: grid; gap: 8px; padding: 12px; position: absolute; left: 0; top: calc(100% + 6px); width: 270px; z-index: 20; }
+  .shift-panel small { color: var(--muted); }
+  .shift-pad { display: grid; gap: 4px; grid-template-areas: ". up ." "left . right" ". down ."; justify-content: center; }
+  .shift-pad button { background: #eef2f9; border: 0; border-radius: 8px; cursor: pointer; font-size: 16px; height: 34px; width: 44px; }
+  .shift-pad button[aria-label="往上"] { grid-area: up; }
+  .shift-pad button[aria-label="往左"] { grid-area: left; }
+  .shift-pad button[aria-label="往右"] { grid-area: right; }
+  .shift-pad button[aria-label="往下"] { grid-area: down; }
+  .shift-fields { align-items: center; display: flex; gap: 6px; }
+  .shift-fields input { border: 1px solid var(--rule); border-radius: 8px; padding: 4px 6px; width: 76px; }
   footer { background: #fff; border-top: 1px solid var(--rule); color: var(--ink-2); display: flex; flex-wrap: wrap; font-size: 12px; gap: 4px 18px; padding: 6px 14px; }
   footer b { color: var(--ink); }
 </style>
@@ -94,6 +105,25 @@
   </div>
   <button type="button" class="btn" id="generate" title="依目前的牆重新產生房間">由牆生成房間</button>
   <button type="button" class="btn" id="tidy" title="頂點靠攏、邊線拉直、相鄰物件共邊">自動整理</button>
+  <span class="shift">
+    <button type="button" class="btn" id="shift-toggle" aria-expanded="false" title="把所有牆與房間一起平移，用來對齊底圖">整體移動</button>
+    <span class="shift-panel" id="shift-panel" hidden>
+      <b>把所有牆與房間一起移動（公分）</b>
+      <span class="shift-pad">
+        <button type="button" data-dx="0" data-dy="1" aria-label="往上">↑</button>
+        <button type="button" data-dx="-1" data-dy="0" aria-label="往左">←</button>
+        <button type="button" data-dx="1" data-dy="0" aria-label="往右">→</button>
+        <button type="button" data-dx="0" data-dy="-1" aria-label="往下">↓</button>
+      </span>
+      <label>每次 <select id="shift-step"><option value="10">10</option><option value="50" selected>50</option><option value="100">100</option><option value="500">500</option></select> 公分</label>
+      <span class="shift-fields">
+        <label>x <input type="number" id="shift-dx" value="0" step="10" /></label>
+        <label>y <input type="number" id="shift-dy" value="0" step="10" /></label>
+        <button type="button" class="btn" id="shift-apply">套用</button>
+      </span>
+      <small>x 向右、y 向上為正。移動可以復原。</small>
+    </span>
+  </span>
   <span class="spacer"></span>
   <button type="button" class="btn" id="import">匯入</button>
   <button type="button" class="btn primary" id="export">匯出 JSON</button>
@@ -947,14 +977,32 @@ function exportJson() {
   link.remove();
   setTimeout(() => URL.revokeObjectURL(link.href), 5000);
 }
+// A curved room remembers the points it was drawn from, in drawing coordinates (y up).
+function moveCurve(curve, dx, dy) {
+  const out = { ...curve };
+  ["a", "b", "center"].forEach((k) => { if (curve[k]) out[k] = [round1(curve[k][0] + dx), round1(curve[k][1] + dy)]; });
+  return out;
+}
 function importJson(text) {
   const payload = JSON.parse(text);
   if (!Array.isArray(payload.rooms)) throw new Error("格式不正確");
+  // Rooms drawn on another floor's drawing sit in that file's own coordinates.  When this page knows how
+  // the two drawings line up (--align), they are moved onto this floor's underlay as they come in.
+  const foreign = payload.source && payload.source !== DATA.source;
+  const align = foreign ? (DATA.alignments || {})[payload.source] : null;
+  let keepLocations = true;
+  if (foreign) {
+    keepLocations = confirm(
+      `這份資料是在「${payload.source}」上描的，不是目前的「${DATA.source}」。\n\n` +
+      "要保留房間的存置地點代碼與名稱嗎？\n・按「確定」：保留（例如同一層的備份）\n・按「取消」：只沿用形狀，代碼與名稱清空（例如拿其他樓層的外形來描這一層）"
+    );
+  }
   pushHistory();
-  const flip = (p) => [p[0], -p[1]];
+  const shiftX = align ? align.dx : 0, shiftY = align ? align.dy : 0;
+  const flip = (p) => [p[0] + shiftX, -(p[1] + shiftY)];
   rooms = payload.rooms.map((r, i) => ({
-    id: r.id || "T" + String(i + 1).padStart(3, "0"), name: r.name || "", locationCode: r.locationCode || "", type: TYPE_NAMES[r.type] ? r.type : "room",
-    ring: r.ring.map(flip), ...(r.auto ? { auto: true } : {}), ...(r.curve ? { curve: r.curve } : {}),
+    id: r.id || "T" + String(i + 1).padStart(3, "0"), name: keepLocations ? r.name || "" : "", locationCode: keepLocations ? r.locationCode || "" : "", type: TYPE_NAMES[r.type] ? r.type : "room",
+    ring: r.ring.map(flip), ...(r.auto ? { auto: true } : {}), ...(r.curve ? { curve: moveCurve(r.curve, shiftX, shiftY) } : {}),
     ...(r.holes?.length ? { holes: r.holes.map((h) => h.map(flip)) } : {}),
   }));
   // Files from before holes existed: work out which generated rooms sit inside bigger ones.
@@ -970,7 +1018,43 @@ function importJson(text) {
   walls.forEach((w) => { if (seenWalls.has(w.id)) w.id = newId("W"); seenWalls.add(w.id); });
   selectedId = null; selectedWallId = null;
   changed(true, false);
+  if (foreign) {
+    $("hint").textContent = align
+      ? `已依底圖自動對位：x ${align.dx >= 0 ? "+" : ""}${align.dx}、y ${align.dy >= 0 ? "+" : ""}${align.dy} 公分（相符程度 ${Math.round(align.score * 100)}%）。若有偏差，可用「整體移動」微調；${keepLocations ? "" : "存置地點代碼與名稱已清空。"}`
+      : "這份資料來自其他樓層的底圖，這個檔案沒有對位資訊，位置可能對不上；請用「整體移動」調整。";
+  }
 }
+
+// ---- move everything ---------------------------------------------------------------------------------------------
+function shiftEverything(dx, dy) {
+  if (!dx && !dy) return;
+  pushHistory();
+  const move = (p) => [round1(p[0] + dx), round1(p[1] - dy)];   // the page's y points down, the drawing's points up
+  rooms.forEach((r) => {
+    r.ring = r.ring.map(move);
+    if (r.holes) r.holes = r.holes.map((h) => h.map(move));
+    if (r.anchor) r.anchor = move(r.anchor);
+    if (r.curve) r.curve = moveCurve(r.curve, dx, dy);
+  });
+  walls.forEach((w) => { w.pts = w.pts.map(move); });
+  suppressed = suppressed.map(move);
+  changed(true, false);
+}
+const shiftPanel = $("shift-panel");
+$("shift-toggle").addEventListener("click", (e) => {
+  shiftPanel.hidden = !shiftPanel.hidden;
+  e.currentTarget.setAttribute("aria-expanded", String(!shiftPanel.hidden));
+});
+shiftPanel.addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-dx]");
+  if (!b) return;
+  const step = Number($("shift-step").value);
+  shiftEverything(Number(b.dataset.dx) * step, Number(b.dataset.dy) * step);
+});
+$("shift-apply").addEventListener("click", () => {
+  shiftEverything(Number($("shift-dx").value) || 0, Number($("shift-dy").value) || 0);
+  $("shift-dx").value = 0; $("shift-dy").value = 0;
+});
 
 // ---- pointer handling -------------------------------------------------------------------------------------------
 function screenPoint(clientX, clientY) {

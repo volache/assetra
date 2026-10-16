@@ -20,6 +20,7 @@ import ezdxf
 from ezdxf import path as dxf_path_tools
 
 HERE = Path(__file__).parent
+sys.path.insert(0, str(HERE))
 MAJOR_LINE = 60.0        # straight lines at least this long are drawn as main linework
 MAJOR_RADIUS = 150.0     # arcs at least this big are main linework; smaller ones are door swings
 SNAP_MIN_PIECE = 12.0    # shorter pieces are not worth snapping to
@@ -52,6 +53,12 @@ def main():
         "--crop",
         default="",
         help="x0,y0,x1,y1 in drawing units: keep only what lies inside (one floor of a file that holds several)",
+    )
+    parser.add_argument(
+        "--align",
+        action="append",
+        default=[],
+        help="another floor's DXF: work out how its coordinates line up with this drawing (repeatable)",
     )
     parser.add_argument("--regions", action="store_true", help="list the separate drawings in the file and exit")
     args = parser.parse_args()
@@ -116,6 +123,20 @@ def main():
                 xs.append(x)
                 ys.append(-y)
 
+    alignments = {}
+    for other in args.align:
+        if Path(other).name == Path(args.dxf).name:
+            continue
+        from align_floors import align
+
+        result = align(args.dxf, other, crop)
+        # A weak or ambiguous match is not worth applying on its own.
+        if result["score"] >= 0.4 and result["score"] >= result["runnerUp"] * 1.1:
+            alignments[Path(other).name] = result
+            print(f"aligned {Path(other).name}: dx {result['dx']}, dy {result['dy']}, score {result['score']}", file=sys.stderr)
+        else:
+            print(f"no clear match for {Path(other).name} (score {result['score']}, next {result['runnerUp']})", file=sys.stderr)
+
     data = {
         "title": args.title or Path(args.dxf).stem,
         "source": Path(args.dxf).name,
@@ -127,6 +148,7 @@ def main():
         "points": [[x, -y] for x, y in sorted(points)],
         "texts": texts,
         "locations": locations,
+        "alignments": alignments,
     }
     template = (HERE / "tracer.template.html").read_text(encoding="utf-8")
     html = template.replace("/*__TRACE_DATA__*/null", json.dumps(data, ensure_ascii=False, separators=(",", ":")))
