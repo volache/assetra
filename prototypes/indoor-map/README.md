@@ -21,6 +21,13 @@ python prototypes/indoor-map/trace/build_tracer.py \
 
 產出一個獨立的 HTML，雙擊即可開啟，不需要啟動系統。**每一層樓各產生一個檔案**（換 DXF 與 `--title` 即可）；每個檔案的資料各自存放，互不影響。
 
+一個 DXF 若畫了好幾層或好幾個視圖（例如宿舍一、二樓同一個檔案、消防站是含圖框的圖紙），可以用 `--crop x0,y0,x1,y1`（圖面座標）只留下其中一個範圍，`--regions` 會列出檔案裡各自獨立的圖形範圍與座標，方便決定怎麼裁切：
+
+```bash
+python prototypes/indoor-map/trace/build_tracer.py "data/private/floorplans/宿舍一樓及二樓.dxf" /dev/null --regions
+python prototypes/indoor-map/trace/build_tracer.py "data/private/floorplans/宿舍一樓及二樓.dxf"   "data/private/indoor-map/floors/宿舍一樓_描圖.html" --title 宿舍一樓 --crop 600,2000,9550,10600   --locations data/private/indoor-map/locations.json
+```
+
 `--locations` 是主系統現有存置地點的清單（代碼、名稱、財物筆數），由資料庫匯出成 JSON：
 `[{"code": "*C001", "name": "業務組辦公室", "count": 92}, ...]`。沒有提供時，代碼與名稱只能手動輸入。清單含內部資料，放在 `data/private/`。
 
