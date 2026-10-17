@@ -2493,17 +2493,35 @@ function trimPlan(clientX, clientY, extend) {
     const target = extendTarget(wall, endIndex);
     return target ? { kind: "extend", wall, ...target } : { kind: "none", wall, why: "這一端前方沒有可以延伸到的牆、房間邊或底圖牆線" };
   }
-  const edge = edgeAt(wall.pts, false, clientX, clientY);
+  // A wall that runs all the way round (a box drawn as one line) has no real ends: start it at a cut so a piece
+  // that happens to contain the old start and end is still one piece.
+  const boundaries = trimBoundaries(wall.id);
+  let work = wall, rotated = null;
+  if (wall.pts.length >= 4 && dist(wall.pts[0], wall.pts.at(-1)) <= 6) {
+    const n = wall.pts.length, seam = cutPositions(wall, boundaries).find((c) => c > 1e-4 && c < n - 1 - 1e-4);
+    if (seam !== undefined) {
+      const ring = wall.pts.slice(0, n - 1), at = Math.floor(seam), s = pointAlong(wall.pts, seam);
+      rotated = seam - at < 1e-4 ? [...ring.slice(at), ...ring.slice(0, at), ring[at]] : [s, ...ring.slice(at + 1), ...ring.slice(0, at + 1), s];
+      work = { ...wall, pts: rotated };
+    }
+  }
+  const edge = edgeAt(work.pts, false, clientX, clientY);
   if (!edge) return null;
-  const pos = edge.i + edge.t, cuts = cutPositions(wall, trimBoundaries(wall.id));
-  const lo = cuts.filter((c) => c < pos - 1e-4).at(-1) ?? null;
-  const hi = cuts.find((c) => c > pos + 1e-4) ?? null;
+  const cuts = cutPositions(work, boundaries), here = edge.i + edge.t;
+  // Clicking right on a junction belongs to neither side: lean towards one side so there is a piece to cut.
+  let pos = here, lo = null, hi = null;
+  for (const tryPos of [here, here - 0.02, here + 0.02]) {
+    pos = tryPos;
+    lo = cuts.filter((c) => c < pos - 1e-4).at(-1) ?? null;
+    hi = cuts.find((c) => c > pos + 1e-4) ?? null;
+    if (lo !== null || hi !== null) break;
+  }
   if (lo === null && hi === null) return { kind: "none", wall, why: "這道牆沒有和其他牆或房間邊交會，沒有可修剪的部分（要整道刪除請用 Delete）" };
-  const from = lo ?? 0, to = hi ?? wall.pts.length - 1;
-  const pts = wall.pts, piece = [pointAlong(pts, from)];
+  const from = lo ?? 0, to = hi ?? work.pts.length - 1;
+  const pts = work.pts, piece = [pointAlong(pts, from)];
   for (let k = Math.floor(from) + 1; k <= Math.ceil(to) - 1; k++) piece.push(pts[k]);
   piece.push(pointAlong(pts, to));
-  return { kind: "trim", wall, from, to, pts: piece };
+  return { kind: "trim", wall, from, to, pts: piece, rotated };
 }
 function trimApply(plan) {
   const wall = plan.wall;
@@ -2514,7 +2532,7 @@ function trimApply(plan) {
     changed(true, true);
     return;
   }
-  const pts = wall.pts, keep = (list) => (list.length >= 2 && list.some((q, i) => i && dist(q, list[i - 1]) > 5) ? list.map((q) => [round1(q[0]), round1(q[1])]) : null);
+  const pts = plan.rotated || wall.pts, keep = (list) => (list.length >= 2 && list.some((q, i) => i && dist(q, list[i - 1]) > 5) ? list.map((q) => [round1(q[0]), round1(q[1])]) : null);
   const left = [], right = [];
   for (let k = 0; k <= Math.floor(plan.from); k++) left.push(pts[k]);
   if (plan.from !== Math.floor(plan.from)) left.push(pointAlong(pts, plan.from));
