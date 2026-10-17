@@ -134,6 +134,15 @@
   .tabs button[aria-selected="true"] { border-bottom-color: var(--teal); color: var(--ink); font-weight: 700; }
   .pane { display: flex; flex: 1; flex-direction: column; min-height: 0; }
   .pane[hidden] { display: none; }
+  .result-row { display: flex; gap: 4px; }
+  .result-row > button:first-child { flex: 1; min-width: 0; }
+  .add-also { background: #eef2f9; border: 0; border-radius: 8px; color: var(--teal); cursor: pointer; flex: none; font-size: 15px; font-weight: 700; width: 30px; }
+  .add-also:hover { background: #dfe6f2; }
+  .also-list { margin-top: 8px; }
+  .also-chip { align-items: center; background: #f4f7fc; border-radius: 8px; display: flex; font-size: 12px; gap: 6px; justify-content: space-between; margin-top: 4px; padding: 4px 4px 4px 10px; }
+  .also-chip.warn { background: #fdecef; }
+  .also-chip button { background: transparent; border: 0; border-radius: 6px; color: var(--muted); cursor: pointer; height: 24px; width: 24px; }
+  .also-chip button:hover { background: #e3e8f2; }
   .usage-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
   .usage-chips button { background: #eef2f9; border: 0; border-radius: 999px; color: var(--ink-2); cursor: pointer; font-size: 11.5px; padding: 2px 9px; }
   .usage-chips button:hover { background: #dfe6f2; }
@@ -1184,6 +1193,7 @@ function generateRooms() {
     if (!target) continue;
     target.id = room.id; target.uid = room.uid; target.name = room.name; target.locationCode = room.locationCode || ""; target.type = room.type;
     if (room.usage) target.usage = room.usage;
+    if (room.also?.length) target.also = room.also;
   }
   fresh.forEach((f) => { if (!f.id) f.id = newId("T"); if (!f.uid) f.uid = newUid(); });
   rooms = [...keep, ...fresh];
@@ -1425,7 +1435,7 @@ function renderPanel() {
     const m2 = `${(roomArea(room) / 10000).toFixed(1)} m²`;
     const located = room.locationCode || room.name;
     const first = located ? locationTitle(room) : room.usage ? `用途：${room.usage}` : `${room.id}　${m2}`;
-    const second = located || room.usage ? `${room.id} · ${m2}` : "尚未設定存置地點";
+    const second = located || room.usage ? `${room.id} · ${m2}${room.also?.length ? ` · 另 ${room.also.length} 個代碼` : ""}` : "尚未設定存置地點";
     const body = domEl("span", undefined, { className: "body" });
     body.append(domEl("span", first, { className: "t1 ellip" }), domEl("span", second, { className: "t2 ellip" }));
     const tags = domEl("span", undefined, { className: "tags" });
@@ -1492,7 +1502,15 @@ function renderPanel() {
       LOCATIONS.filter((l) => (l.code + " " + l.name).toLowerCase().includes(query)).slice(0, 8).forEach((l) => {
         const b = el("button", undefined, { type: "button", title: `${l.code} ${l.name}（${l.count} 筆財物${used.has(l.code) ? "，已用於其他房間" : ""}）` });
         b.append(el("span", `${l.code}　${l.name}`, { className: "ellip" }), el("small", `${l.count} 筆財物${used.has(l.code) ? "・已用於其他房間" : ""}`, { className: "ellip" }));
-        b.addEventListener("click", () => { pushHistory(); room.locationCode = l.code; room.name = l.name; changed(true, false); showToast(`已指派 ${l.code} ${l.name}`, { undo: true }); });
+        b.addEventListener("click", () => { pushHistory(); room.locationCode = l.code; room.name = l.name; room.also = (room.also || []).filter((a) => a.code !== l.code); changed(true, false); showToast(`已指派 ${l.code} ${l.name}`, { undo: true }); });
+        if (room.locationCode && room.locationCode !== l.code && !(room.also || []).some((a) => a.code === l.code)) {
+          const add = el("button", "＋", { type: "button", className: "add-also", title: `再加上 ${l.code}（同一個位置有多個代碼）` });
+          add.addEventListener("click", () => { pushHistory(); room.also = [...(room.also || []), { code: l.code, name: l.name }]; changed(true, false); showToast(`已加上 ${l.code} ${l.name}`, { undo: true }); });
+          const row = el("div", undefined, { className: "result-row" });
+          row.append(b, add);
+          results.append(row);
+          return;
+        }
         results.append(b);
       });
       if (!results.children.length) results.append(el("small", "找不到符合的存置地點"));
@@ -1527,6 +1545,21 @@ function renderPanel() {
     else if (known) status = `對應「${known.name}」，主系統有 ${known.count} 筆財物。` + (room.name && room.name !== known.name ? "（名稱與主系統不同）" : "");
     if (others) status += `另有 ${others} 個房間用同一代碼。`;
     if (status) place.append(el("div", status, { className: "note" }));
+    if (room.also?.length) {
+      const list = el("div", undefined, { className: "also-list" });
+      list.append(el("label", "同一個位置的其他代碼"));
+      room.also.forEach((a, i) => {
+        const chip = el("div", undefined, { className: "also-chip" + (LOCATIONS.length && !locationByCode.has(a.code) ? " warn" : "") });
+        chip.append(el("span", `${a.code}　${a.name || locationByCode.get(a.code)?.name || ""}`, { className: "ellip" }));
+        const del = el("button", "✕", { type: "button", title: "移除這個代碼" });
+        del.setAttribute("aria-label", `移除 ${a.code}`);
+        del.addEventListener("click", () => { pushHistory(); room.also.splice(i, 1); if (!room.also.length) delete room.also; changed(true, false); });
+        chip.append(del);
+        list.append(chip);
+      });
+      place.append(list);
+    }
+    if (room.locationCode && !room.also?.length) place.append(el("div", "同一個位置有多個代碼時，搜尋後按結果右邊的「＋」加上。", { className: "note" }));
     // 空間用途: for places that are not a 存置地點
     const usageCard = card("空間用途");
     const USAGE_PRESETS = ["走廊", "樓梯間", "電梯", "廁所", "茶水間", "機房", "管道間", "儲藏", "出入口", "停車空間"];
@@ -1590,6 +1623,11 @@ function locationAssignments() {
       byCode.get(room.locationCode).push(entry);
       if (!locationByCode.has(room.locationCode)) outside.push(entry);
     }
+    (room.also || []).forEach((a) => {
+      if (!byCode.has(a.code)) byCode.set(a.code, []);
+      byCode.get(a.code).push({ floor, room, secondary: a });
+      if (!locationByCode.has(a.code)) outside.push({ floor, room, secondary: a });
+    });
   }));
   return { byCode, outside, unset };
 }
@@ -1663,12 +1701,12 @@ function renderLocPanel() {
   const query = locQuery;
   const addRow = (className) => { const li = document.createElement("li"); li.className = "loc-item " + className; list.append(li); return li; };
   if (locFilter === "outside" || locFilter === "unset") {
-    const rows = (locFilter === "outside" ? outside : unset).filter(({ room }) => !query || `${room.locationCode} ${room.name} ${room.usage || ""}`.toLowerCase().includes(query));
+    const rows = (locFilter === "outside" ? outside : unset).filter(({ room, secondary }) => !query || `${(secondary || room).code || room.locationCode} ${(secondary || room).name} ${room.usage || ""}`.toLowerCase().includes(query));
     rows.sort((a, b) => FLOORS.indexOf(a.floor) - FLOORS.indexOf(b.floor) || roomArea(b.room) - roomArea(a.room));
     if (!rows.length) list.append(domEl("li", "沒有項目", { className: "empty" }));
     rows.forEach((entry) => {
-      const { floor, room } = entry, li = addRow("unset");
-      const label = locFilter === "outside" ? `${room.locationCode}　${room.name || ""}` : room.usage ? `用途：${room.usage}` : `${room.id}　尚未設定`;
+      const { floor, room, secondary } = entry, li = addRow("unset");
+      const label = locFilter === "outside" ? (secondary ? `${secondary.code}　${secondary.name || ""}` : `${room.locationCode}　${room.name || ""}`) : room.usage ? `用途：${room.usage}` : `${room.id}　尚未設定`;
       const main = domEl("button", undefined, { type: "button", className: "loc-main", title: `${label}（${floorName(floor)}，${(roomArea(room) / 10000).toFixed(1)} m²）` });
       const line = domEl("span", undefined, { className: "loc-line" });
       line.append(domEl("span", label, { className: "loc-name ellip" }));
@@ -1731,7 +1769,7 @@ function exportLocationCsv() {
   const where = (entries) => entries.map(({ floor, room }) => `${floorName(floor)}（${(roomArea(room) / 10000).toFixed(1)} m²）`).join("；");
   const rows = [["存置地點代碼", "名稱", "財物筆數", "對應房間數", "對應位置", "備註"]];
   LOCATIONS.forEach((l) => { const entries = byCode.get(l.code) || []; rows.push([l.code, l.name, l.count, entries.length, where(entries), entries.length ? "" : "未對應"]); });
-  outside.forEach((entry) => rows.push([entry.room.locationCode, entry.room.name || "", "", 1, where([entry]), "清單外代碼"]));
+  outside.forEach((entry) => rows.push([entry.secondary ? entry.secondary.code : entry.room.locationCode, (entry.secondary ? entry.secondary.name : entry.room.name) || "", "", 1, where([entry]), "清單外代碼"]));
   const blob = new Blob(["\ufeff" + rows.map((r) => r.map(cell).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob); link.download = `${CAMPUS.title}_存置地點對照表.csv`;
@@ -2039,7 +2077,7 @@ function payloadFor(floor, state) {
     note: "座標為 DXF 圖面座標（x 向右、y 向上）。walls 是牆的中心線；auto 為 true 的房間是由牆自動生成的。holes 是這個房間裡面被其他房間佔用、要扣掉的部分；每個房間的 locationCode 與 name 是主系統的存置地點代碼與名稱；id 只是這個檔案內部的流水編號，不是存置地點代碼。type: room 房間 / public 公共區域 / void 挑空採光。",
     walls: (state.walls || []).map((w) => ({ id: w.id, pts: w.pts.map(flip), ...(w.curve ? { curve: true } : {}) })),
     rooms: (state.rooms || []).map((r) => ({
-      id: r.id, ...(r.uid ? { uid: r.uid } : {}), locationCode: r.locationCode || "", name: r.name, ...(r.usage ? { usage: r.usage } : {}), type: r.type, ring: r.ring.map(flip),
+      id: r.id, ...(r.uid ? { uid: r.uid } : {}), locationCode: r.locationCode || "", name: r.name, ...(r.also?.length ? { alsoLocations: r.also.map((a) => ({ code: a.code, name: a.name || "" })) } : {}), ...(r.usage ? { usage: r.usage } : {}), type: r.type, ring: r.ring.map(flip),
       ...(r.auto ? { auto: true } : {}), ...(r.curve ? { curve: r.curve } : {}),
       ...(r.holes?.length ? { holes: r.holes.map((h) => h.map(flip)) } : {}),
     })),
@@ -2071,7 +2109,7 @@ function convertPayload(payload, shift, keepLocations, options = {}) {
   const [shiftX, shiftY] = shift || [0, 0];
   const flip = (p) => [p[0] + shiftX, -(p[1] + shiftY)];
   const list = payload.rooms.map((r, i) => ({
-    id: r.id || "T" + String(i + 1).padStart(3, "0"), uid: !options.copy && r.uid ? r.uid : newUid(), name: keepLocations ? r.name || "" : "", locationCode: keepLocations ? r.locationCode || "" : "", ...(keepLocations && r.usage ? { usage: r.usage } : {}), type: TYPE_NAMES[r.type] ? r.type : "room",
+    id: r.id || "T" + String(i + 1).padStart(3, "0"), uid: !options.copy && r.uid ? r.uid : newUid(), name: keepLocations ? r.name || "" : "", locationCode: keepLocations ? r.locationCode || "" : "", ...(keepLocations && r.usage ? { usage: r.usage } : {}), ...(keepLocations && r.alsoLocations?.length ? { also: r.alsoLocations.map((a) => ({ code: a.code, name: a.name || "" })) } : {}), type: TYPE_NAMES[r.type] ? r.type : "room",
     ring: r.ring.map(flip), ...(r.auto ? { auto: true } : {}), ...(r.curve ? { curve: moveCurve(r.curve, shiftX, shiftY) } : {}),
     ...(r.holes?.length ? { holes: r.holes.map((h) => h.map(flip)) } : {}),
   }));
