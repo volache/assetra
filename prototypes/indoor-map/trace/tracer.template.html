@@ -134,20 +134,6 @@
   .tabs button[aria-selected="true"] { border-bottom-color: var(--teal); color: var(--ink); font-weight: 700; }
   .pane { display: flex; flex: 1; flex-direction: column; min-height: 0; }
   .pane[hidden] { display: none; }
-  .loc-summary { color: var(--ink-2); font-size: 12px; line-height: 1.7; padding: 10px 14px 2px; }
-  .loc-summary b { color: var(--ink); }
-  .loc-tools { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 12px 8px; }
-  .loc-list li { border-bottom: 1px solid #eef1f6; padding: 8px 6px; }
-  .loc-row { align-items: flex-start; display: flex; gap: 8px; justify-content: space-between; }
-  .loc-code { font-weight: 700; }
-  .loc-meta { color: var(--muted); font-size: 11.5px; }
-  .loc-rooms { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
-  .loc-rooms button { background: #e3f6f3; border-radius: 999px; color: #0d6f64; display: inline-block; font-size: 11.5px; padding: 2px 9px; width: auto; }
-  .loc-rooms button:hover { background: #cdeee9; }
-  .loc-rooms .none { color: #9a5b00; font-size: 11.5px; }
-  .loc-list .chip { display: inline-block; width: auto; }
-  .loc-assign { flex: none; }
-  .loc-foot { border-top: 1px solid var(--rule); display: flex; gap: 8px; padding: 8px 12px; }
   .usage-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
   .usage-chips button { background: #eef2f9; border: 0; border-radius: 999px; color: var(--ink-2); cursor: pointer; font-size: 11.5px; padding: 2px 9px; }
   .usage-chips button:hover { background: #dfe6f2; }
@@ -187,6 +173,69 @@
   /* dragging on the drawing must never highlight the text around it */
   header, .subbar, .stage, .stage * { -webkit-user-select: none; user-select: none; }
   .stage input, header input, .subbar input { -webkit-user-select: text; user-select: text; }
+  /* Every line that holds a name stays on ONE line and is cut with an ellipsis (the full text is in the tooltip); only
+     whole chips or whole sentences ever wrap, never the middle of a name. */
+  .ellip { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip, .tag, .menu-btn { white-space: nowrap; }
+  .tag { background: #eef2f9; border-radius: 999px; color: var(--ink-2); flex: none; font-size: 10.5px; padding: 1px 7px; }
+  .tag.warn { background: #fff3e0; color: #9a5b00; }
+  .list .room-item { align-items: center; border-left: 3px solid transparent; display: flex; gap: 8px; padding: 6px 8px 6px 9px; }
+  .list .room-item.unset { border-left-color: #f0b27a; }
+  .list .room-item.unset .t1 { color: var(--ink-2); font-weight: 400; }
+  .room-item .body { display: block; flex: 1; min-width: 0; }
+  .room-item .t1 { color: var(--ink); display: block; font-size: 13px; font-weight: 600; }
+  .room-item .t2 { color: var(--muted); display: block; font-size: 11.5px; margin-top: 1px; }
+  .room-item .tags { display: flex; flex: none; gap: 4px; }
+  .card2 { background: #fbfcfe; border: 1px solid var(--rule); border-radius: 10px; margin-top: 10px; padding: 8px 12px 12px; }
+  .card2 > h3 { color: var(--ink); font-size: 12.5px; margin: 0 0 2px; }
+  .card2 label { margin: 8px 0 4px; }
+  .kv { align-items: baseline; display: flex; font-size: 12px; gap: 10px; justify-content: space-between; padding: 3px 0; }
+  .kv > span:first-child { color: var(--muted); flex: none; }
+  .kv > span:last-child { min-width: 0; text-align: right; }
+  .props-nav { align-items: center; display: flex; gap: 6px; padding-bottom: 2px; }
+  .props-nav .ellip { color: var(--ink); flex: 1; font-size: 13px; font-weight: 700; }
+  .props-nav button { background: #eef2f9; border: 0; border-radius: 8px; color: var(--ink-2); cursor: pointer; flex: none; font-size: 12px; height: 28px; padding: 0 9px; }
+  .props-nav button:hover { background: #dfe6f2; }
+  .props-actions { background: #fff; border-top: 1px solid var(--rule); bottom: 0; margin: 12px -14px -10px; padding: 10px 14px; position: sticky; }
+  .props-actions .row { margin: 0; }
+  .loc-head { align-items: center; display: flex; gap: 8px; justify-content: space-between; padding: 10px 12px 4px 14px; }
+  .loc-count { color: var(--ink); font-size: 13px; font-weight: 700; min-width: 0; }
+  .menu-btn { background: transparent; border: 0; border-radius: 8px; color: var(--ink-2); cursor: pointer; flex: none; font-size: 18px; height: 28px; line-height: 1; width: 30px; }
+  .menu-btn:hover { background: #eef2f9; }
+  .loc-bar { background: #eef2f9; border-radius: 99px; height: 5px; margin: 0 14px 6px; overflow: hidden; }
+  .loc-bar > div { background: var(--teal); height: 100%; transition: width 0.2s; }
+  .loc-sub { color: var(--muted); font-size: 11.5px; line-height: 1.6; padding: 0 14px 6px; }
+  .loc-context { align-items: center; background: #f4f7fc; border-radius: 10px; display: flex; gap: 8px; margin: 0 12px 8px; padding: 6px 6px 6px 10px; }
+  .loc-context .ctx-text { color: var(--ink-2); flex: 1; font-size: 12px; }
+  .loc-context .ctx-text b { color: var(--ink); }
+  .loc-context .chip { flex: none; }
+  .loc-filters { display: flex; gap: 6px; overflow-x: auto; padding: 0 12px 8px; scrollbar-width: thin; }
+  .loc-filters .chip { flex: none; }
+  .loc-list li { border-bottom: 1px solid #eef1f6; padding: 0; }
+  .loc-item { border-left: 3px solid transparent; }
+  .loc-item.unset { border-left-color: #f0b27a; }
+  .loc-item.assigned { border-left-color: #7fd6cc; }
+  .list .loc-main { align-items: center; display: flex; gap: 8px; padding: 7px 10px 7px 9px; }
+  .loc-line { align-items: baseline; display: flex; flex: 1; gap: 8px; min-width: 0; }
+  .loc-code { color: var(--ink); flex: none; font-weight: 700; }
+  .loc-name { color: var(--ink-2); flex: 1; min-width: 0; }
+  .loc-count2, .loc-hint { color: var(--muted); flex: none; font-size: 11.5px; white-space: nowrap; }
+  .loc-hint { color: #0d6f64; display: none; font-weight: 700; }
+  .loc-item.can-assign .loc-main:hover .loc-count2 { display: none; }
+  .loc-item.can-assign .loc-main:hover .loc-hint { display: inline; }
+  .loc-rooms { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 10px 8px 12px; }
+  .loc-rooms button { background: #e3f6f3; border: 0; border-radius: 999px; color: #0d6f64; cursor: pointer; display: inline-block; font-size: 11.5px; max-width: 100%; overflow: hidden; padding: 2px 9px; text-overflow: ellipsis; white-space: nowrap; width: auto; }
+  .loc-rooms button:hover { background: #cdeee9; }
+  .loc-context[hidden], .loc-bar[hidden], .loc-filters[hidden] { display: none; }
+  .results button { min-width: 0; overflow: hidden; }
+  .loc-empty { color: var(--muted); font-size: 12px; line-height: 1.7; padding: 14px; }
+  .loc-empty .btn { margin-top: 8px; }
+  .menu-pop { background: #fff; border: 1px solid var(--rule); border-radius: 10px; box-shadow: 0 8px 24px rgba(20, 30, 60, 0.16); padding: 4px; position: fixed; z-index: 60; }
+  .menu-pop button { background: transparent; border: 0; border-radius: 7px; color: var(--ink); cursor: pointer; display: block; font-size: 13px; padding: 7px 12px; text-align: left; white-space: nowrap; width: 100%; }
+  .menu-pop button:hover { background: #eef2f9; }
+  .toasts { bottom: 46px; display: flex; flex-direction: column; gap: 6px; left: 50%; pointer-events: none; position: fixed; transform: translateX(-50%); z-index: 70; }
+  .toast { align-items: center; background: rgba(23, 32, 51, 0.94); border-radius: 10px; box-shadow: 0 6px 20px rgba(20, 30, 60, 0.25); color: #fff; display: flex; font-size: 13px; gap: 12px; padding: 8px 14px; pointer-events: auto; white-space: nowrap; }
+  .toast button { background: transparent; border: 0; color: #7fe0d4; cursor: pointer; font-size: 13px; font-weight: 700; padding: 0; }
   .selbar { align-items: center; background: #fff; border: 1px solid var(--rule); border-radius: 12px; box-shadow: 0 4px 16px rgba(20, 30, 60, 0.14); display: flex; flex-wrap: wrap; font-size: 13px; gap: 6px 10px; left: 12px; margin-inline: auto; max-width: calc(100% - 76px); padding: 6px 8px 6px 14px; position: absolute; right: 64px; top: 12px; width: max-content; z-index: 4; }
   .selbar[hidden] { display: none; }
   .selbar .count { color: var(--ink); font-weight: 700; white-space: nowrap; }
@@ -306,19 +355,22 @@
       <section class="props" id="props" aria-live="polite"></section>
     </div>
     <div class="pane" id="locs-pane" hidden>
-      <div class="loc-summary" id="loc-summary"></div>
-      <div class="loc-tools" id="loc-filter" role="group" aria-label="篩選"></div>
+      <div class="loc-head">
+        <div class="loc-count" id="loc-count"></div>
+        <button type="button" class="menu-btn" id="loc-menu" aria-label="更多：匯入清單、匯出對照表" aria-haspopup="menu" title="匯入清單、匯出對照表">⋯</button>
+      </div>
+      <div class="loc-bar" id="loc-bar"><div></div></div>
+      <div class="loc-sub" id="loc-sub"></div>
+      <div class="loc-context" id="loc-context"></div>
+      <div class="loc-filters" id="loc-filter" role="group" aria-label="篩選"></div>
       <div class="searchbox"><input type="search" id="loc-q" placeholder="搜尋存置地點代碼或名稱" aria-label="搜尋存置地點" autocomplete="off" /></div>
       <ul class="list loc-list" id="loc-list"></ul>
-      <div class="loc-foot">
-        <button type="button" class="btn" id="loc-import" title="匯入主系統的存置地點清單（JSON：[{code, name, count}]）">匯入清單</button>
-        <button type="button" class="btn" id="loc-csv" title="匯出存置地點與房間的對照表，可用 Excel 開啟">匯出對照表</button>
-        <input type="file" id="loc-file" accept="application/json,.json" hidden />
-      </div>
+      <input type="file" id="loc-file" accept="application/json,.json" hidden />
     </div>
   </aside>
 </main>
 <footer id="stats"></footer>
+<div class="toasts" id="toasts" aria-live="polite"></div>
 
 <script>
 const CAMPUS = /*__TRACE_DATA__*/null;        // { title, locations, buildings: [{ name, floors: [...] }] }
@@ -1259,6 +1311,48 @@ function drawDraft() {
   if (draft.tool === "poly" || draft.tool === "wall") draft.pts.forEach((p) => { const [sx, sy] = toScreen(p); make("circle", { class: "handle", cx: sx, cy: sy, r: 4 }, overlay); });
 }
 
+function showToast(text, options = {}) {
+  const box = $("toasts"), node = domEl("div", undefined, { className: "toast", role: "status" });
+  node.append(domEl("span", text));
+  if (options.undo) {
+    const undoButton = domEl("button", "復原", { type: "button" });
+    undoButton.addEventListener("click", () => { undo(); node.remove(); });
+    node.append(undoButton);
+  }
+  box.append(node);
+  while (box.children.length > 3) box.firstChild.remove();
+  setTimeout(() => node.remove(), options.undo ? 6000 : 3500);
+}
+let openPopup = null;
+document.addEventListener("pointerdown", (e) => { if (openPopup && !openPopup.contains(e.target) && !e.target.closest?.("[aria-haspopup='menu']")) { openPopup.remove(); openPopup = null; } }, true);
+function popupMenu(anchor, items) {
+  if (openPopup) { openPopup.remove(); openPopup = null; return; }
+  const pop = domEl("div", undefined, { className: "menu-pop", role: "menu" });
+  items.forEach(([text, action]) => {
+    const b = domEl("button", text, { type: "button", role: "menuitem" });
+    b.addEventListener("click", () => { pop.remove(); openPopup = null; action(); });
+    pop.append(b);
+  });
+  document.body.append(pop);
+  const box = anchor.getBoundingClientRect();
+  pop.style.top = box.bottom + 4 + "px";
+  pop.style.left = Math.max(8, Math.min(innerWidth - pop.offsetWidth - 8, box.right - pop.offsetWidth)) + "px";
+  openPopup = pop;
+}
+/** The order the room list uses: located rooms by name, then rooms with a usage, then the rest, biggest first. */
+const roomRank = (r) => (r.locationCode || r.name ? 0 : r.usage ? 1 : 2);
+const roomOrder = (p, q) => roomRank(p) - roomRank(q) || (roomRank(p) === 2 ? roomArea(q) - roomArea(p) : locationTitle(p).localeCompare(locationTitle(q), "zh-Hant"));
+/** Select the room `direction` steps from the selected one in the list's order; `onlyUnset` skips rooms that already have a place. */
+function stepRoom(direction, onlyUnset) {
+  const list = [...rooms].sort(roomOrder);
+  if (!list.length) return false;
+  const at = list.findIndex((r) => r.id === selectedId);
+  for (let k = 1; k <= list.length; k++) {
+    const room = list[(((at + direction * k) % list.length) + list.length) % list.length];
+    if (!onlyUnset || (!room.locationCode && !room.usage)) { goToRoom(floorId, room.id); return true; }
+  }
+  return false;
+}
 const locationTitle = (room) =>
   room.locationCode ? `${room.locationCode}　${room.name || locationByCode.get(room.locationCode)?.name || ""}` : room.name || (room.usage ? "用途：" + room.usage : "（尚未設定存置地點）");
 const domEl = (tag, text, attrs = {}) => Object.assign(document.createElement(tag), text === undefined ? {} : { textContent: text }, attrs);
@@ -1315,16 +1409,24 @@ function renderPanel() {
   const shown = visibleRooms();
   $("count").textContent = shown.length === rooms.length ? `（${rooms.length}）` : `（${shown.length} / ${rooms.length}）`;
   if (!shown.length) { const li = document.createElement("li"); li.className = "empty"; li.textContent = rooms.length ? "沒有符合的房間" : "還沒有房間"; list.append(li); }
-  shown.sort((p, q) => (p.name || "￿").localeCompare(q.name || "￿", "zh-Hant")).forEach((room) => {
+  shown.sort(roomOrder).forEach((room) => {
     const li = document.createElement("li");
     const button = document.createElement("button");
     button.type = "button";
+    button.className = "room-item" + (room.locationCode || room.name || room.usage ? "" : " unset");
     button.dataset.id = room.id;
     if (room.id === selectedId || group?.rooms.includes(room.id)) button.setAttribute("aria-current", "true");
-    button.textContent = locationTitle(room);
-    const small = document.createElement("small");
-    small.textContent = `${room.auto ? "由牆生成 · " : ""}${TYPE_NAMES[room.type]} · 約 ${(roomArea(room) / 10000).toFixed(1)} m²`;
-    button.append(small);
+    const m2 = `${(roomArea(room) / 10000).toFixed(1)} m²`;
+    const located = room.locationCode || room.name;
+    const first = located ? locationTitle(room) : room.usage ? `用途：${room.usage}` : `${room.id}　${m2}`;
+    const second = located || room.usage ? `${room.id} · ${m2}` : "尚未設定存置地點";
+    const body = domEl("span", undefined, { className: "body" });
+    body.append(domEl("span", first, { className: "t1 ellip" }), domEl("span", second, { className: "t2 ellip" }));
+    const tags = domEl("span", undefined, { className: "tags" });
+    if (room.auto) tags.append(domEl("span", "牆", { className: "tag", title: "由牆生成" }));
+    if (room.type !== "room") tags.append(domEl("span", room.type === "public" ? "公共" : "挑空", { className: "tag" }));
+    button.title = `${first}（${room.id}，${m2}）`;
+    button.append(body, tags);
     li.append(button);
     list.append(li);
   });
@@ -1360,8 +1462,20 @@ function renderPanel() {
     add(el("div", "選取房間後，為它設定存置地點代碼與名稱，主系統才能對應。描完後按「匯出 JSON」，把檔案交給我整理。", { className: "note" }));
     add(el("div", "在空白處拖曳可以框選多個房間與牆，整組移動或對齊到底圖。", { className: "note" }));
   } else {
+    const card = (title) => { const c = el("section", undefined, { className: "card2" }); c.append(el("h3", title)); add(c); return c; };
+    const m2 = `${(roomArea(room) / 10000).toFixed(1)} m²`;
+    // where am I, and a way to walk through the rooms without going back to the list
+    const nav = el("div", undefined, { className: "props-nav" });
+    const title = el("span", `${room.id} · ${m2}`, { className: "ellip", title: `${room.id}，${m2}` });
+    const prev = el("button", "‹", { type: "button", title: "上一間（依列表的順序）" }), next = el("button", "›", { type: "button", title: "下一間（依列表的順序）" });
+    const nextUnset = el("button", "下一間未指派", { type: "button", title: "跳到下一間還沒有存置地點、也沒標用途的房間" });
+    prev.addEventListener("click", () => stepRoom(-1, false));
+    next.addEventListener("click", () => stepRoom(1, false));
+    nextUnset.addEventListener("click", () => { if (!stepRoom(1, true)) showToast("這一層沒有未指派的房間了"); });
+    nav.append(title, prev, next, nextUnset);
+    add(nav);
     // 存置地點: the code and name must match the main system, so they can be picked from its list.
-    add(el("label", "存置地點（代碼與名稱需與主系統一致）"));
+    const place = card("存置地點");
     const search = el("input", undefined, { type: "text", placeholder: LOCATIONS.length ? "搜尋存置地點的代碼或名稱…" : "尚未匯入存置地點清單（到「存置地點清單」分頁匯入）" });
     const results = el("div", undefined, { className: "results" });
     const used = new Set(rooms.filter((r) => r.id !== room.id && r.locationCode).map((r) => r.locationCode));
@@ -1370,14 +1484,14 @@ function renderPanel() {
       const query = search.value.trim().toLowerCase();
       if (!query) return;
       LOCATIONS.filter((l) => (l.code + " " + l.name).toLowerCase().includes(query)).slice(0, 8).forEach((l) => {
-        const b = el("button", `${l.code}　${l.name}`, { type: "button" });
-        b.append(el("small", `　${l.count} 筆財物${used.has(l.code) ? "・已用於其他房間" : ""}`));
-        b.addEventListener("click", () => { pushHistory(); room.locationCode = l.code; room.name = l.name; changed(true, false); });
+        const b = el("button", undefined, { type: "button", title: `${l.code} ${l.name}（${l.count} 筆財物${used.has(l.code) ? "，已用於其他房間" : ""}）` });
+        b.append(el("span", `${l.code}　${l.name}`, { className: "ellip" }), el("small", `${l.count} 筆財物${used.has(l.code) ? "・已用於其他房間" : ""}`, { className: "ellip" }));
+        b.addEventListener("click", () => { pushHistory(); room.locationCode = l.code; room.name = l.name; changed(true, false); showToast(`已指派 ${l.code} ${l.name}`, { undo: true }); });
         results.append(b);
       });
       if (!results.children.length) results.append(el("small", "找不到符合的存置地點"));
     });
-    add(search); add(results);
+    place.append(search, results);
     const fields = el("div", undefined, { className: "two" });
     const bind = (label, field, placeholder) => {
       const wrap = el("div");
@@ -1398,11 +1512,20 @@ function renderPanel() {
       return wrap;
     };
     fields.append(bind("代碼", "locationCode", "例如 *C001"), bind("名稱", "name", "例如 業務組辦公室"));
-    add(fields);
+    place.append(fields);
+    const known = room.locationCode ? locationByCode.get(room.locationCode) : null;
+    const others = room.locationCode ? rooms.filter((r) => r.id !== room.id && r.locationCode === room.locationCode).length : 0;
+    let status = "";
+    if (!room.locationCode) status = "還沒設定代碼，無法與主系統對應。";
+    else if (LOCATIONS.length && !known) status = "代碼不在主系統的清單裡，請確認。";
+    else if (known) status = `對應「${known.name}」，主系統有 ${known.count} 筆財物。` + (room.name && room.name !== known.name ? "（名稱與主系統不同）" : "");
+    if (others) status += `另有 ${others} 個房間用同一代碼。`;
+    if (status) place.append(el("div", status, { className: "note" }));
+    // 空間用途: for places that are not a 存置地點
+    const usageCard = card("空間用途");
     const USAGE_PRESETS = ["走廊", "樓梯間", "電梯", "廁所", "茶水間", "機房", "管道間", "儲藏", "出入口", "停車空間"];
-    const usageField = bind("空間用途（不屬於存置地點時，可自行標註）", "usage", "例如 走廊、樓梯間、機房");
-    usageField.style.marginTop = "10px";
-    add(usageField);
+    const usageField = bind("不屬於存置地點時，可自行標註", "usage", "例如 走廊、樓梯間、機房");
+    usageCard.append(usageField);
     const usedUsages = new Set();
     FLOORS.forEach((f) => (stateOf(f.id).rooms || []).forEach((r) => { if (r.usage) usedUsages.add(r.usage); }));
     const suggestions = [...new Set([...usedUsages, ...USAGE_PRESETS])].filter((u) => u !== room.usage).slice(0, 14);
@@ -1412,24 +1535,23 @@ function renderPanel() {
       b.addEventListener("click", () => { pushHistory(); room.usage = u; changed(true, false); });
       chips.append(b);
     });
-    add(chips);
-    const known = room.locationCode ? locationByCode.get(room.locationCode) : null;
-    const others = room.locationCode ? rooms.filter((r) => r.id !== room.id && r.locationCode === room.locationCode).length : 0;
-    let status;
-    if (!room.locationCode) status = "尚未設定代碼，還無法與主系統對應。";
-    else if (!LOCATIONS.length) status = "";
-    else if (!known) status = "這個代碼不在主系統的存置地點清單中，請確認。";
-    else status = `對應主系統「${known.name}」，目前有 ${known.count} 筆財物。` + (room.name && room.name !== known.name ? `（名稱與主系統不同）` : "");
-    if (others) status += `另有 ${others} 個房間使用相同代碼（同一存置地點可以由多個房間組成）。`;
-    if (status) add(el("div", status, { className: "note" }));
+    usageCard.append(chips);
+    // 房間資訊
+    const info = card("房間資訊");
     const typeField = el("div", undefined, { className: "field" });
+    typeField.style.marginTop = "6px";
     typeField.append(el("label", "類型"));
     typeField.append(customSelect({
       options: Object.entries(TYPE_NAMES), value: room.type, label: "房間類型",
       onChange: (value) => { pushHistory(); room.type = value; changed(true, false); },
     }).el);
-    add(typeField);
-    add(el("div", `${room.auto ? "由牆生成。" : "手動描繪。"}面積約 ${(roomArea(room) / 10000).toFixed(1)} m²（以單位為公分推算${room.holes?.length ? `，已扣除裡面的 ${room.holes.length} 個房間` : ""}）`, { className: "note" }));
+    info.append(typeField);
+    const kv = (key, value, tip) => { const row = el("div", undefined, { className: "kv" }); row.append(el("span", key), el("span", value, { className: "ellip", title: tip || value })); info.append(row); };
+    kv("面積", m2 + (room.holes?.length ? `（已扣除 ${room.holes.length} 個鏤空）` : ""));
+    kv("來源", room.auto ? "由牆生成" : "手繪");
+    kv("編號", room.id, "只是這個檔案內部的流水編號，不是存置地點代碼");
+    // fixed at the bottom of the panel
+    const actions = el("div", undefined, { className: "props-actions" });
     const row = el("div", undefined, { className: "row" });
     const del = el("button", "刪除此房間", { type: "button", className: "btn danger", title: "刪除這個房間，並讓相鄰的房間接手它的空間（兩者之間的牆一起拿掉，其他房間還要用的牆會保留）" });
     del.addEventListener("click", () => deleteSelected());
@@ -1439,7 +1561,8 @@ function renderPanel() {
       hide.addEventListener("click", () => deleteSelected({ keepWalls: true }));
       row.append(hide);
     }
-    add(row);
+    actions.append(row);
+    add(actions);
   }
   const linked = rooms.filter((r) => r.locationCode).length;
   $("stats").innerHTML = `<span><b>${walls.length}</b> 道牆</span><span><b>${rooms.length}</b> 個房間</span><span><b>${linked}</b> 個已設定存置地點代碼</span><span>底圖來源：${DATA.source}</span>`;
@@ -1475,7 +1598,7 @@ function goToRoom(id, roomId) {
   refresh();
 }
 const roomChip = ({ floor, room }) => {
-  const b = domEl("button", `${floorName(floor)} · ${(roomArea(room) / 10000).toFixed(1)} m²`, { type: "button", title: room.name || room.usage || room.id });
+  const b = domEl("button", `${floor.label || floor.title} · ${(roomArea(room) / 10000).toFixed(1)} m²`, { type: "button", title: `${floorName(floor)}　${room.id}　${room.name || room.usage || ""}` });
   b.addEventListener("click", () => goToRoom(floor.id, room.id));
   return b;
 };
@@ -1489,60 +1612,95 @@ function setTab(name) {
 }
 function renderLocPanel() {
   const { byCode, outside, unset } = locationAssignments();
-  const summary = $("loc-summary"), filters = $("loc-filter"), list = $("loc-list");
-  list.replaceChildren(); filters.replaceChildren(); summary.replaceChildren();
+  const list = $("loc-list"), filters = $("loc-filter"), sub = $("loc-sub"), context = $("loc-context");
+  list.replaceChildren(); filters.replaceChildren(); sub.replaceChildren(); context.replaceChildren();
+  const countText = $("loc-count"), bar = $("loc-bar");
   if (!LOCATIONS.length) {
-    summary.append(domEl("div", "還沒有存置地點清單。請匯入主系統的存置地點清單（JSON，內容是 [{ code, name, count }]），之後會存在這個瀏覽器，不必重複匯入。"));
+    countText.textContent = "還沒有存置地點清單";
+    bar.hidden = true; context.hidden = true; filters.hidden = true;
+    const li = domEl("li", undefined, { className: "loc-empty" });
+    li.append(domEl("div", "請匯入主系統的存置地點清單（JSON，內容是 [{ code, name, count }]）。匯入一次就好，之後會記在這個瀏覽器。"));
+    const importButton = domEl("button", "匯入存置地點清單", { type: "button", className: "btn accent" });
+    importButton.addEventListener("click", () => $("loc-file").click());
+    li.append(importButton);
+    list.append(li);
     return;
   }
+  bar.hidden = false; context.hidden = false; filters.hidden = false;
   const assigned = LOCATIONS.filter((l) => byCode.has(l.code)), missing = LOCATIONS.filter((l) => !byCode.has(l.code));
-  const sum = (items) => items.reduce((total, l) => total + (l.count || 0), 0);
-  const withUsage = unset.filter((u) => u.room.usage).length;
-  const line = (html) => { const d = document.createElement("div"); d.innerHTML = html; summary.append(d); };
-  line(`共 <b>${LOCATIONS.length}</b> 個存置地點：已對應 <b>${assigned.length}</b>、<b>未對應 ${missing.length}</b>（涉及財物 ${sum(missing)} 筆）`);
-  line(`清單外的代碼 <b>${outside.length}</b> 個房間；沒有存置地點的房間 <b>${unset.length}</b> 個（已標註用途 ${withUsage}）`);
-  [["all", "全部"], ["missing", `未對應 ${missing.length}`], ["assigned", `已對應 ${assigned.length}`], ["outside", `清單外代碼 ${outside.length}`], ["unset", `無存置地點的房間 ${unset.length}`]].forEach(([key, text]) => {
-    const b = domEl("button", text, { type: "button", className: "chip" });
+  const missingAssets = missing.reduce((total, l) => total + (l.count || 0), 0);
+  countText.textContent = `已對應 ${assigned.length} / ${LOCATIONS.length}`;
+  bar.firstElementChild.style.width = Math.round((assigned.length / LOCATIONS.length) * 100) + "%";
+  const subLine = (text) => sub.append(domEl("div", text, { className: "ellip", title: text }));
+  subLine(`未對應 ${missing.length} 個・涉及財物 ${missingAssets.toLocaleString()} 筆`);
+  subLine(`清單外代碼 ${outside.length} 間・無存置地點 ${unset.length} 間（已標用途 ${unset.filter((u) => u.room.usage).length}）`);
+  // the room that will receive a location when a row is clicked
+  const selectedRoom = group ? null : roomById(selectedId);
+  const text = domEl("span", undefined, { className: "ctx-text ellip" });
+  if (selectedRoom) {
+    const current = selectedRoom.locationCode ? `已指派 ${selectedRoom.locationCode} ${selectedRoom.name || ""}` : selectedRoom.usage ? `用途：${selectedRoom.usage}` : "尚未指派";
+    text.append(domEl("b", selectedRoom.id), document.createTextNode(` · ${(roomArea(selectedRoom) / 10000).toFixed(1)} m² · ${current}`));
+    text.title = `${selectedRoom.id}　${current}`;
+  } else {
+    text.textContent = "先選一間房，再點下面的存置地點來指派";
+  }
+  const nextUnset = domEl("button", "下一間未指派", { type: "button", className: "chip", title: "跳到下一間還沒有存置地點、也沒標用途的房間" });
+  nextUnset.addEventListener("click", () => { if (!stepRoom(1, true)) showToast("這一層沒有未指派的房間了"); });
+  context.append(text, nextUnset);
+  [["all", "全部"], ["missing", `未對應 ${missing.length}`], ["assigned", `已對應 ${assigned.length}`], ["outside", `清單外 ${outside.length}`], ["unset", `無地點 ${unset.length}`]].forEach(([key, label]) => {
+    const b = domEl("button", label, { type: "button", className: "chip" });
     b.setAttribute("aria-pressed", String(locFilter === key));
     b.addEventListener("click", () => { locFilter = key; renderLocPanel(); });
     filters.append(b);
   });
   const query = locQuery;
-  const item = () => { const li = document.createElement("li"); list.append(li); return li; };
+  const addRow = (className) => { const li = document.createElement("li"); li.className = "loc-item " + className; list.append(li); return li; };
   if (locFilter === "outside" || locFilter === "unset") {
     const rows = (locFilter === "outside" ? outside : unset).filter(({ room }) => !query || `${room.locationCode} ${room.name} ${room.usage || ""}`.toLowerCase().includes(query));
     rows.sort((a, b) => FLOORS.indexOf(a.floor) - FLOORS.indexOf(b.floor) || roomArea(b.room) - roomArea(a.room));
     if (!rows.length) list.append(domEl("li", "沒有項目", { className: "empty" }));
     rows.forEach((entry) => {
-      const li = item(), head = domEl("div", undefined, { className: "loc-row" });
-      const label = locFilter === "outside" ? `${entry.room.locationCode}　${entry.room.name || ""}` : entry.room.usage ? `用途：${entry.room.usage}` : "（尚未設定）";
-      head.append(domEl("span", label, { className: "loc-code" }));
-      li.append(head);
-      const chips = domEl("div", undefined, { className: "loc-rooms" });
-      chips.append(roomChip(entry));
-      li.append(chips);
+      const { floor, room } = entry, li = addRow("unset");
+      const label = locFilter === "outside" ? `${room.locationCode}　${room.name || ""}` : room.usage ? `用途：${room.usage}` : `${room.id}　尚未設定`;
+      const main = domEl("button", undefined, { type: "button", className: "loc-main", title: `${label}（${floorName(floor)}，${(roomArea(room) / 10000).toFixed(1)} m²）` });
+      const line = domEl("span", undefined, { className: "loc-line" });
+      line.append(domEl("span", label, { className: "loc-name ellip" }));
+      main.append(line, domEl("span", `${floor.label || floor.title} · ${(roomArea(room) / 10000).toFixed(1)} m²`, { className: "loc-count2" }));
+      main.addEventListener("click", () => goToRoom(floor.id, room.id));
+      li.append(main);
     });
     return;
   }
-  const selectedRoom = group ? null : roomById(selectedId);
   const rows = LOCATIONS.filter((l) => (locFilter === "all" || (locFilter === "missing") === !byCode.has(l.code)) && (!query || `${l.code} ${l.name}`.toLowerCase().includes(query)));
   rows.sort((a, b) => (locFilter === "missing" ? b.count - a.count : 0) || a.code.localeCompare(b.code, "zh-Hant"));
   if (!rows.length) list.append(domEl("li", "沒有符合的存置地點", { className: "empty" }));
   rows.forEach((l) => {
-    const li = item(), head = domEl("div", undefined, { className: "loc-row" });
-    const text = domEl("div");
-    text.append(domEl("span", l.code, { className: "loc-code" }), document.createTextNode("　" + l.name), domEl("div", `${l.count} 筆財物`, { className: "loc-meta" }));
-    head.append(text);
-    if (selectedRoom && selectedRoom.locationCode !== l.code) {
-      const assign = domEl("button", "指派給選取的房間", { type: "button", className: "chip loc-assign", title: `把「${l.code} ${l.name}」設定給目前選取的房間` });
-      assign.addEventListener("click", () => { pushHistory(); selectedRoom.locationCode = l.code; selectedRoom.name = l.name; changed(true, false); });
-      head.append(assign);
+    const entries = byCode.get(l.code) || [];
+    const canAssign = selectedRoom && selectedRoom.locationCode !== l.code;
+    const li = addRow((entries.length ? "assigned" : "unset") + (canAssign ? " can-assign" : ""));
+    const main = domEl("button", undefined, { type: "button", className: "loc-main", title: `${l.code}　${l.name}（${l.count} 筆財物）` });
+    const line = domEl("span", undefined, { className: "loc-line" });
+    line.append(domEl("span", l.code, { className: "loc-code" }), domEl("span", l.name, { className: "loc-name ellip" }));
+    main.append(line, domEl("span", `${l.count} 筆`, { className: "loc-count2" }), domEl("span", selectedRoom ? `指派給 ${selectedRoom.id}` : "", { className: "loc-hint" }));
+    main.addEventListener("click", () => {
+      if (selectedRoom) {
+        if (selectedRoom.locationCode === l.code) { showToast(`${selectedRoom.id} 已經是 ${l.code}`); return; }
+        pushHistory(); selectedRoom.locationCode = l.code; selectedRoom.name = l.name; changed(true, false);
+        showToast(`已指派 ${l.code} ${l.name} 給 ${selectedRoom.id}`, { undo: true });
+      } else if (entries.length) {
+        const at = Number(main.dataset.at || 0) % entries.length;
+        main.dataset.at = String(at + 1);
+        goToRoom(entries[at].floor.id, entries[at].room.id);
+      } else {
+        showToast("先選一間房，再點存置地點來指派");
+      }
+    });
+    li.append(main);
+    if (entries.length) {
+      const chips = domEl("div", undefined, { className: "loc-rooms" });
+      entries.forEach((entry) => chips.append(roomChip(entry)));
+      li.append(chips);
     }
-    li.append(head);
-    const chips = domEl("div", undefined, { className: "loc-rooms" });
-    (byCode.get(l.code) || []).forEach((entry) => chips.append(roomChip(entry)));
-    if (!chips.children.length) chips.append(domEl("span", "尚未對應任何房間", { className: "none" }));
-    li.append(chips);
   });
 }
 async function importLocations(text) {
@@ -1576,14 +1734,13 @@ function exportLocationCsv() {
 $("tab-rooms").addEventListener("click", () => setTab("rooms"));
 $("tab-locs").addEventListener("click", () => setTab("locs"));
 $("loc-q").addEventListener("input", (e) => { locQuery = e.target.value.trim().toLowerCase(); renderLocPanel(); });
-$("loc-import").addEventListener("click", () => $("loc-file").click());
+$("loc-menu").addEventListener("click", (e) => popupMenu(e.currentTarget, [["匯入存置地點清單…", () => $("loc-file").click()], ["匯出對照表（CSV）", exportLocationCsv]]));
 $("loc-file").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   e.target.value = "";
   if (!file) return;
   try { await importLocations(await file.text()); } catch (error) { alert("無法匯入存置地點清單：" + error.message); }
 });
-$("loc-csv").addEventListener("click", exportLocationCsv);
 
 // ---- actions ---------------------------------------------------------------------------------------------
 function setTool(next) {
