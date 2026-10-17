@@ -498,6 +498,9 @@ function customSelect({ options, value, onChange, label, compact = false }) {
     list.hidden = false; button.setAttribute("aria-expanded", "true");
     const box = button.getBoundingClientRect();
     list.style.minWidth = box.width + "px"; list.style.left = box.left + "px";
+    // keep the menu inside the window: slide it left when it would run past the right edge
+    const wide = list.getBoundingClientRect().width;
+    list.style.left = Math.max(8, Math.min(box.left, document.documentElement.clientWidth - wide - 8)) + "px";
     const room = innerHeight - box.bottom - 12, need = Math.min(260, list.scrollHeight + 10);
     if (room >= need || room >= box.top) { list.style.top = box.bottom + 4 + "px"; list.style.bottom = ""; }
     else { list.style.bottom = innerHeight - box.top + 4 + "px"; list.style.top = ""; }
