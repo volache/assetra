@@ -710,7 +710,7 @@ function redo() { if (!future.length) return; history.push(snapshot()); restore(
 // kept in memory once visited.  Everything is saved to IndexedDB, and in Chrome or Edge also to .rooms.json files in a
 // folder the user picked, which is the copy to rely on.
 const FLOORS = CAMPUS.buildings.flatMap((b) => b.floors.map((f) => { f.building = b.name; return f; }));   // every floor of every building
-const PROJECT_KEY = "campus:" + CAMPUS.title;
+const PROJECT_KEY = "campus:" + (CAMPUS.key || CAMPUS.title);   // what the browser saves under: it must not change when only the title does
 let currentBuilding = null;
 let floorId = null;
 const floorMemory = new Map();            // id -> { rooms, walls, suppressed, counter, history, future, view }
@@ -916,7 +916,7 @@ function enterFloor(id) {
   batch.cancel = true; batch.open = false; batch.items = []; batch.running = false; $("batchpanel").hidden = true; $("batchfind").setAttribute("aria-pressed", "false");
   gaps = []; gapOpen = false; $("gappanel").hidden = true; $("gapcheck").setAttribute("aria-pressed", "false");
   currentBuilding = floor.building;
-  try { localStorage.setItem("indoor-trace-last:" + CAMPUS.title, id); localStorage.setItem(`indoor-trace-last:${CAMPUS.title}:${floor.building}`, id); } catch { /* ignore */ }
+  try { localStorage.setItem("indoor-trace-last:" + PROJECT_KEY, id); localStorage.setItem(`indoor-trace-last:${PROJECT_KEY}:${floor.building}`, id); } catch { /* ignore */ }
   document.title = `${CAMPUS.title}　${floor.building} ${floor.label || floor.title}`;
   buildingSelect?.set(floor.building);
   buildScene();
@@ -934,7 +934,7 @@ let buildingSelect = null;
 function switchBuilding(name) {
   if (name === currentBuilding) return;
   let target = null;
-  try { target = localStorage.getItem(`indoor-trace-last:${CAMPUS.title}:${name}`); } catch { /* ignore */ }
+  try { target = localStorage.getItem(`indoor-trace-last:${PROJECT_KEY}:${name}`); } catch { /* ignore */ }
   const floors = FLOORS.filter((f) => f.building === name);
   enterFloor((floors.find((f) => f.id === target) || floors[0]).id);
 }
@@ -3616,7 +3616,7 @@ if (!canPickFolder) $("save-status").hidden = false;
 (async function start() {
   await initStorage();
   let first = FLOORS[0].id;
-  try { const last = localStorage.getItem("indoor-trace-last:" + CAMPUS.title); if (last && FLOORS.some((f) => f.id === last)) first = last; } catch { /* ignore */ }
+  try { const last = localStorage.getItem("indoor-trace-last:" + PROJECT_KEY); if (last && FLOORS.some((f) => f.id === last)) first = last; } catch { /* ignore */ }
   enterFloor(first);
   resize();
   renderSaveStatus();

@@ -2,7 +2,7 @@
 
 Isolated from the application: nothing under src/ or supabase/ is touched.
 
-    python prototypes/indoor-map/trace/build_building.py data/private/indoor-map/buildings/*.json         --title 航廈平面圖製作工具 --output data/private/indoor-map/航廈平面圖製作工具.html
+    python prototypes/indoor-map/trace/build_building.py data/private/indoor-map/buildings/*.json         --title 花蓮航空站平面圖製作工具 --key 航廈平面圖製作工具 --output data/private/indoor-map/花蓮航空站平面圖製作工具.html
 
 Each JSON file is one building; the page lets you switch between buildings and between the floors of each.
 The page holds only the drawings.  Nothing the user traced and no 存置地點 list is built in: that is all read from
@@ -95,11 +95,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("configs", nargs="+", help="one JSON config per building")
     parser.add_argument("--title", default="", help="page title (default: the first building's name)")
+    parser.add_argument("--key", default="", help="name the browser saves this project under (default: the title); keep it when only the title changes, or the saved work will not be found")
     parser.add_argument("--output", default="", help="output HTML (default: the first config's output)")
     args = parser.parse_args()
     configs = [json.loads(Path(c).read_text(encoding="utf-8")) for c in args.configs]
     buildings = [build_one(config) for config in configs]
-    campus = {"title": args.title or buildings[0]["name"], "buildings": buildings}
+    title = args.title or buildings[0]["name"]
+    campus = {"title": title, "key": args.key or title, "buildings": buildings}
     out = write_page(campus, args.output or configs[0]["output"])
     print(f"wrote {out} ({out.stat().st_size / 1e6:.1f} MB, {len(buildings)} buildings, {sum(len(b['floors']) for b in buildings)} floors)", file=sys.stderr)
 
