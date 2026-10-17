@@ -184,6 +184,9 @@
   .batch-ring.check { fill: rgba(224, 160, 40, 0.16); stroke: #b87a00; stroke-dasharray: 5 3; }
   .batch-ring.off { fill: none; opacity: 0.55; }
   .batch-ring.hot { stroke-width: 3; }
+  /* dragging on the drawing must never highlight the text around it */
+  header, .subbar, .stage, .stage * { -webkit-user-select: none; user-select: none; }
+  .stage input, header input, .subbar input { -webkit-user-select: text; user-select: text; }
   .selbar { align-items: center; background: #fff; border: 1px solid var(--rule); border-radius: 12px; box-shadow: 0 4px 16px rgba(20, 30, 60, 0.14); display: flex; flex-wrap: wrap; font-size: 13px; gap: 6px 10px; left: 12px; margin-inline: auto; max-width: calc(100% - 76px); padding: 6px 8px 6px 14px; position: absolute; right: 64px; top: 12px; width: max-content; z-index: 4; }
   .selbar[hidden] { display: none; }
   .selbar .count { color: var(--ink); font-weight: 700; white-space: nowrap; }
