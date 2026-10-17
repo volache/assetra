@@ -743,8 +743,14 @@ const idbPut = (store, key, value) => idb(store, "readwrite", (s) => s.put(value
 const emptyState = () => ({ rooms: [], walls: [], suppressed: [], counter: 1 });
 const stateOf = (id) => (id === floorId ? { rooms, walls, suppressed, counter } : floorMemory.get(id) || projectRecord.floors[id] || emptyState());
 const hasContent = (id) => { const s = stateOf(id); return !!(s.rooms?.length || s.walls?.length); };
+/** A permanent, invisible identity for every room: it survives renumbering, moving between floors' files, and renaming. */
+const newUid = () => globalThis.crypto?.randomUUID?.() ?? "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) => (c ^ ((Math.random() * 16) >> (c / 4))).toString(16));
 function applyState(state) {
   rooms = state.rooms || []; walls = state.walls || []; suppressed = state.suppressed || [];
+  // rooms saved before identities existed get theirs now, and the floor is saved again so they stay put
+  let added = 0;
+  rooms.forEach((r) => { if (!r.uid) { r.uid = newUid(); added += 1; } });
+  if (added && floorId) dirtyFloors.add(floorId);
   counter = Math.max(state.counter || 1, ...rooms.map((r) => idNumber(r.id)), ...walls.map((w) => idNumber(w.id))) + 1;
 }
 function save() { dirtyFloors.add(floorId); clearTimeout(flushTimer); flushTimer = setTimeout(flush, 700); }
@@ -980,7 +986,7 @@ const roomById = (id) => rooms.find((r) => r.id === id);
 const wallById = (id) => walls.find((w) => w.id === id);
 function addRoom(ring, curve) {
   pushHistory();
-  const room = { id: newId("T"), name: "", locationCode: "", type: "room", ring: ring.map((p) => [round1(p[0]), round1(p[1])]) };
+  const room = { id: newId("T"), uid: newUid(), name: "", locationCode: "", type: "room", ring: ring.map((p) => [round1(p[0]), round1(p[1])]) };
   if (curve) room.curve = curve;
   rooms.push(room);
   group = null; selectedId = room.id; selectedWallId = null; selectedVertex = null;
@@ -1141,7 +1147,7 @@ function splitManualRooms() {
       const clean = ring.map((p) => [round1(p[0]), round1(p[1])]);
       out.push(i === 0
         ? { ...room, ring: clean, holes: undefined, curve: undefined }
-        : { id: newId("T"), name: "", locationCode: "", type: room.type, ring: clean });
+        : { id: newId("T"), uid: newUid(), name: "", locationCode: "", type: room.type, ring: clean });
     });
   }
   rooms = out;
@@ -1176,10 +1182,10 @@ function generateRooms() {
   for (const room of oldBySize) {
     const target = fresh.find((f) => !f.id && inRoom(f, room.anchor || interiorPoint(room.ring, room.holes || [])));
     if (!target) continue;
-    target.id = room.id; target.name = room.name; target.locationCode = room.locationCode || ""; target.type = room.type;
+    target.id = room.id; target.uid = room.uid; target.name = room.name; target.locationCode = room.locationCode || ""; target.type = room.type;
     if (room.usage) target.usage = room.usage;
   }
-  fresh.forEach((f) => { if (!f.id) f.id = newId("T"); });
+  fresh.forEach((f) => { if (!f.id) f.id = newId("T"); if (!f.uid) f.uid = newUid(); });
   rooms = [...keep, ...fresh];
   if (selectedAnchor) selectedId = fresh.find((f) => inRoom(f, selectedAnchor))?.id || null;
   else if (selectedId && !roomById(selectedId)) selectedId = null;
@@ -1549,7 +1555,8 @@ function renderPanel() {
     const kv = (key, value, tip) => { const row = el("div", undefined, { className: "kv" }); row.append(el("span", key), el("span", value, { className: "ellip", title: tip || value })); info.append(row); };
     kv("面積", m2 + (room.holes?.length ? `（已扣除 ${room.holes.length} 個鏤空）` : ""));
     kv("來源", room.auto ? "由牆生成" : "手繪");
-    kv("編號", room.id, "只是這個檔案內部的流水編號，不是存置地點代碼");
+    kv("編號", room.id, "只是這一層內部的流水編號，不是存置地點代碼");
+    if (room.uid) kv("識別碼", room.uid.slice(0, 8), `永久識別碼（不會因為改編號或複製而變）：${room.uid}`);
     // fixed at the bottom of the panel
     const actions = el("div", undefined, { className: "props-actions" });
     const row = el("div", undefined, { className: "row" });
@@ -2028,11 +2035,11 @@ function tidy() {
 function payloadFor(floor, state) {
   const flip = (p) => [round1(p[0]), round1(-p[1])];
   return {
-    version: 5, title: floor.title, source: floor.source, unit: floor.unit,
+    version: 6, title: floor.title, source: floor.source, unit: floor.unit,
     note: "座標為 DXF 圖面座標（x 向右、y 向上）。walls 是牆的中心線；auto 為 true 的房間是由牆自動生成的。holes 是這個房間裡面被其他房間佔用、要扣掉的部分；每個房間的 locationCode 與 name 是主系統的存置地點代碼與名稱；id 只是這個檔案內部的流水編號，不是存置地點代碼。type: room 房間 / public 公共區域 / void 挑空採光。",
     walls: (state.walls || []).map((w) => ({ id: w.id, pts: w.pts.map(flip), ...(w.curve ? { curve: true } : {}) })),
     rooms: (state.rooms || []).map((r) => ({
-      id: r.id, locationCode: r.locationCode || "", name: r.name, ...(r.usage ? { usage: r.usage } : {}), type: r.type, ring: r.ring.map(flip),
+      id: r.id, ...(r.uid ? { uid: r.uid } : {}), locationCode: r.locationCode || "", name: r.name, ...(r.usage ? { usage: r.usage } : {}), type: r.type, ring: r.ring.map(flip),
       ...(r.auto ? { auto: true } : {}), ...(r.curve ? { curve: r.curve } : {}),
       ...(r.holes?.length ? { holes: r.holes.map((h) => h.map(flip)) } : {}),
     })),
@@ -2055,12 +2062,16 @@ function moveCurve(curve, dx, dy) {
   return out;
 }
 /** An exported file as editor state.  `shift` moves it (drawing units) when it was drawn on another floor's drawing. */
-function convertPayload(payload, shift, keepLocations) {
+/**
+ * `options.copy` marks a file that comes from another floor: its rooms and walls are copies, so they get new numbers
+ * (continuing from `options.startAt`) and new permanent identities instead of keeping the other floor's.
+ */
+function convertPayload(payload, shift, keepLocations, options = {}) {
   if (!Array.isArray(payload.rooms)) throw new Error("格式不正確");
   const [shiftX, shiftY] = shift || [0, 0];
   const flip = (p) => [p[0] + shiftX, -(p[1] + shiftY)];
   const list = payload.rooms.map((r, i) => ({
-    id: r.id || "T" + String(i + 1).padStart(3, "0"), name: keepLocations ? r.name || "" : "", locationCode: keepLocations ? r.locationCode || "" : "", ...(keepLocations && r.usage ? { usage: r.usage } : {}), type: TYPE_NAMES[r.type] ? r.type : "room",
+    id: r.id || "T" + String(i + 1).padStart(3, "0"), uid: !options.copy && r.uid ? r.uid : newUid(), name: keepLocations ? r.name || "" : "", locationCode: keepLocations ? r.locationCode || "" : "", ...(keepLocations && r.usage ? { usage: r.usage } : {}), type: TYPE_NAMES[r.type] ? r.type : "room",
     ring: r.ring.map(flip), ...(r.auto ? { auto: true } : {}), ...(r.curve ? { curve: moveCurve(r.curve, shiftX, shiftY) } : {}),
     ...(r.holes?.length ? { holes: r.holes.map((h) => h.map(flip)) } : {}),
   }));
@@ -2074,6 +2085,11 @@ function convertPayload(payload, shift, keepLocations) {
   const seenRooms = new Set(), seenWalls = new Set();
   list.forEach((r) => { if (seenRooms.has(r.id)) r.id = "T" + String(next++).padStart(3, "0"); seenRooms.add(r.id); });
   wallList.forEach((w) => { if (seenWalls.has(w.id)) w.id = "W" + String(next++).padStart(3, "0"); seenWalls.add(w.id); });
+  if (options.copy) {
+    next = Math.max(next, options.startAt || 1);
+    list.forEach((r) => { r.id = "T" + String(next++).padStart(3, "0"); });
+    wallList.forEach((w) => { w.id = "W" + String(next++).padStart(3, "0"); });
+  }
   return { rooms: list, walls: wallList, suppressed: [], counter: next };
 }
 function importJson(text) {
@@ -2090,7 +2106,7 @@ function importJson(text) {
     );
   }
   pushHistory();
-  applyState(convertPayload(payload, shift, keepLocations));
+  applyState(convertPayload(payload, shift, keepLocations, { copy: foreign, startAt: counter }));
   selectedId = null; selectedWallId = null; group = null; align = null;
   changed(true, false);
   if (foreign) {
@@ -3073,7 +3089,7 @@ function acceptBatch() {
   if (!chosen.length) return;
   pushHistory();
   chosen.forEach((item) => {
-    const room = { id: newId("T"), name: "", locationCode: "", type: "room", ring: item.shape.ring.map((q) => [round1(q[0]), round1(q[1])]) };
+    const room = { id: newId("T"), uid: newUid(), name: "", locationCode: "", type: "room", ring: item.shape.ring.map((q) => [round1(q[0]), round1(q[1])]) };
     if (item.shape.curve) room.curve = item.shape.curve;
     rooms.push(room);
   });
