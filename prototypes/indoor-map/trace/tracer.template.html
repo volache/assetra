@@ -225,6 +225,10 @@
   .loc-item.unset { border-left-color: #f0b27a; }
   .loc-item.assigned { border-left-color: #7fd6cc; }
   .list .loc-main { align-items: center; display: flex; gap: 8px; padding: 7px 10px 7px 9px; }
+  .loc-row { align-items: stretch; display: flex; }
+  .loc-row .loc-main { flex: 1; min-width: 0; }
+  .loc-plus { background: transparent; border: 0; border-left: 1px solid #eef1f6; color: var(--teal); cursor: pointer; flex: none; font-size: 15px; font-weight: 700; width: 34px; }
+  .loc-plus:hover { background: #e6f4f2; }
   .loc-line { align-items: baseline; display: flex; flex: 1; gap: 8px; min-width: 0; }
   .loc-code { color: var(--ink); flex: none; font-weight: 700; }
   .loc-name { color: var(--ink-2); flex: 1; min-width: 0; }
@@ -1683,7 +1687,7 @@ function renderLocPanel() {
   const selectedRoom = group ? null : roomById(selectedId);
   const text = domEl("span", undefined, { className: "ctx-text ellip" });
   if (selectedRoom) {
-    const current = selectedRoom.locationCode ? `已指派 ${selectedRoom.locationCode} ${selectedRoom.name || ""}` : selectedRoom.usage ? `用途：${selectedRoom.usage}` : "尚未指派";
+    const current = selectedRoom.locationCode ? `已指派 ${selectedRoom.locationCode} ${selectedRoom.name || ""}${selectedRoom.also?.length ? `（另 ${selectedRoom.also.length} 個）` : ""}` : selectedRoom.usage ? `用途：${selectedRoom.usage}` : "尚未指派";
     text.append(domEl("b", selectedRoom.id), document.createTextNode(` · ${(roomArea(selectedRoom) / 10000).toFixed(1)} m² · ${current}`));
     text.title = `${selectedRoom.id}　${current}`;
   } else {
@@ -1740,7 +1744,18 @@ function renderLocPanel() {
         showToast("先選一間房，再點存置地點來指派");
       }
     });
-    li.append(main);
+    const alsoOk = selectedRoom && selectedRoom.locationCode && selectedRoom.locationCode !== l.code && !(selectedRoom.also || []).some((a) => a.code === l.code);
+    if (alsoOk) {
+      const plus = domEl("button", "＋", { type: "button", className: "loc-plus", title: `再加上 ${l.code}：${selectedRoom.id} 同時對應這個代碼` });
+      plus.setAttribute("aria-label", `把 ${l.code} 加為 ${selectedRoom.id} 的其他代碼`);
+      plus.addEventListener("click", () => {
+        pushHistory(); selectedRoom.also = [...(selectedRoom.also || []), { code: l.code, name: l.name }]; changed(true, false);
+        showToast(`已把 ${l.code} ${l.name} 加到 ${selectedRoom.id}`, { undo: true });
+      });
+      const row = domEl("div", undefined, { className: "loc-row" });
+      row.append(main, plus);
+      li.append(row);
+    } else li.append(main);
     if (entries.length) {
       const chips = domEl("div", undefined, { className: "loc-rooms" });
       entries.forEach((entry) => chips.append(roomChip(entry)));
