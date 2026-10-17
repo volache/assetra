@@ -175,6 +175,15 @@
   .gap-line.low { stroke: #7a859c; }
   #wand-opts { align-items: center; display: inline-flex; gap: 8px; }
   #wand-opts[hidden] { display: none; }
+  .batchpanel { width: 330px; }
+  .batch-list li { cursor: default; }
+  .batch-list label { align-items: center; display: flex; flex: 1; gap: 8px; min-width: 0; }
+  .batch-progress { background: #eef2f9; border-radius: 99px; height: 6px; margin: 4px 14px 10px; overflow: hidden; }
+  .batch-progress > div { background: var(--teal); height: 100%; transition: width 0.15s; width: 0; }
+  .batch-ring { fill: rgba(31, 181, 165, 0.14); stroke: #139688; stroke-width: 1.4; }
+  .batch-ring.check { fill: rgba(224, 160, 40, 0.16); stroke: #b87a00; stroke-dasharray: 5 3; }
+  .batch-ring.off { fill: none; opacity: 0.55; }
+  .batch-ring.hot { stroke-width: 3; }
   .selbar { align-items: center; background: #fff; border: 1px solid var(--rule); border-radius: 12px; box-shadow: 0 4px 16px rgba(20, 30, 60, 0.14); display: flex; flex-wrap: wrap; font-size: 13px; gap: 6px 10px; left: 12px; margin-inline: auto; max-width: calc(100% - 76px); padding: 6px 8px 6px 14px; position: absolute; right: 64px; top: 12px; width: max-content; z-index: 4; }
   .selbar[hidden] { display: none; }
   .selbar .count { color: var(--ink); font-weight: 700; white-space: nowrap; }
@@ -247,6 +256,7 @@
   <button type="button" class="btn" id="select-all" title="選取所有牆與房間，之後可整組移動、對齊到底圖">全選<kbd>Ctrl+A</kbd></button>
   <button type="button" class="btn" id="generate" title="依目前的牆重新產生房間">由牆生成房間</button>
   <button type="button" class="btn" id="tidy" title="頂點靠攏、邊線拉直、相鄰物件共邊">自動整理</button>
+  <button type="button" class="btn" id="batchfind" aria-pressed="false" title="整層找出所有被牆圍住的封閉區域，列成候選房間讓你勾選接受">批次找房間</button>
   <button type="button" class="btn" id="gapcheck" aria-pressed="false" title="找出牆的端點差一點沒接上的地方，並建議補上">缺口檢查</button>
 </div>
 
@@ -256,6 +266,7 @@
     <svg id="overlay" class="overlay" aria-hidden="true"></svg>
     <div class="hint" id="hint"></div>
     <div class="gappanel" id="gappanel" hidden></div>
+    <div class="gappanel batchpanel" id="batchpanel" hidden></div>
     <div class="selbar" id="selbar" role="toolbar" aria-label="對所選物件的操作" hidden></div>
     <div class="coords" id="coords"></div>
     <div class="zoom" role="group" aria-label="縮放">
@@ -353,6 +364,7 @@ let stateRev = 0;                 // bumps whenever walls or rooms change, so ca
 let guides = [], guidesOn = true;  // alignment guides: [{ a, b }] lines in page coordinates
 let trimPreview = null;
 let gaps = [], gapOpen = false, gapRadius = 50, gapRev = -1;   // wall ends that stop just short of another wall
+let batch = { open: false, running: false, cancel: false, gap: 150, items: [], show: "regular", hover: -1, note: "", progress: 0 };
 let stepCm = 50;                  // how far one nudge moves, typed by the user
 let listQuery = "", listUnset = false;
 let tool = "select";
@@ -840,6 +852,7 @@ function enterFloor(id) {
   selectedId = null; selectedWallId = null; selectedVertex = null; group = null; align = null; marquee = null;
   draft = null; drag = null; wand = null; wandPreview = null; snapHit = null; guides = []; trimPreview = null;
   clearTimeout(generateTimer); wandCache.clear();
+  batch.cancel = true; batch.open = false; batch.items = []; batch.running = false; $("batchpanel").hidden = true; $("batchfind").setAttribute("aria-pressed", "false");
   gaps = []; gapOpen = false; $("gappanel").hidden = true; $("gapcheck").setAttribute("aria-pressed", "false");
   currentBuilding = floor.building;
   try { localStorage.setItem("indoor-trace-last:" + CAMPUS.title, id); localStorage.setItem(`indoor-trace-last:${CAMPUS.title}:${floor.building}`, id); } catch { /* ignore */ }
@@ -1193,6 +1206,11 @@ function renderOverlay() {
     make("line", { class: "guide", x1: ax, y1: ay, x2: bx, y2: by }, overlay);
     make("circle", { class: "guide-dot", cx: ax, cy: ay, r: 2.5 }, overlay);
     make("circle", { class: "guide-dot", cx: bx, cy: by, r: 2.5 }, overlay);
+  });
+  if (batch.open) batch.items.forEach((item, index) => {
+    if ((batch.show === "regular") !== item.regular && batch.show !== "all") return;
+    const d = item.shape.ring.map((q, i) => { const [sx, sy] = toScreen(q); return (i ? "L" : "M") + sx + " " + sy; }).join("") + "Z";
+    make("path", { class: "batch-ring" + (item.regular ? "" : " check") + (item.checked ? "" : " off") + (index === batch.hover ? " hot" : ""), d }, overlay);
   });
   if (gapOpen) gaps.forEach((g) => {
     const [fx, fy] = toScreen(g.from), [tx, ty] = toScreen(g.to);
@@ -1928,7 +1946,7 @@ function importJson(text) {
 // lines, cleaned with an opening, and then fitted with the simplest regular shape that explains it: rectangle,
 // circle, half circle, or a polygon whose sides are squared to the drawing's own grid.
 const WAND = { RES: 10, HALF: 350, MIN_LINE: 60, AUTO: [60, 120, 200] };
-const KIND_NAMES = { rect: "矩形", circle: "圓形", semi: "半圓", polygon: "水平垂直的多邊形" };
+const KIND_NAMES = { rect: "矩形", circle: "圓形", semi: "半圓", capsule: "矩形加半圓", polygon: "水平垂直的多邊形" };
 function wandRaster(center, gap) {
   const reach = WAND.HALF * WAND.RES * 0.55;
   const first = wandCache.values().next().value;
@@ -2173,10 +2191,10 @@ function squareUp(pts, theta) {
   return ring;
 }
 /** The simplest regular shape that explains the flooded area. Returns { ring, curve, kind } or null. */
-function wandShape(r, mask) {
-  const { n, thin, ox, oy, gap } = r, RES = WAND.RES;
-  let x0 = n, y0 = n, x1 = -1, y1 = -1;
-  for (let i = 0; i < mask.length; i++) if (mask[i]) {
+function wandShape(r, mask, options = {}) {
+  const { n, thin, ox, oy, gap } = r, RES = r.res || WAND.RES, value = options.value ?? 1;
+  let [x0, y0, x1, y1] = options.box || [n, n, -1, -1];
+  if (!options.box) for (let i = 0; i < mask.length; i++) if (mask[i]) {
     const x = i % n, y = (i - x) / n;
     if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
   }
@@ -2186,7 +2204,7 @@ function wandShape(r, mask) {
   const W = Math.min(n, x1 + pad + 1) - X0, H = Math.min(n, y1 + pad + 1) - Y0;
   let cur = new Uint8Array(W * H);
   const wall = new Uint8Array(W * H);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const src = (Y0 + y) * n + X0 + x; cur[y * W + x] = mask[src]; wall[y * W + x] = thin[src]; }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const src = (Y0 + y) * n + X0 + x; cur[y * W + x] = mask[src] === value ? 1 : 0; wall[y * W + x] = thin[src]; }
   // the fat lines shrank the area by half a gap on every side: grow it back until it meets the real lines
   for (let step = 0; step < k; step++) {
     const next = Uint8Array.from(cur);
@@ -2220,19 +2238,54 @@ function wandShape(r, mask) {
   frame.forEach(([u, v]) => { u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v); });
   u0 -= RES / 2; u1 += RES / 2; v0 -= RES / 2; v1 += RES / 2;
   const w = u1 - u0, h = v1 - v0;
-  const finish = (ring, kind, curve) => ({ ring: ring.map((p) => [round1(p[0]), round1(p[1])]), kind, curve });
+  const finish = (ring, kind, curve, iou) => ({ ring: ring.map((p) => [round1(p[0]), round1(p[1])]), kind, curve, iou });
+  // rectangle with one half-circle end (a long room whose end is rounded): tried first, because a plain rectangle
+  // would swallow the rounded end of a long room
+  const rectIou = A / (w * h);
+  if (rectIou < 0.97) {
+    const um = (u0 + u1) / 2, vm = (v0 + v1) / 2;
+    const rr = Math.min(w, h) / 2;
+    const options = w >= h
+      ? [{ c: [u1 - rr, vm], dir: [1, 0], body: [u0, u1 - rr, v0, v1] }, { c: [u0 + rr, vm], dir: [-1, 0], body: [u0 + rr, u1, v0, v1] }]
+      : [{ c: [um, v1 - rr], dir: [0, 1], body: [u0, u1, v0, v1 - rr] }, { c: [um, v0 + rr], dir: [0, -1], body: [u0, u1, v0 + rr, v1] }];
+    let capsule = null;
+    for (const option of options) {
+      const [bu0, bu1, bv0, bv1] = option.body;
+      if ((w >= h ? bu1 - bu0 : bv1 - bv0) < rr * 0.25) continue;
+      let inter = 0;
+      frame.forEach(([u, v]) => {
+        const inBody = u >= bu0 - RES / 2 && u <= bu1 + RES / 2 && v >= bv0 - RES / 2 && v <= bv1 + RES / 2;
+        const du = u - option.c[0], dv = v - option.c[1];
+        if (inBody || (du * option.dir[0] + dv * option.dir[1] >= -RES / 2 && Math.hypot(du, dv) <= rr)) inter += 1;
+      });
+      inter *= RES * RES;
+      const candidate = (bu1 - bu0) * (bv1 - bv0) + (Math.PI * rr * rr) / 2;
+      const iou = inter / (A + candidate - inter);
+      if (!capsule || iou > capsule.iou) capsule = { ...option, iou };
+    }
+    if (capsule && capsule.iou >= 0.93 && capsule.iou > rectIou + 0.02) {
+      const [cu, cv] = capsule.c, [dx, dy] = capsule.dir;
+      let corners;
+      if (dx === 1) corners = [[u0, v0], [cu, v0], [u1, vm], [cu, v1], [u0, v1]];
+      else if (dx === -1) corners = [[u1, v1], [cu, v1], [u0, vm], [cu, v0], [u1, v0]];
+      else if (dy === 1) corners = [[u1, v0], [u1, cv], [um, v1], [u0, cv], [u0, v0]];
+      else corners = [[u0, v1], [u0, cv], [um, v0], [u1, cv], [u1, v1]];
+      const [P0, P1, via, P2, P3] = corners;
+      return finish([P0, ...arcPoints(P1, P2, via), P3].map(([u, v]) => toXY(u, v)), "capsule", undefined, capsule.iou);
+    }
+  }
   // rectangle
   if (A / (w * h) >= 0.9) {
     const a = snapLine(theta, "V", u0, v0, v1), b = snapLine(theta, "V", u1, v0, v1);
     const d = snapLine(theta, "U", v0, a, b), e = snapLine(theta, "U", v1, a, b);
-    return finish([toXY(a, d), toXY(b, d), toXY(b, e), toXY(a, e)], "rect");
+    return finish([toXY(a, d), toXY(b, d), toXY(b, e), toXY(a, e)], "rect", undefined, A / (w * h));
   }
   // circle
   const centre = cells.reduce((sum, p) => [sum[0] + p[0] / cells.length, sum[1] + p[1] / cells.length], [0, 0]);
   const radius = Math.sqrt(A / Math.PI);
   const inside = cells.reduce((count, p) => count + (dist(p, centre) <= radius ? 1 : 0), 0) * RES * RES;
   if (w / h > 0.88 && w / h < 1.14 && inside / (A + Math.PI * radius * radius - inside) >= 0.92) {
-    return finish(circleRing(centre, [centre[0] + radius, centre[1]]), "circle", { type: "circle", center: [round1(centre[0]), round1(-centre[1])], radius: round1(radius) });
+    return finish(circleRing(centre, [centre[0] + radius, centre[1]]), "circle", { type: "circle", center: [round1(centre[0]), round1(-centre[1])], radius: round1(radius) }, inside / (A + Math.PI * radius * radius - inside));
   }
   // half circle: the flat side is one of the four sides of the box, the arc bulges to the other side
   let semi = null;
@@ -2249,7 +2302,7 @@ function wandShape(r, mask) {
     const along = [-semi.dir[1], semi.dir[0]];
     const a = toXY(semi.mid[0] - along[0] * semi.rr, semi.mid[1] - along[1] * semi.rr), b = toXY(semi.mid[0] + along[0] * semi.rr, semi.mid[1] + along[1] * semi.rr);
     const side = toXY(semi.mid[0] + semi.dir[0] * semi.rr, semi.mid[1] + semi.dir[1] * semi.rr);
-    return finish(semicircleRing(a, b, side), "semi", { type: "semicircle", a: [round1(a[0]), round1(-a[1])], b: [round1(b[0]), round1(-b[1])] });
+    return finish(semicircleRing(a, b, side), "semi", { type: "semicircle", a: [round1(a[0]), round1(-a[1])], b: [round1(b[0]), round1(-b[1])] }, semi.iou);
   }
   // the biggest rectangle that fits, grown outwards over bites and bumps, as a fallback for rooms that are "mostly a box"
   let boxy = null;
@@ -2273,7 +2326,7 @@ function wandShape(r, mask) {
       const sa = snapLine(0, "V", px(a0), py(b0), py(b1)), sb = snapLine(0, "V", px(a1), py(b0), py(b1));
       const sd = snapLine(0, "U", py(b0), sa, sb), se = snapLine(0, "U", py(b1), sa, sb);
       boxy = { iou, ring: [[sa, sd], [sb, sd], [sb, se], [sa, se]] };
-      if (iou >= 0.8) return finish(boxy.ring, "rect");
+      if (iou >= 0.8) return finish(boxy.ring, "rect", undefined, iou);
     }
   }
   // anything else: trace it, drop the staircase, then square the sides up to the drawing's grid
@@ -2291,7 +2344,7 @@ function wandShape(r, mask) {
   });
   if (ring.length < 3 || area(ring) < 3000) return null;
   // a ragged outline that is still mostly a box is better as the box
-  if (boxy && boxy.iou >= 0.7 && ring.length > 10) return finish(boxy.ring, "rect");
+  if (boxy && boxy.iou >= 0.7 && ring.length > 10) return finish(boxy.ring, "rect", undefined, boxy.iou);
   return finish(ring, "polygon");
 }
 const wandNote = (shape, r) => `魔術棒預覽：${KIND_NAMES[shape.kind]}，約 ${(area(shape.ring) / 10000).toFixed(1)} m²（缺口容忍 ${r.gap} 公分）。點一下建立；按住拖曳可塗抹合併`;
@@ -2666,6 +2719,216 @@ $("gapcheck").addEventListener("click", () => {
   if (gapOpen) refreshGaps(); else { gaps = []; renderGapPanel(); renderOverlay(); }
 });
 
+// ---- batch room finder ---------------------------------------------------------------------------------------------
+/** The whole floor on one grid, lines fat enough to close door-sized gaps. */
+function batchRaster(gap) {
+  const [bx0, by0, bx1, by1] = DATA.bounds, margin = 200;
+  const span = Math.max(bx1 - bx0, by1 - by0) + margin * 2;
+  const RES = Math.max(10, Math.ceil(span / 2000 / 10) * 10), n = Math.ceil(span / RES) + 2;
+  const ox = bx0 - margin, oy = by0 - margin;
+  const layers = [1.2, Math.max(1.2, gap / RES)].map((width) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = n;
+    const g = canvas.getContext("2d", { willReadFrequently: true });
+    g.strokeStyle = "#000"; g.lineWidth = width; g.lineCap = "round"; g.lineJoin = "round";
+    g.beginPath();
+    return g;
+  });
+  const path = (pts, closed) => layers.forEach((g) => {
+    pts.forEach((q, i) => g[i ? "lineTo" : "moveTo"]((q[0] - ox) / RES, (q[1] - oy) / RES));
+    if (closed) g.closePath();
+  });
+  if (underlayOn) for (const s of DATA.segments) if (Math.hypot(s[2] - s[0], s[3] - s[1]) >= WAND.MIN_LINE) path([[s[0], s[1]], [s[2], s[3]]], false);
+  walls.forEach((w) => path(w.pts, false));
+  rooms.forEach((room) => path(room.ring, true));
+  const [thin, thick] = layers.map((g) => {
+    g.stroke();
+    const data = g.getImageData(0, 0, n, n).data, flags = new Uint8Array(n * n);
+    for (let i = 0; i < flags.length; i++) flags[i] = data[i * 4 + 3] > 40 ? 1 : 0;
+    return flags;
+  });
+  return { n, res: RES, ox, oy, gap, thin, thick };
+}
+/**
+ * Rooms by shape rather than by closed lines: the open floor space is eroded by half a door width, so a room joined to
+ * a corridor by a doorway falls apart into its own core; every other open cell then joins the nearest core.
+ */
+function batchSegments(r, radius) {
+  const { n, thick, res } = r, N = n * n, INF = 1e9, d = new Int32Array(N);
+  for (let i = 0; i < N; i++) d[i] = thick[i] ? 0 : INF;
+  for (let x = 0; x < n; x++) { d[x] = 0; d[(n - 1) * n + x] = 0; }
+  for (let y = 0; y < n; y++) { d[y * n] = 0; d[y * n + n - 1] = 0; }
+  for (let y = 1; y < n; y++) for (let x = 1; x < n - 1; x++) {            // chamfer 3-4 distance, forward pass
+    const i = y * n + x;
+    d[i] = Math.min(d[i], d[i - 1] + 3, d[i - n] + 3, d[i - n - 1] + 4, d[i - n + 1] + 4);
+  }
+  for (let y = n - 2; y >= 0; y--) for (let x = n - 2; x >= 1; x--) {      // backward pass
+    const i = y * n + x;
+    d[i] = Math.min(d[i], d[i + 1] + 3, d[i + n] + 3, d[i + n + 1] + 4, d[i + n - 1] + 4);
+  }
+  const need = (radius / res) * 3, label = new Int32Array(N), queue = new Int32Array(N), stack = new Int32Array(N);
+  let tail = 0, coreCount = 0;
+  for (let start = 0; start < N; start++) {                                  // label the cores
+    if (d[start] < need || label[start]) continue;
+    const id = ++coreCount;
+    let top = 0;
+    stack[top++] = start; label[start] = id; queue[tail++] = start;
+    while (top) {
+      const i = stack[--top], x = i % n;
+      for (const j of [i - 1, i + 1, i - n, i + n]) {
+        if (j < 0 || j >= N || label[j] || d[j] < need || Math.abs((j % n) - x) > 1) continue;
+        label[j] = id; stack[top++] = j; queue[tail++] = j;
+      }
+    }
+  }
+  for (let head = 0; head < tail; head++) {                                  // every open cell joins the nearest core
+    const i = queue[head], x = i % n;
+    for (const j of [i - 1, i + 1, i - n, i + n]) {
+      if (j < 0 || j >= N || label[j] || thick[j] || Math.abs((j % n) - x) > 1) continue;
+      const jx = j % n, jy = (j - jx) / n;
+      if (jx === 0 || jy === 0 || jx === n - 1 || jy === n - 1) continue;
+      label[j] = label[i]; queue[tail++] = j;
+    }
+  }
+  const comps = Array.from({ length: coreCount }, (_, k) => ({ id: k + 1, cells: 0, border: false, box: [n, n, -1, -1] }));
+  for (let i = 0; i < N; i++) {
+    const id = label[i];
+    if (!id) continue;
+    const c = comps[id - 1], x = i % n, y = (i - x) / n;
+    c.cells += 1;
+    if (x < c.box[0]) c.box[0] = x; if (x > c.box[2]) c.box[2] = x; if (y < c.box[1]) c.box[1] = y; if (y > c.box[3]) c.box[3] = y;
+    if (x <= 1 || y <= 1 || x >= n - 2 || y >= n - 2) c.border = true;
+  }
+  return { label, comps };
+}
+const REGULAR_KINDS = new Set(["rect", "circle", "semi", "capsule"]);
+async function runBatchFind() {
+  if (batch.running) return;
+  batch.running = true; batch.cancel = false; batch.items = []; batch.progress = 0; batch.note = "整理底圖…";
+  renderBatchPanel();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  const floorAtStart = floorId;
+  try {
+    const r = batchRaster(20);
+    const { label, comps } = batchSegments(r, batch.gap / 2);
+    const minCells = Math.max(4, 20000 / (r.res * r.res));
+    const todo = comps.filter((c) => !c.border && c.cells >= minCells && (c.box[2] - c.box[0]) * r.res >= 80 && (c.box[3] - c.box[1]) * r.res >= 80);
+    const found = [];
+    for (let k = 0; k < todo.length; k++) {
+      if (batch.cancel || floorId !== floorAtStart) return;
+      const comp = todo[k];
+      const shape = wandShape(r, label, { box: comp.box, value: comp.id });
+      if (shape && shape.ring.length >= 3) found.push({ shape, area: area(shape.ring), regular: REGULAR_KINDS.has(shape.kind) && (shape.iou ?? 1) >= 0.85 });
+      if (k % 8 === 7) { batch.progress = (k + 1) / todo.length; batch.note = `分析 ${k + 1} / ${todo.length}`; renderBatchPanel(); await new Promise((resolve) => setTimeout(resolve, 0)); }
+    }
+    // what is already a room is not offered again
+    const existing = rooms.filter((room) => room.ring.length >= 3);
+    const fresh = found.filter((item) => {
+      const inside = interiorPoint(item.shape.ring);
+      if (existing.some((room) => inRoom(room, inside))) return false;
+      return !existing.some((room) => inRing(item.shape.ring, room.anchor || interiorPoint(room.ring, room.holes || [])));
+    });
+    fresh.sort((a, b) => Number(b.regular) - Number(a.regular) || b.area - a.area);
+    fresh.forEach((item) => { item.checked = item.regular; });
+    batch.items = fresh;
+    batch.note = "";
+  } catch (error) {
+    batch.note = "批次找房間失敗：" + error.message;
+  } finally {
+    batch.running = false; batch.progress = 1;
+    renderBatchPanel(); renderOverlay();
+  }
+}
+function renderBatchPanel() {
+  const panel = $("batchpanel");
+  panel.hidden = !batch.open;
+  $("batchfind").setAttribute("aria-pressed", String(batch.open));
+  if (!batch.open) return;
+  panel.replaceChildren();
+  const head = domEl("div", undefined, { className: "gap-head" });
+  const close = domEl("button", "✕", { type: "button", className: "close", title: "關閉批次找房間" });
+  close.setAttribute("aria-label", "關閉批次找房間");
+  close.addEventListener("click", () => { batch.cancel = true; batch.open = false; batch.items = []; renderBatchPanel(); renderOverlay(); });
+  head.append(domEl("b", "批次找房間"), close);
+  const settings = domEl("label", "門口寬度上限 ", { className: "gap-settings", title: "房間和走廊之間的門口只要不比這個寬，就會被分成兩個房間" });
+  const gapInput = domEl("input", undefined, { type: "number", min: "40", step: "10", value: String(batch.gap) });
+  gapInput.addEventListener("change", () => { const v = Number(gapInput.value); if (v >= 0) batch.gap = v; });
+  settings.append(gapInput, document.createTextNode(" 公分"));
+  const go = domEl("button", batch.running ? "取消" : batch.items.length ? "重新找" : "開始找", { type: "button", className: "btn accent" });
+  go.addEventListener("click", () => { if (batch.running) batch.cancel = true; else runBatchFind(); });
+  settings.append(go);
+  panel.append(head, settings);
+  if (batch.running) {
+    const bar = domEl("div", undefined, { className: "batch-progress" });
+    const fill = domEl("div"); fill.style.width = Math.round(batch.progress * 100) + "%"; bar.append(fill);
+    panel.append(bar, domEl("div", batch.note, { className: "gap-note" }));
+    return;
+  }
+  if (batch.note) panel.append(domEl("div", batch.note, { className: "gap-note" }));
+  if (!batch.items.length) {
+    panel.append(domEl("div", "按「開始找」，會整層找出一個個房間：把空地往內縮半個門寬，房間和走廊之間的門口就會斷開。只有形狀吻合矩形、圓、半圓或矩形加半圓的才預設勾選，其他請你看過再決定。門口比上限寬的房間會連到走廊，比 2 倍上限窄的小房間（例如櫃子）會找不到。", { className: "gap-note" }));
+    return;
+  }
+  const regular = batch.items.filter((item) => item.regular), odd = batch.items.length - regular.length;
+  panel.append(domEl("div", `找到 ${batch.items.length} 個候選：規則形狀 ${regular.length} 個（已勾選）、請人工檢視 ${odd} 個（未勾選）。`, { className: "gap-note" }));
+  const tabs = domEl("div", undefined, { className: "gap-settings" });
+  [["regular", `規則形狀 ${regular.length}`], ["odd", `請人工檢視 ${odd}`], ["all", "全部"]].forEach(([key, text]) => {
+    const b = domEl("button", text, { type: "button", className: "chip" });
+    b.setAttribute("aria-pressed", String(batch.show === key));
+    b.addEventListener("click", () => { batch.show = key; renderBatchPanel(); renderOverlay(); });
+    tabs.append(b);
+  });
+  panel.append(tabs);
+  const list = domEl("ul", undefined, { className: "gap-list batch-list" });
+  batch.items.forEach((item, index) => {
+    if (batch.show === "regular" && !item.regular) return;
+    if (batch.show === "odd" && item.regular) return;
+    const li = domEl("li");
+    li.addEventListener("mouseenter", () => { batch.hover = index; renderOverlay(); });
+    li.addEventListener("mouseleave", () => { batch.hover = -1; renderOverlay(); });
+    const label = domEl("label");
+    const box = domEl("input", undefined, { type: "checkbox", checked: item.checked });
+    box.addEventListener("change", () => { item.checked = box.checked; renderBatchPanel(); renderOverlay(); });
+    const text = domEl("div", `${KIND_NAMES[item.shape.kind]}　${(item.area / 10000).toFixed(1)} m²`);
+    if (item.shape.iou) text.append(domEl("small", `吻合度 ${Math.round(item.shape.iou * 100)}%`));
+    label.append(box, text);
+    const look = domEl("button", "看", { type: "button", title: "移到這個候選" });
+    look.addEventListener("click", () => { const [cx, cy] = interiorPoint(item.shape.ring); view.z = Math.max(view.z, 0.2); view.tx = size.w / 2 - view.z * cx; view.ty = size.h / 2 - view.z * cy; applyView(); });
+    const acts = domEl("div", undefined, { className: "acts" });
+    acts.append(look);
+    li.append(label, acts);
+    list.append(li);
+  });
+  panel.append(list);
+  const chosen = batch.items.filter((item) => item.checked).length;
+  const foot = domEl("div", undefined, { className: "gap-foot" });
+  const accept = domEl("button", `接受勾選的 ${chosen} 個`, { type: "button", className: "btn accent" });
+  accept.disabled = !chosen;
+  accept.addEventListener("click", acceptBatch);
+  foot.append(accept);
+  panel.append(foot);
+}
+function acceptBatch() {
+  const chosen = batch.items.filter((item) => item.checked);
+  if (!chosen.length) return;
+  pushHistory();
+  chosen.forEach((item) => {
+    const room = { id: newId("T"), name: "", locationCode: "", type: "room", ring: item.shape.ring.map((q) => [round1(q[0]), round1(q[1])]) };
+    if (item.shape.curve) room.curve = item.shape.curve;
+    rooms.push(room);
+  });
+  batch.items = batch.items.filter((item) => !item.checked);
+  setSelection([], []);
+  changed(true, true);
+  $("hint").textContent = `已加入 ${chosen.length} 個房間（可按復原）。接著到右側「存置地點清單」指派存置地點。`;
+  renderBatchPanel();
+}
+$("batchfind").addEventListener("click", () => {
+  batch.open = !batch.open;
+  if (!batch.open) { batch.cancel = true; batch.items = []; }
+  renderBatchPanel(); renderOverlay();
+});
+
 // ---- selection, moving and aligning ------------------------------------------------------------------------------
 const hasSelection = () => { const i = selectedItems(); return i.rooms.length + i.walls.length > 0; };
 function selectedItems() {
@@ -2832,7 +3095,7 @@ const mostlyClick = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 6;
 
 stage.addEventListener("contextmenu", (e) => e.preventDefault());
 stage.addEventListener("pointerdown", (e) => {
-  if (e.target.closest?.(".zoom, .helpcard, .selbar, .gappanel")) return;
+  if (e.target.closest?.(".zoom, .helpcard, .selbar, .gappanel, .batchpanel")) return;
   stage.setPointerCapture?.(e.pointerId);
   if (e.button === 1 || e.button === 2 || spaceDown) { drag = { type: "pan", x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty }; stage.classList.add("panning"); return; }
   if (e.button !== 0) return;
