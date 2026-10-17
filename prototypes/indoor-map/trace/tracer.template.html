@@ -143,7 +143,8 @@
   .selbar .step-note { color: var(--ink); }
   .btn.danger { background: #fdecea; color: #b5382b; }
   .btn.danger:hover:not(:disabled) { background: #fadbd7; }
-  .props .row .btn { flex: 1; }
+  .props .row { flex-direction: column; }
+  .props .row .btn { flex: none; width: 100%; }
   .btn.accent { background: var(--teal); color: #fff; }
   .btn.accent:hover { background: #17a092; }
   footer { background: #fff; border-top: 1px solid var(--rule); color: var(--ink-2); display: flex; flex-wrap: wrap; font-size: 12px; gap: 4px 18px; padding: 6px 14px; }
@@ -153,6 +154,7 @@
 <body>
 <header>
   <h1 id="title"></h1>
+  <span id="building-host"></span>
   <div class="group" id="floors" role="group" aria-label="樓層" hidden></div>
   <div class="group" role="group" aria-label="工具" id="tools">
     <button type="button" data-tool="select" aria-pressed="true" title="選取、拖曳頂點、雙擊邊線加點">選取<kbd>V</kbd></button>
@@ -239,8 +241,8 @@
 <footer id="stats"></footer>
 
 <script>
-const BUILDING = /*__TRACE_DATA__*/null;      // { name, locations, floors: [...] }
-const LOCATIONS = BUILDING.locations || [];
+const CAMPUS = /*__TRACE_DATA__*/null;        // { title, locations, buildings: [{ name, floors: [...] }] }
+const LOCATIONS = CAMPUS.locations || [];
 let DATA = null;                              // the floor being traced: title, source, bounds, linework, texts, offset
 const locationByCode = new Map(LOCATIONS.map((l) => [l.code, l]));
 const TYPE_NAMES = { room: "房間", public: "公共區域", void: "挑空／採光" };
@@ -361,7 +363,7 @@ function customSelect({ options, value, onChange, label, compact = false }) {
     } else if (k === "Escape" && !list.hidden) { e.preventDefault(); e.stopPropagation(); close(); }
     else e.stopPropagation();
   });
-  const api = { el: root, close, contains: (n) => root.contains(n) };
+  const api = { el: root, close, contains: (n) => root.contains(n), set(v) { current = v; paint(); } };
   paint();
   return api;
 }
@@ -569,7 +571,9 @@ function redo() { if (!future.length) return; history.push(snapshot()); restore(
 // One page holds every floor of a building.  The floor being edited lives in the variables above; the others are
 // kept in memory once visited.  Everything is saved to IndexedDB, and in Chrome or Edge also to .rooms.json files in a
 // folder the user picked, which is the copy to rely on.
-const FLOORS = BUILDING.floors;
+const FLOORS = CAMPUS.buildings.flatMap((b) => b.floors.map((f) => { f.building = b.name; return f; }));   // every floor of every building
+const PROJECT_KEY = "campus:" + CAMPUS.title;
+let currentBuilding = null;
 let floorId = null;
 const floorMemory = new Map();            // id -> { rooms, walls, suppressed, counter, history, future, view }
 const dirtyFloors = new Set();
@@ -617,7 +621,7 @@ async function flush() {
       const s = stateOf(id);
       projectRecord.floors[id] = { rooms: s.rooms, walls: s.walls, suppressed: s.suppressed, counter: s.counter, savedAt: now };
     }
-    await idbPut("projects", BUILDING.name, projectRecord);
+    await idbPut("projects", PROJECT_KEY, projectRecord);
     storageNote = "";
   } catch (error) { storageNote = "瀏覽器儲存空間寫入失敗：" + error.message; }
   if (dirHandle && dirReady) {
@@ -664,14 +668,14 @@ async function syncFromFolder() {
   }
   FLOORS.forEach((f) => { if (!loaded.has(f.id) && hasContent(f.id)) dirtyFloors.add(f.id); });
   if (dirtyFloors.size) { clearTimeout(flushTimer); await flush(); }
-  try { await idbPut("projects", BUILDING.name, projectRecord); } catch { /* ignore */ }
+  try { await idbPut("projects", PROJECT_KEY, projectRecord); } catch { /* ignore */ }
 }
 async function connectFolder() {
   if (!canPickFolder) return;
   if (dirHandle && dirReady && !confirm(`目前存到資料夾「${dirHandle.name}」。要改選其他資料夾嗎？`)) return;
   try { dirHandle = await showDirectoryPicker({ id: "indoor-trace", mode: "readwrite" }); } catch { return; }
   dirReady = true;
-  try { await idbPut("handles", BUILDING.name, dirHandle); } catch { /* the folder just has to be picked again next time */ }
+  try { await idbPut("handles", PROJECT_KEY, dirHandle); } catch { /* the folder just has to be picked again next time */ }
   await syncFromFolder();
   renderSaveStatus();
 }
@@ -703,9 +707,17 @@ $("save-status").addEventListener("click", () => { if (!dirHandle) connectFolder
 setInterval(renderSaveStatus, 15000);
 
 async function initStorage() {
-  try { projectRecord = (await idbGet("projects", BUILDING.name)) || projectRecord; } catch (error) { storageNote = "瀏覽器儲存空間無法使用：" + error.message; }
+  try { projectRecord = (await idbGet("projects", PROJECT_KEY)) || projectRecord; } catch (error) { storageNote = "瀏覽器儲存空間無法使用：" + error.message; }
   projectRecord.floors ??= {};
-  try { dirHandle = (await idbGet("handles", BUILDING.name)) || null; } catch { dirHandle = null; }
+  // Earlier pages held one building each and stored it under the building's name: fold those in.
+  for (const building of CAMPUS.buildings) {
+    try {
+      const old = await idbGet("projects", building.name);
+      if (old?.floors) for (const [id, state] of Object.entries(old.floors)) projectRecord.floors[id] ??= state;
+      dirHandle ??= (await idbGet("handles", building.name)) || null;
+    } catch { /* nothing to fold in */ }
+  }
+  try { dirHandle = (await idbGet("handles", PROJECT_KEY)) || dirHandle; } catch { /* ignore */ }
   if (dirHandle) {
     try { dirReady = (await dirHandle.queryPermission({ mode: "readwrite" })) === "granted"; } catch { dirReady = false; }
     if (dirReady) { try { await syncFromFolder(); } catch (error) { dirReady = false; storageNote = error.message; } }
@@ -736,8 +748,10 @@ function enterFloor(id) {
   selectedId = null; selectedWallId = null; selectedVertex = null; group = null; align = null; marquee = null;
   draft = null; drag = null; wand = null; wandPreview = null; snapHit = null; guides = []; trimPreview = null;
   clearTimeout(generateTimer); wandCache.clear();
-  try { localStorage.setItem("indoor-trace-last:" + BUILDING.name, id); } catch { /* ignore */ }
-  document.title = `${BUILDING.name} ${floor.label || floor.title} 室內地圖描圖`;
+  currentBuilding = floor.building;
+  try { localStorage.setItem("indoor-trace-last:" + CAMPUS.title, id); localStorage.setItem(`indoor-trace-last:${CAMPUS.title}:${floor.building}`, id); } catch { /* ignore */ }
+  document.title = `${CAMPUS.title}　${floor.building} ${floor.label || floor.title}`;
+  buildingSelect?.set(floor.building);
   buildScene();
   if (memory?.view) view = { ...memory.view }; else fit();
   setTool("select");
@@ -749,11 +763,19 @@ function switchFloor(id) {
   if (id === floorId) return;
   enterFloor(id);
 }
+let buildingSelect = null;
+function switchBuilding(name) {
+  if (name === currentBuilding) return;
+  let target = null;
+  try { target = localStorage.getItem(`indoor-trace-last:${CAMPUS.title}:${name}`); } catch { /* ignore */ }
+  const floors = FLOORS.filter((f) => f.building === name);
+  enterFloor((floors.find((f) => f.id === target) || floors[0]).id);
+}
 function renderFloors() {
   const box = $("floors");
-  box.hidden = FLOORS.length < 2;
+  box.hidden = FLOORS.filter((f) => f.building === currentBuilding).length < 2;
   box.replaceChildren();
-  FLOORS.forEach((floor) => {
+  FLOORS.filter((floor) => floor.building === currentBuilding).forEach((floor) => {
     const button = document.createElement("button");
     button.type = "button";
     button.setAttribute("aria-pressed", String(floor.id === floorId));
@@ -768,6 +790,7 @@ function renderFloors() {
 function shiftFor(payload, floor) {
   const from = FLOORS.find((f) => f.title === payload.title) || FLOORS.find((f) => f.source === payload.source && f.title === floor.title) || FLOORS.find((f) => f.source === payload.source);
   if (!from || from === floor) return [0, 0];
+  if (from.building !== floor.building) return null;
   if (!from.offset || !floor.offset) return null;
   return [from.offset[0] - floor.offset[0], from.offset[1] - floor.offset[1]];
 }
@@ -1156,7 +1179,7 @@ function renderSelbar() {
   step.append(stepInput, document.createTextNode(" 公分"));
   bar.append(keys, step, domEl("span", undefined, { className: "sep" }));
   const del = domEl("button", "刪除", { type: "button", className: "btn danger", title: "刪除所選（Delete）" });
-  del.addEventListener("click", deleteSelected);
+  del.addEventListener("click", () => deleteSelected());
   const close = domEl("button", "✕", { type: "button", className: "close", title: "取消選取（Esc）" });
   close.setAttribute("aria-label", "取消選取");
   close.addEventListener("click", () => { setSelection([], []); refresh(); });
@@ -1196,7 +1219,7 @@ function renderPanel() {
     add(el("div", "拖曳任一個已選取的物件可整組移動；上方工具列可以對齊到底圖、用方向鍵微調或刪除；Shift＋點擊增減選取。", { className: "note" }));
     const row = el("div", undefined, { className: "row" });
     const del = el("button", "刪除所選", { type: "button", className: "btn danger" });
-    del.addEventListener("click", deleteSelected);
+    del.addEventListener("click", () => deleteSelected());
     row.append(del);
     add(row);
   } else if (wall) {
@@ -1206,7 +1229,7 @@ function renderPanel() {
     add(el("div", "拖曳白點可移動端點；牆圍成封閉區域會自動生成房間。", { className: "note" }));
     const row = el("div", undefined, { className: "row" });
     const del = el("button", "刪除這道牆", { type: "button", className: "btn danger" });
-    del.addEventListener("click", deleteSelected);
+    del.addEventListener("click", () => deleteSelected());
     row.append(del);
     add(row);
   } else if (!room) {
@@ -1271,9 +1294,14 @@ function renderPanel() {
     add(typeField);
     add(el("div", `${room.auto ? "由牆生成。" : "手動描繪。"}面積約 ${(roomArea(room) / 10000).toFixed(1)} m²（以單位為公分推算${room.holes?.length ? `，已扣除裡面的 ${room.holes.length} 個房間` : ""}）`, { className: "note" }));
     const row = el("div", undefined, { className: "row" });
-    const del = el("button", "刪除此房間", { type: "button", className: "btn danger" });
-    del.addEventListener("click", deleteSelected);
+    const del = el("button", "刪除此房間", { type: "button", className: "btn danger", title: "刪除這個房間，並讓相鄰的房間接手它的空間（兩者之間的牆一起拿掉，其他房間還要用的牆會保留）" });
+    del.addEventListener("click", () => deleteSelected());
     row.append(del);
+    if (room.auto) {
+      const hide = el("button", "只刪除房間，保留牆", { type: "button", className: "btn", title: "不動任何牆，只是不再把這個範圍當成房間" });
+      hide.addEventListener("click", () => deleteSelected({ keepWalls: true }));
+      row.append(hide);
+    }
     add(row);
   }
   const linked = rooms.filter((r) => r.locationCode).length;
@@ -1304,15 +1332,92 @@ function updateHint() {
   stage.classList.toggle("aligning", !!align);
   $("hint").textContent = text;
 }
-function deleteSelected() {
+/**
+ * Delete a room that was made from walls by letting the room next to it take over its space: the wall pieces between
+ * the two disappear (and any wall left standing inside the room), while every wall another room still needs stays.
+ * Returns false when the room has no neighbour to give the space to (it only touches the outside).
+ */
+function mergeDeleteRoom(roomId) {
+  if (generateTimer) { clearTimeout(generateTimer); generateRooms(); }
+  const room = roomById(roomId);
+  if (!room?.auto) return false;
+  const faces = rooms.filter((r) => r.auto);
+  const roomAt = (pt) => faces.find((r) => inRoom(r, pt)) || null;
+  const xs = room.ring.map((q) => q[0]), ys = room.ring.map((q) => q[1]);
+  const near = [Math.min(...xs) - 60, Math.min(...ys) - 60, Math.max(...xs) + 60, Math.max(...ys) + 60];
+  const plans = [], shared = new Map();
+  for (const wall of walls) {
+    const pts = wall.pts;
+    const wx = pts.map((q) => q[0]), wy = pts.map((q) => q[1]);
+    if (Math.max(...wx) < near[0] || Math.min(...wx) > near[2] || Math.max(...wy) < near[1] || Math.min(...wy) > near[3]) continue;
+    const stops = new Set(pts.map((_, i) => i));
+    cutPositions(wall, trimBoundaries(wall.id)).forEach((c) => stops.add(Math.round(c * 1000) / 1000));
+    const order = [...stops].sort((a, b) => a - b), pieces = [];
+    for (let k = 0; k + 1 < order.length; k++) {
+      const p0 = order[k], p1 = order[k + 1];
+      if (p1 - p0 < 1e-4) continue;
+      const a = pointAlong(pts, p0), b = pointAlong(pts, p1), len = dist(a, b), mid = pointAlong(pts, (p0 + p1) / 2);
+      const piece = { p0, p1, len, remove: false, sides: [null, null] };
+      if (len > 1) {
+        const n = [-(b[1] - a[1]) / len, (b[0] - a[0]) / len];
+        piece.sides = [roomAt([mid[0] + n[0] * 4, mid[1] + n[1] * 4]), roomAt([mid[0] - n[0] * 4, mid[1] - n[1] * 4])];
+        const [s1, s2] = piece.sides, other = s1 === room ? s2 : s2 === room ? s1 : null;
+        if (other && other !== room) shared.set(other.id, (shared.get(other.id) || 0) + len);
+      }
+      pieces.push(piece);
+    }
+    plans.push({ wall, pieces });
+  }
+  if (!shared.size) return false;
+  const targetId = [...shared.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  const target = roomById(targetId);
+  let removedAny = false;
+  const rebuilt = [];
+  for (const { wall, pieces } of plans) {
+    pieces.forEach((pc) => {
+      const [s1, s2] = pc.sides;
+      pc.remove = (s1 === room && (s2 === target || s2 === room)) || (s2 === room && s1 === target);
+      removedAny ||= pc.remove;
+    });
+    if (!pieces.some((pc) => pc.remove)) continue;
+    const runs = [];
+    for (const pc of pieces) {
+      if (pc.remove) continue;
+      const last = runs.at(-1);
+      if (last && Math.abs(last.p1 - pc.p0) < 1e-4) last.p1 = pc.p1; else runs.push({ p0: pc.p0, p1: pc.p1 });
+    }
+    const pts = wall.pts;
+    const pieceWalls = runs.map((run) => {
+      const list = [pointAlong(pts, run.p0)];
+      for (let k = Math.floor(run.p0) + 1; k <= Math.ceil(run.p1) - 1; k++) if (k > run.p0 + 1e-4 && k < run.p1 - 1e-4) list.push(pts[k]);
+      list.push(pointAlong(pts, run.p1));
+      return list.filter((q, i) => !i || dist(q, list[i - 1]) > 0.5).map((q) => [round1(q[0]), round1(q[1])]);
+    }).filter((list) => list.length >= 2 && list.reduce((sum, q, i) => sum + (i ? dist(q, list[i - 1]) : 0), 0) > 5);
+    rebuilt.push({ wall, pieceWalls });
+  }
+  if (!removedAny) return false;
+  for (const { wall, pieceWalls } of rebuilt) {
+    walls = walls.filter((w) => w.id !== wall.id);
+    pieceWalls.forEach((list, i) => walls.push({ id: i === 0 ? wall.id : newId("W"), pts: list, ...(wall.curve ? { curve: true } : {}) }));
+  }
+  generateRooms();
+  return true;
+}
+function deleteSelected(options) {
+  const keepWalls = options?.keepWalls === true;
   if (group) {
     const items = selectedItems();
     pushHistory();
-    items.rooms.forEach((id) => { const r = roomById(id); if (r?.auto) suppressed.push(r.anchor || interiorPoint(r.ring, r.holes || [])); });
-    rooms = rooms.filter((r) => !items.rooms.includes(r.id));
+    items.rooms.forEach((id) => {
+      const r = roomById(id);
+      if (!r) return;
+      if (r.auto && !keepWalls && mergeDeleteRoom(id)) return;
+      if (roomById(id)?.auto) suppressed.push(roomById(id).anchor || interiorPoint(r.ring, r.holes || []));
+      rooms = rooms.filter((x) => x.id !== id);
+    });
     walls = walls.filter((w) => !items.walls.includes(w.id));
     setSelection([], []);
-    changed(true, items.walls.length > 0);
+    changed(true, true);
     return;
   }
   const wall = wallById(selectedWallId);
@@ -1328,6 +1433,9 @@ function deleteSelected() {
   pushHistory();
   if (selectedVertex !== null && room.ring.length > 3) { room.ring.splice(selectedVertex, 1); delete room.curve; room.auto = false; selectedVertex = null; }
   else {
+    // A generated room hands its space to the neighbour it shares the most wall with; only when it has none
+    // (or "keep walls" was chosen) is it just hidden and its walls left alone.
+    if (room.auto && !keepWalls && mergeDeleteRoom(room.id)) { selectedId = null; selectedVertex = null; changed(true, false); return; }
     if (room.auto) suppressed.push(room.anchor || interiorPoint(room.ring, room.holes || []));
     rooms = rooms.filter((r) => r.id !== selectedId); selectedId = null; selectedVertex = null;
   }
@@ -2663,12 +2771,16 @@ window.addEventListener("keyup", (e) => { if (e.code === "Space") spaceDown = fa
 new ResizeObserver(resize).observe(stage);
 
 // ---- start ---------------------------------------------------------------------------------------------------------------------
-$("title").textContent = BUILDING.name + " 描圖";
+$("title").textContent = CAMPUS.title;
+if (CAMPUS.buildings.length > 1) {
+  buildingSelect = customSelect({ compact: true, label: "建築物", value: CAMPUS.buildings[0].name, options: CAMPUS.buildings.map((b) => [b.name, b.name]), onChange: switchBuilding });
+  $("building-host").append(buildingSelect.el);
+}
 if (!canPickFolder) $("save-status").hidden = false;
 (async function start() {
   await initStorage();
   let first = FLOORS[0].id;
-  try { const last = localStorage.getItem("indoor-trace-last:" + BUILDING.name); if (last && FLOORS.some((f) => f.id === last)) first = last; } catch { /* ignore */ }
+  try { const last = localStorage.getItem("indoor-trace-last:" + CAMPUS.title); if (last && FLOORS.some((f) => f.id === last)) first = last; } catch { /* ignore */ }
   enterFloor(first);
   resize();
   renderSaveStatus();

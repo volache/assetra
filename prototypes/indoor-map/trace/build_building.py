@@ -1,8 +1,10 @@
-"""Indoor map prototype: build ONE tracing page that holds every floor of a building.
+"""Indoor map prototype: build ONE tracing page that holds every building and every floor.
 
 Isolated from the application: nothing under src/ or supabase/ is touched.
 
-    python prototypes/indoor-map/trace/build_building.py data/private/indoor-map/buildings/航廈.json
+    python prototypes/indoor-map/trace/build_building.py data/private/indoor-map/buildings/*.json         --title 航廈平面圖製作工具 --output data/private/indoor-map/航廈平面圖製作工具.html
+
+Each JSON file is one building; the page lets you switch between buildings and between the floors of each.
 
 The config is a small JSON file (kept with the private data):
 
@@ -69,11 +71,8 @@ def solve_offsets(configs, reference_title):
     return {c["title"]: solved.get(c["title"]) for c in configs}
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("config")
-    args = parser.parse_args()
-    config = json.loads(Path(args.config).read_text(encoding="utf-8"))
+def build_one(config):
+    """One building of the page: its floors, lined up with each other."""
     floors_config = config["floors"]
     offsets = solve_offsets(floors_config, config.get("reference") or floors_config[0]["title"]) if len(floors_config) > 1 else {}
     floors = []
@@ -86,9 +85,21 @@ def main():
             floor["seed"] = json.loads(Path(item["seed"]).read_text(encoding="utf-8"))
         floors.append(floor)
         print(f"{item['title']}: {len(floor['segments'])} segments, {len(floor['texts'])} texts", file=sys.stderr)
-    building = {"name": config["name"], "locations": load_locations(config.get("locations")), "floors": floors}
-    out = write_page(building, config["output"])
-    print(f"wrote {out} ({out.stat().st_size / 1e6:.1f} MB, {len(floors)} floors)", file=sys.stderr)
+    return {"name": config["name"], "floors": floors}
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("configs", nargs="+", help="one JSON config per building")
+    parser.add_argument("--title", default="", help="page title (default: the first building's name)")
+    parser.add_argument("--output", default="", help="output HTML (default: the first config's output)")
+    args = parser.parse_args()
+    configs = [json.loads(Path(c).read_text(encoding="utf-8")) for c in args.configs]
+    buildings = [build_one(config) for config in configs]
+    locations = next((load_locations(c.get("locations")) for c in configs if c.get("locations")), [])
+    campus = {"title": args.title or buildings[0]["name"], "locations": locations, "buildings": buildings}
+    out = write_page(campus, args.output or configs[0]["output"])
+    print(f"wrote {out} ({out.stat().st_size / 1e6:.1f} MB, {len(buildings)} buildings, {sum(len(b['floors']) for b in buildings)} floors)", file=sys.stderr)
 
 
 if __name__ == "__main__":
