@@ -279,7 +279,7 @@
       <dl>
         <dt>平移縮放</dt><dd>滾輪縮放；按住右鍵、中鍵或空白鍵拖曳平移；F 縮放至全部</dd>
         <dt>框選</dt><dd>選取工具在空白處拖曳；Shift 加選或減選；Ctrl+A 全選；Esc 取消選取</dd>
-        <dt>移動</dt><dd>拖曳選取的物件；方向鍵微調（Shift 加大十倍）；步距可在右側自行輸入</dd>
+        <dt>移動</dt><dd>按住 Alt 拖曳選取的物件才會移動（一般拖曳不會）；方向鍵微調（Shift 加大十倍）；步距可在上方工具列輸入</dd>
         <dt>對齊底圖</dt><dd>右側「對齊到底圖」：先點選取範圍上的一個頂點，再點底圖的端點或邊線</dd>
         <dt>修剪延伸</dt><dd>T：點牆上要刪掉的一段（刪到和其他牆或房間邊的交點為止）；Shift＋點牆的一端，延伸到最近的牆、房間邊或底圖牆線</dd>
         <dt>參考線</dt><dd>拖曳或繪製時，和其他物件的頂點或邊界對齊會出現洋紅色虛線並自動吸附，可用「參考線」開關</dd>
@@ -328,7 +328,7 @@ function setLocations(list) {
 }
 const TYPE_NAMES = { room: "房間", public: "公共區域", void: "挑空／採光" };
 const HINTS = {
-  select: "點房間或牆選取；拖曳白點移動頂點；雙擊邊線加點；Delete 刪除；空白處拖曳或按住空白鍵可平移",
+  select: "點房間或牆選取；拖曳白點移動頂點；雙擊邊線加點；Delete 刪除；按住 Alt 拖曳可移動整個房間；空白處拖曳框選，右鍵或空白鍵拖曳平移",
   wall: "逐點點出牆；Enter、雙擊或點回起點完成；Backspace 退一點；Shift 鎖定水平／垂直。牆圍成封閉區域就會自動變成房間",
   arcwall: "弧形的牆：先點起點，再點終點，最後點弧線上的一點決定彎曲方向與弧度",
   rect: "直接描矩形房間：按住拖曳，或依序點兩個對角；Esc 取消",
@@ -1336,7 +1336,7 @@ function renderPanel() {
   if (group) {
     const items = selectedItems();
     add(el("div", `已選取 ${items.rooms.length} 個房間、${items.walls.length} 道牆`));
-    add(el("div", "拖曳任一個已選取的物件可整組移動；上方工具列可以對齊到底圖、用方向鍵微調或刪除；Shift＋點擊增減選取。", { className: "note" }));
+    add(el("div", "按住 Alt 拖曳任一個已選取的物件可整組移動；上方工具列可以對齊到底圖、用方向鍵微調或刪除；Shift＋點擊增減選取。", { className: "note" }));
     const row = el("div", undefined, { className: "row" });
     const del = el("button", "刪除所選", { type: "button", className: "btn danger" });
     del.addEventListener("click", () => deleteSelected());
@@ -1601,7 +1601,7 @@ function updateHint() {
   const count = items.rooms.length + items.walls.length;
   let text = HINTS[tool];
   if (align) text = align.stage === "pick" ? "對齊第 1 步：點選取範圍上要當基準的頂點（紅點）；Esc 取消" : "對齊第 2 步：點底圖上要貼齊的端點或邊線（會自動吸附）；Esc 取消";
-  else if (tool === "select" && group) text = `已選取 ${count} 項：拖曳可整組移動；方向鍵微調（Shift 加大）；Shift＋點擊增減選取；Esc 取消選取`;
+  else if (tool === "select" && group) text = `已選取 ${count} 項：按住 Alt 拖曳可整組移動；方向鍵微調（Shift 加大）；Shift＋點擊增減選取；Esc 取消選取`;
   stage.classList.toggle("aligning", !!align);
   $("hint").textContent = text;
 }
@@ -3116,7 +3116,7 @@ stage.addEventListener("pointerdown", (e) => {
     }
     if (group) {
       if ((clickedWall && group.walls.includes(clickedWall.id)) || (!clickedWall && clickedEl && group.rooms.includes(clickedEl.dataset.id))) {
-        drag = { type: "group", start: raw, cap: captureSelection(), moved: false, recorded: false };
+        if (e.altKey) drag = { type: "group", start: raw, cap: captureSelection(), moved: false, recorded: false };
         return;
       }
       group = null;   // clicking something else drops the group; what was clicked is selected below
@@ -3144,7 +3144,8 @@ stage.addEventListener("pointerdown", (e) => {
     if (hit) {
       selectedId = hit.dataset.id; selectedWallId = null; selectedVertex = null;
       const picked = roomById(selectedId);
-      drag = { type: "room", id: selectedId, start: raw, original: picked.ring.map((p) => [...p]), originalHoles: (picked.holes || []).map((h) => h.map((p) => [...p])), moved: false, recorded: false };
+      // A plain press only selects: a room never slides under the mouse by accident (Alt+drag moves it on purpose).
+      if (e.altKey) drag = { type: "room", id: selectedId, start: raw, original: picked.ring.map((p) => [...p]), originalHoles: (picked.holes || []).map((h) => h.map((p) => [...p])), moved: false, recorded: false };
     } else {
       // Empty space starts a box selection (Shift keeps what is already selected); right button or Space pans.
       if (!e.shiftKey) setSelection([], []);
