@@ -2437,6 +2437,12 @@ function cutPositions(wall, boundaries) {
     const tt = (w[0] * s[1] - w[1] * s[0]) / den, uu = (w[0] * r[1] - w[1] * r[0]) / den;
     if (tt > 1e-6 && tt < 1 - 1e-6 && uu > 1e-6 && uu < 1 - 1e-6) { cuts.push(i + tt); cuts.push(j + uu); }
   }
+  // ...or where one of its own corners or ends rests on another stretch of itself (a T made by the wall alone)
+  for (let k = 0; k < pts.length; k++) for (let j = 0; j + 1 < pts.length; j++) {
+    if (j === k || j === k - 1) continue;
+    const hit = closestOnSegment(pts[k], pts[j], pts[j + 1]);
+    if (dist(pts[k], hit.point) <= TOL && hit.t > 1e-6 && hit.t < 1 - 1e-6) { cuts.push(k); cuts.push(j + hit.t); }
+  }
   for (const [C, D] of boundaries) for (const E of [C, D]) for (let i = 0; i + 1 < pts.length; i++) {
     const hit = closestOnSegment(E, pts[i], pts[i + 1]);
     if (dist(E, hit.point) <= TOL) cuts.push(i + hit.t);
