@@ -5,27 +5,27 @@ Isolated from the application: nothing under src/ or supabase/ is touched.
     python prototypes/indoor-map/trace/build_building.py data/private/indoor-map/buildings/*.json         --title 航廈平面圖製作工具 --output data/private/indoor-map/航廈平面圖製作工具.html
 
 Each JSON file is one building; the page lets you switch between buildings and between the floors of each.
+The page holds only the drawings.  Nothing the user traced and no 存置地點 list is built in: that is all read from
+the browser's own storage (and the project folder), so the page never has to be rebuilt for it.
 
-The config is a small JSON file (kept with the private data):
+A building config is a small JSON file (kept with the private data):
 
     {
       "name": "航廈",
-      "output": "data/private/indoor-map/buildings/航廈_描圖.html",
-      "locations": "data/private/indoor-map/locations.json",
       "reference": "航廈二樓",
       "floors": [
         {"title": "航廈地下一樓", "label": "地下一樓", "dxf": "data/private/floorplans/航廈地下一樓.dxf"},
-        {"title": "航廈三樓", "label": "三樓", "dxf": "data/private/floorplans/航廈三樓.dxf",
-         "seed": "data/private/indoor-map/航廈三樓.rooms.json", "seedDxf": "data/private/floorplans/航廈三樓-修改.dxf"},
+        {"title": "航廈淺漥區", "label": "淺漥區", "dxf": "data/private/floorplans/航廈淺漥區.dxf",
+         "sameFrameAs": "航廈地下一樓"},
         {"title": "宿舍二樓", "label": "二樓", "dxf": "...", "crop": [9550, 2200, 14900, 10600]}
       ]
     }
 
 Floors are listed from the lowest up.  `reference` names the floor whose drawing the others are lined up with:
 each floor's outline is matched against it (or against a floor that already matched) so shapes can be shown and
-copied from one floor to another.  `seed` is an earlier export that is loaded the first time a floor is opened
-in a browser that has nothing saved for it; `seedDxf` names the drawing it was traced on when that differs from
-the floor's, so it is moved onto the right place.  `extra` adds more drawings of the same floor (same coordinates).
+copied from one floor to another.  `sameFrameAs` says a drawing shares its coordinates with another floor (a second
+sheet of the same level), so it takes that floor's position.  `extra` adds more drawings to one floor (same
+coordinates); `crop` keeps one region of a file that holds several floors.
 """
 import argparse
 import json
@@ -35,7 +35,7 @@ from pathlib import Path
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 from align_floors import align  # noqa: E402
-from build_tracer import floor_record, load_locations, write_page  # noqa: E402
+from build_tracer import floor_record, write_page  # noqa: E402
 
 MIN_SCORE = 0.4
 
@@ -50,7 +50,8 @@ def solve_offsets(configs, reference_title):
     if reference_title not in by_title:
         raise SystemExit(f"reference floor {reference_title!r} is not in the floor list")
     solved = {reference_title: [0, 0, 1.0]}
-    pending = [c["title"] for c in configs if c["title"] != reference_title]
+    same = {c["title"]: c["sameFrameAs"] for c in configs if c.get("sameFrameAs")}
+    pending = [c["title"] for c in configs if c["title"] != reference_title and c["title"] not in same]
     progress = True
     while pending and progress:
         progress = False
@@ -69,6 +70,8 @@ def solve_offsets(configs, reference_title):
                 print("unclear  " + note, file=sys.stderr)
     for title in pending:
         print(f"WARNING: {title} could not be lined up with the other floors", file=sys.stderr)
+    for title, other in same.items():
+        solved[title] = solved.get(other)
     return {c["title"]: solved.get(c["title"]) for c in configs}
 
 
@@ -83,15 +86,6 @@ def build_one(config):
         found = offsets.get(item["title"], [0, 0, 1.0])
         floor["offset"] = [found[0], found[1]] if found else None
         floor["alignScore"] = found[2] if found else 0
-        if item.get("seed") and Path(item["seed"]).exists():
-            floor["seed"] = json.loads(Path(item["seed"]).read_text(encoding="utf-8"))
-            # The seed may have been drawn on another version of this floor's drawing: move it onto this one.
-            floor["seedShift"] = [0, 0]
-            if item.get("seedDxf"):
-                found = align(item["dxf"], item["seedDxf"], item.get("crop"), None)
-                print(f"seed {item['seedDxf']} -> {item['title']}: dx {found['dx']}, dy {found['dy']}, score {found['score']}", file=sys.stderr)
-                if clear_match(found):
-                    floor["seedShift"] = [found["dx"], found["dy"]]
         floors.append(floor)
         print(f"{item['title']}: {len(floor['segments'])} segments, {len(floor['texts'])} texts", file=sys.stderr)
     return {"name": config["name"], "floors": floors}
@@ -105,8 +99,7 @@ def main():
     args = parser.parse_args()
     configs = [json.loads(Path(c).read_text(encoding="utf-8")) for c in args.configs]
     buildings = [build_one(config) for config in configs]
-    locations = next((load_locations(c.get("locations")) for c in configs if c.get("locations")), [])
-    campus = {"title": args.title or buildings[0]["name"], "locations": locations, "buildings": buildings}
+    campus = {"title": args.title or buildings[0]["name"], "buildings": buildings}
     out = write_page(campus, args.output or configs[0]["output"])
     print(f"wrote {out} ({out.stat().st_size / 1e6:.1f} MB, {len(buildings)} buildings, {sum(len(b['floors']) for b in buildings)} floors)", file=sys.stderr)
 

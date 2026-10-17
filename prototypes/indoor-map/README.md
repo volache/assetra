@@ -128,7 +128,7 @@ python prototypes/indoor-map/grid_rebuild.py "data/private/floorplans/航廈三�
 
 ### 一棟樓一個頁面（多樓層）與存檔
 
-- `trace/build_building.py 設定檔1.json 設定檔2.json … --title 標題 --output 輸出.html` 會把所有建築物（每個設定檔一棟）的所有樓層內嵌進同一個 HTML（全部約 14 MB），頁面上方先選建築物、再切換樓層（也可按 `[` `]`）。目前的組合：`build_building.py data/private/indoor-map/buildings/*.json --title 航廈平面圖製作工具 --output data/private/indoor-map/航廈平面圖製作工具.html`。設定檔格式見該檔案的開頭說明：樓層由低到高列出、`reference` 指定對位的基準樓層、`crop` 裁切同一個 DXF 裡的不同樓層、`seed` 是第一次開啟該樓層時載入的舊匯出檔。設定檔放在 `data/private/indoor-map/buildings/`。
+- `trace/build_building.py 設定檔1.json 設定檔2.json … --title 標題 --output 輸出.html` 會把所有建築物（每個設定檔一棟）的所有樓層內嵌進同一個 HTML（全部約 14 MB），頁面上方先選建築物、再切換樓層（也可按 `[` `]`）。目前的組合：`build_building.py data/private/indoor-map/buildings/*.json --title 航廈平面圖製作工具 --output data/private/indoor-map/航廈平面圖製作工具.html`。設定檔格式見該檔案的開頭說明：樓層由低到高列出、`reference` 指定對位的基準樓層、`crop` 裁切同一個 DXF 裡的不同樓層、設定檔放在 `data/private/indoor-map/buildings/`。
 - 建置時會自動比對各樓層的外牆（FFT），算出各層相對基準樓層的平移量；比對不明確的樓層會顯示警告，該層不做自動對位（匯入其他樓層的形狀時會提示位置可能對不上）。匯入別層的 JSON 時，會依各層的對位量自動平移。
 - 單層建置仍可用 `build_tracer.py`（`--align` 已移除，多層請用 `build_building.py`）。
 - **存檔**：變動後約 0.7 秒自動寫進瀏覽器的 IndexedDB（每個樓層一份，換樓層不會互相覆蓋，重新整理會回到上次的樓層）。在 Chrome 或 Edge 可按上方「選擇專案資料夾」選一個資料夾，之後每次變動也會自動寫成 `<樓層名稱>.rooms.json`，這份才是正本；資料夾裡有比瀏覽器更新的檔案時，開啟或選擇資料夾會詢問是否載入。瀏覽器重開後需要點一次「資料夾需要重新授權」。其他瀏覽器只存在瀏覽器裡，請定期按「匯出 JSON」。
@@ -141,3 +141,12 @@ python prototypes/indoor-map/grid_rebuild.py "data/private/floorplans/航廈三�
 - 同一層樓如果由兩份圖組成（例如航廈地下一樓＝`航廈地下一樓.dxf`＋`航廈淺漥區.dxf`，淺漥區是同一層北側的延伸，座標相同），在設定檔的樓層加上 `"extra": [{"dxf": "…"}]`，底圖就會合併。`seedDxf` 指定預載資料原本描在哪一份底圖上，建置時會自動算出兩份底圖的差距並平移（航廈三樓：`航廈三樓.dxf` 相對 `航廈三樓-修改.dxf` 差 x 7、y −3 公分）。
 - 頁面只收進 LINE、ARC、CIRCLE、LWPOLYLINE、POLYLINE、ELLIPSE 與單行文字 TEXT；方塊（INSERT）、尺寸標註、填充、多行文字（MTEXT）、3DFACE 都不會顯示。座標四捨五入到 0.1 公分，沒有另外壓縮（14.6 MB；若用 gzip 約 3 MB）。
 
+### 資料不寫死在頁面裡
+
+- 頁面只內嵌底圖。你描的房間、存置地點清單都**不會**寫進頁面，一律從瀏覽器的儲存空間（IndexedDB）與專案資料夾讀取，所以更新底圖或程式不需要帶資料，也不會被舊資料蓋掉。
+- 新瀏覽器第一次使用：選專案資料夾（資料夾裡有 `<樓層名稱>.rooms.json` 就會載入），或用「匯入 JSON」逐層匯入；存置地點清單用右側「存置地點清單」分頁的「匯入清單」匯入一次（`locations.json`，內容 `[{code, name, count}]`），之後記在瀏覽器裡，也會備份成專案資料夾裡的 `存置地點清單.json`。
+
+### 空間用途與存置地點清單
+
+- 房間面板的「空間用途」可以自行標註不屬於存置地點的空間（走廊、樓梯間、機房……），下方有常用與已用過的用途可一鍵套用；沒有代碼與名稱時，地圖與列表會顯示用途（斜體），匯出的 JSON 也帶 `usage`（版本 5）。
+- 右側「存置地點清單」分頁：列出每個存置地點對應到哪些樓層的哪些房間（點房間標籤會跳過去）；可篩選「未對應」「已對應」「清單外代碼」「無存置地點的房間」；選取房間後，清單裡每筆都有「指派給選取的房間」；「匯出對照表」輸出 CSV。

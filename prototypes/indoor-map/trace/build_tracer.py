@@ -127,11 +127,6 @@ def main():
     parser.add_argument("output")
     parser.add_argument("--title", default="")
     parser.add_argument(
-        "--locations",
-        default="",
-        help='JSON list of existing 存置地點: [{"code": "*C001", "name": "業務組辦公室", "count": 92}]',
-    )
-    parser.add_argument(
         "--crop",
         default="",
         help="x0,y0,x1,y1 in drawing units: keep only what lies inside (one floor of a file that holds several)",
@@ -157,7 +152,7 @@ def main():
         return
     title = args.title or Path(args.dxf).stem
     floor = floor_record(args.dxf, title, crop)
-    out = write_page({"name": title, "locations": load_locations(args.locations), "floors": [floor]}, args.output)
+    out = write_page({"title": title, "buildings": [{"name": title, "floors": [floor]}]}, args.output)
     print(f"wrote {out} | segments {len(floor['segments'])}, points {len(floor['points'])}, texts {len(floor['texts'])}", file=sys.stderr)
 
 
