@@ -152,6 +152,27 @@
   .usage-chips button { background: #eef2f9; border: 0; border-radius: 999px; color: var(--ink-2); cursor: pointer; font-size: 11.5px; padding: 2px 9px; }
   .usage-chips button:hover { background: #dfe6f2; }
   .label.usage { fill: #55627f; font-style: italic; }
+  .gappanel { background: #fff; border: 1px solid var(--rule); border-radius: 12px; box-shadow: 0 6px 24px rgba(20, 30, 60, 0.16); display: flex; flex-direction: column; left: 12px; max-height: calc(100% - 140px); position: absolute; top: 66px; width: 310px; z-index: 4; }
+  .gappanel[hidden] { display: none; }
+  .gap-head { align-items: center; display: flex; justify-content: space-between; padding: 10px 12px 4px 14px; }
+  .gap-head b { font-size: 13px; }
+  .gap-head .close { background: transparent; border: 0; border-radius: 8px; color: var(--muted); cursor: pointer; font-size: 16px; height: 28px; width: 28px; }
+  .gap-head .close:hover { background: #eef2f9; }
+  .gap-settings { align-items: center; color: var(--ink-2); display: flex; flex-wrap: wrap; font-size: 12px; gap: 6px 10px; padding: 2px 14px 8px; }
+  .gap-settings input { background: #fff; border: 1px solid var(--rule); border-radius: 8px; height: 28px; padding: 0 6px; width: 62px; }
+  .gap-note { color: var(--ink-2); font-size: 12px; line-height: 1.6; padding: 0 14px 8px; }
+  .gap-list { border-top: 1px solid var(--rule); list-style: none; margin: 0; overflow-y: auto; padding: 0; }
+  .gap-list li { align-items: center; border-bottom: 1px solid #eef1f6; display: flex; font-size: 12px; gap: 8px; justify-content: space-between; padding: 7px 12px 7px 14px; }
+  .gap-list small { color: var(--muted); display: block; }
+  .gap-list .acts { display: flex; flex: none; gap: 4px; }
+  .gap-list .acts button { background: #eef2f9; border: 0; border-radius: 8px; cursor: pointer; font-size: 12px; padding: 4px 9px; }
+  .gap-list .acts button.fix { background: var(--teal); color: #fff; }
+  .gap-foot { border-top: 1px solid var(--rule); padding: 8px 12px; }
+  .gap-foot .btn { width: 100%; }
+  .gap-dot { fill: rgba(214, 51, 108, 0.12); stroke: #d6336c; stroke-width: 2; }
+  .gap-dot.low { fill: rgba(122, 133, 156, 0.12); stroke: #7a859c; }
+  .gap-line { stroke: #d6336c; stroke-dasharray: 4 3; stroke-width: 1.6; }
+  .gap-line.low { stroke: #7a859c; }
   .selbar { align-items: center; background: #fff; border: 1px solid var(--rule); border-radius: 12px; box-shadow: 0 4px 16px rgba(20, 30, 60, 0.14); display: flex; flex-wrap: wrap; font-size: 13px; gap: 6px 10px; left: 12px; margin-inline: auto; max-width: calc(100% - 76px); padding: 6px 8px 6px 14px; position: absolute; right: 64px; top: 12px; width: max-content; z-index: 4; }
   .selbar[hidden] { display: none; }
   .selbar .count { color: var(--ink); font-weight: 700; white-space: nowrap; }
@@ -224,6 +245,7 @@
   <button type="button" class="btn" id="select-all" title="選取所有牆與房間，之後可整組移動、對齊到底圖">全選<kbd>Ctrl+A</kbd></button>
   <button type="button" class="btn" id="generate" title="依目前的牆重新產生房間">由牆生成房間</button>
   <button type="button" class="btn" id="tidy" title="頂點靠攏、邊線拉直、相鄰物件共邊">自動整理</button>
+  <button type="button" class="btn" id="gapcheck" aria-pressed="false" title="找出牆的端點差一點沒接上的地方，並建議補上">缺口檢查</button>
 </div>
 
 <main>
@@ -231,6 +253,7 @@
     <svg id="plan" aria-label="平面圖底圖、牆與房間"></svg>
     <svg id="overlay" class="overlay" aria-hidden="true"></svg>
     <div class="hint" id="hint"></div>
+    <div class="gappanel" id="gappanel" hidden></div>
     <div class="selbar" id="selbar" role="toolbar" aria-label="對所選物件的操作" hidden></div>
     <div class="coords" id="coords"></div>
     <div class="zoom" role="group" aria-label="縮放">
@@ -327,6 +350,7 @@ let wandGap = "auto", wandCache = new Map(), wandTimer = null;
 let stateRev = 0;                 // bumps whenever walls or rooms change, so cached rasters can be dropped
 let guides = [], guidesOn = true;  // alignment guides: [{ a, b }] lines in page coordinates
 let trimPreview = null;
+let gaps = [], gapOpen = false, gapRadius = 50, gapRev = -1;   // wall ends that stop just short of another wall
 let stepCm = 50;                  // how far one nudge moves, typed by the user
 let listQuery = "", listUnset = false;
 let tool = "select";
@@ -814,6 +838,7 @@ function enterFloor(id) {
   selectedId = null; selectedWallId = null; selectedVertex = null; group = null; align = null; marquee = null;
   draft = null; drag = null; wand = null; wandPreview = null; snapHit = null; guides = []; trimPreview = null;
   clearTimeout(generateTimer); wandCache.clear();
+  gaps = []; gapOpen = false; $("gappanel").hidden = true; $("gapcheck").setAttribute("aria-pressed", "false");
   currentBuilding = floor.building;
   try { localStorage.setItem("indoor-trace-last:" + CAMPUS.title, id); localStorage.setItem(`indoor-trace-last:${CAMPUS.title}:${floor.building}`, id); } catch { /* ignore */ }
   document.title = `${CAMPUS.title}　${floor.building} ${floor.label || floor.title}`;
@@ -1167,6 +1192,12 @@ function renderOverlay() {
     make("circle", { class: "guide-dot", cx: ax, cy: ay, r: 2.5 }, overlay);
     make("circle", { class: "guide-dot", cx: bx, cy: by, r: 2.5 }, overlay);
   });
+  if (gapOpen) gaps.forEach((g) => {
+    const [fx, fy] = toScreen(g.from), [tx, ty] = toScreen(g.to);
+    make("line", { class: "gap-line" + (g.high ? "" : " low"), x1: fx, y1: fy, x2: tx, y2: ty }, overlay);
+    make("circle", { class: "gap-dot" + (g.high ? "" : " low"), cx: fx, cy: fy, r: 10 }, overlay);
+    make("circle", { class: "guide-dot", cx: tx, cy: ty, r: 3 }, overlay);
+  });
   if (align) drawAlign();
   if (marquee) {
     const x = Math.min(marquee.a[0], marquee.b[0]), y = Math.min(marquee.a[1], marquee.b[1]);
@@ -1254,6 +1285,7 @@ function renderSelbar() {
 }
 function renderPanel() {
   renderSelbar();
+  if (gapOpen && gapRev !== stateRev) { gaps = findGaps(gapRadius); gapRev = stateRev; renderGapPanel(); }
   if (!$("locs-pane").hidden) renderLocPanel();
   const list = $("list");
   list.replaceChildren();
@@ -2299,7 +2331,7 @@ function wandUp() {
   wandPreview = null;
   if (!shape) {
     $("hint").textContent = stroke?.failed
-      ? "這裡圍不起來：底圖的缺口太大、在室外，或範圍太大。可以先用牆補上缺口，或把缺口容忍調大再試"
+      ? "這裡圍不起來：底圖的缺口太大、在室外，或範圍太大。可以先按上方「缺口檢查」找出沒接上的牆，或把缺口容忍調大再試"
       : "這裡找不到可以變成房間的範圍";
     renderOverlay();
     return;
@@ -2491,6 +2523,114 @@ function trimClick(e) {
   trimApply(plan);
 }
 
+// ---- gap check -----------------------------------------------------------------------------------------------
+/**
+ * Wall ends that touch nothing but sit close to another wall.  Each gets the nearest spot to join (straight on, or the
+ * closest point of another wall), and is "high" when joining it makes one more closed room.  Curved walls are left alone.
+ */
+function findGaps(radius, firstHigh = false) {
+  const TOL = 6, segs = wallSegments(), out = [];
+  const faceCount = () => wallFaces(wallSegments().map(([a, b]) => [a, b])).length;
+  const base = faceCount();
+  for (const wall of walls) {
+    const pts = wall.pts, n = pts.length;
+    if (wall.curve || n < 2 || dist(pts[0], pts[n - 1]) <= TOL) continue;
+    for (const endIndex of [0, n - 1]) {
+      const E = pts[endIndex], neighbour = pts[endIndex === 0 ? 1 : n - 2], own = endIndex === 0 ? 0 : n - 2;
+      const others = segs.filter(([, , id, i]) => !(id === wall.id && i === own));
+      if (others.some(([a, b]) => dist(E, closestOnSegment(E, a, b).point) <= TOL)) continue;   // already joined
+      const len = dist(E, neighbour);
+      if (len < 1) continue;
+      const d = [(E[0] - neighbour[0]) / len, (E[1] - neighbour[1]) / len];
+      let best = null;
+      const consider = (point, kind) => {
+        const gap = dist(E, point);
+        if (gap > TOL && gap <= radius && (!best || gap < best.gap - 0.5 || (Math.abs(gap - best.gap) <= 0.5 && kind === "ray"))) best = { to: point, gap, kind };
+      };
+      for (const [a, b] of others) {
+        consider(closestOnSegment(E, a, b).point, "near");
+        const s = [b[0] - a[0], b[1] - a[1]], den = d[0] * s[1] - d[1] * s[0];
+        if (Math.abs(den) < 1e-9) continue;
+        const w = [a[0] - E[0], a[1] - E[1]];
+        const tt = (w[0] * s[1] - w[1] * s[0]) / den, u = (w[0] * d[1] - w[1] * d[0]) / den;
+        if (tt > 0 && u >= -1e-6 && u <= 1 + 1e-6) consider([E[0] + d[0] * tt, E[1] + d[1] * tt], "ray");
+      }
+      if (!best) continue;
+      const original = pts[endIndex];
+      pts[endIndex] = best.to;
+      const high = faceCount() > base;
+      pts[endIndex] = original;
+      out.push({ wallId: wall.id, endIndex, from: [E[0], E[1]], to: [round1(best.to[0]), round1(best.to[1])], gap: best.gap, kind: best.kind, high });
+      if (firstHigh && high) return out;
+    }
+  }
+  return out.sort((a, b) => Number(b.high) - Number(a.high) || a.gap - b.gap);
+}
+function renderGapPanel() {
+  const panel = $("gappanel");
+  panel.hidden = !gapOpen;
+  $("gapcheck").setAttribute("aria-pressed", String(gapOpen));
+  if (!gapOpen) return;
+  panel.replaceChildren();
+  const head = domEl("div", undefined, { className: "gap-head" });
+  const close = domEl("button", "✕", { type: "button", className: "close", title: "關閉缺口檢查" });
+  close.setAttribute("aria-label", "關閉缺口檢查");
+  close.addEventListener("click", () => { gapOpen = false; gaps = []; renderGapPanel(); renderOverlay(); });
+  head.append(domEl("b", "缺口檢查"), close);
+  const settings = domEl("label", "找端點附近 ", { className: "gap-settings" });
+  const radiusInput = domEl("input", undefined, { type: "number", min: "1", step: "1", value: String(gapRadius) });
+  radiusInput.addEventListener("change", () => { const v = Number(radiusInput.value); if (v > 0) { gapRadius = v; refreshGaps(); } });
+  settings.append(radiusInput, document.createTextNode(" 公分內"));
+  const high = gaps.filter((g) => g.high);
+  panel.append(head, settings, domEl("div", gaps.length ? `找到 ${gaps.length} 處：補上就多一間房的有 ${high.length} 處（紅色），其餘 ${gaps.length - high.length} 處可能只是刻意留的端點（灰色）。` : `沒有發現缺口：每個牆端點都已接上，或離其他牆超過 ${gapRadius} 公分。大於一個門寬的開口要自己決定怎麼畫。`, { className: "gap-note" }));
+  const list = domEl("ul", undefined, { className: "gap-list" });
+  gaps.forEach((g) => {
+    const li = domEl("li");
+    const text = domEl("div", `牆 ${g.wallId}　差 ${g.gap.toFixed(0)} 公分`);
+    text.append(domEl("small", g.high ? "補上後會多一間房" : "補上後房間數不變"));
+    const acts = domEl("div", undefined, { className: "acts" });
+    const look = domEl("button", "看", { type: "button", title: "移到這個缺口" });
+    look.addEventListener("click", () => { view.z = Math.max(view.z, 0.35); view.tx = size.w / 2 - view.z * g.from[0]; view.ty = size.h / 2 - view.z * g.from[1]; applyView(); });
+    const fix = domEl("button", "補上", { type: "button", className: "fix", title: "把這個端點接到建議的位置" });
+    fix.addEventListener("click", () => applyGap(g));
+    acts.append(look, fix);
+    li.append(text, acts);
+    list.append(li);
+  });
+  if (gaps.length) panel.append(list);
+  if (high.length) {
+    const foot = domEl("div", undefined, { className: "gap-foot" });
+    const all = domEl("button", `全部補上紅色的 ${high.length} 處`, { type: "button", className: "btn accent" });
+    all.addEventListener("click", fixAllGaps);
+    foot.append(all);
+    panel.append(foot);
+  }
+}
+function refreshGaps() { gaps = findGaps(gapRadius); gapRev = stateRev; renderGapPanel(); renderOverlay(); }
+function applyGap(g) {
+  const wall = wallById(g.wallId);
+  if (!wall) return;
+  pushHistory();
+  wall.pts[g.endIndex] = [round1(g.to[0]), round1(g.to[1])];
+  changed(true, true);
+}
+function fixAllGaps() {
+  pushHistory();
+  let count = 0;
+  for (let guard = 0; guard < 80; guard++) {
+    const next = findGaps(gapRadius, true).find((g) => g.high);
+    if (!next) break;
+    wallById(next.wallId).pts[next.endIndex] = [round1(next.to[0]), round1(next.to[1])];
+    count += 1;
+  }
+  changed(true, true);
+  $("hint").textContent = `已補上 ${count} 處缺口（可按復原）`;
+}
+$("gapcheck").addEventListener("click", () => {
+  gapOpen = !gapOpen;
+  if (gapOpen) refreshGaps(); else { gaps = []; renderGapPanel(); renderOverlay(); }
+});
+
 // ---- selection, moving and aligning ------------------------------------------------------------------------------
 const hasSelection = () => { const i = selectedItems(); return i.rooms.length + i.walls.length > 0; };
 function selectedItems() {
@@ -2657,7 +2797,7 @@ const mostlyClick = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 6;
 
 stage.addEventListener("contextmenu", (e) => e.preventDefault());
 stage.addEventListener("pointerdown", (e) => {
-  if (e.target.closest?.(".zoom, .helpcard, .selbar")) return;
+  if (e.target.closest?.(".zoom, .helpcard, .selbar, .gappanel")) return;
   stage.setPointerCapture?.(e.pointerId);
   if (e.button === 1 || e.button === 2 || spaceDown) { drag = { type: "pan", x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty }; stage.classList.add("panning"); return; }
   if (e.button !== 0) return;
