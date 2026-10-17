@@ -2428,6 +2428,15 @@ function cutPositions(wall, boundaries) {
     const u = ((C[0] - pts[i][0]) * r[1] - (C[1] - pts[i][1]) * r[0]) / den;
     if (t >= -1e-6 && t <= 1 + 1e-6 && u >= -1e-6 && u <= 1 + 1e-6) cuts.push(i + Math.min(1, Math.max(0, t)));
   }
+  // a wall that crosses itself (a loop with a tail, a figure eight) can be cut at its own crossing too
+  for (let i = 0; i + 1 < pts.length; i++) for (let j = i + 2; j + 1 < pts.length; j++) {
+    const r = [pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]], s = [pts[j + 1][0] - pts[j][0], pts[j + 1][1] - pts[j][1]];
+    const den = r[0] * s[1] - r[1] * s[0];
+    if (Math.abs(den) < 1e-9) continue;
+    const w = [pts[j][0] - pts[i][0], pts[j][1] - pts[i][1]];
+    const tt = (w[0] * s[1] - w[1] * s[0]) / den, uu = (w[0] * r[1] - w[1] * r[0]) / den;
+    if (tt > 1e-6 && tt < 1 - 1e-6 && uu > 1e-6 && uu < 1 - 1e-6) { cuts.push(i + tt); cuts.push(j + uu); }
+  }
   for (const [C, D] of boundaries) for (const E of [C, D]) for (let i = 0; i + 1 < pts.length; i++) {
     const hit = closestOnSegment(E, pts[i], pts[i + 1]);
     if (dist(E, hit.point) <= TOL) cuts.push(i + hit.t);
