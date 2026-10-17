@@ -15,8 +15,8 @@ The config is a small JSON file (kept with the private data):
       "reference": "航廈二樓",
       "floors": [
         {"title": "航廈地下一樓", "label": "地下一樓", "dxf": "data/private/floorplans/航廈地下一樓.dxf"},
-        {"title": "航廈三樓", "label": "三樓", "dxf": "data/private/floorplans/航廈三樓-修改.dxf",
-         "seed": "data/private/indoor-map/航廈三樓.rooms.json"},
+        {"title": "航廈三樓", "label": "三樓", "dxf": "data/private/floorplans/航廈三樓.dxf",
+         "seed": "data/private/indoor-map/航廈三樓.rooms.json", "seedDxf": "data/private/floorplans/航廈三樓-修改.dxf"},
         {"title": "宿舍二樓", "label": "二樓", "dxf": "...", "crop": [9550, 2200, 14900, 10600]}
       ]
     }
@@ -24,7 +24,8 @@ The config is a small JSON file (kept with the private data):
 Floors are listed from the lowest up.  `reference` names the floor whose drawing the others are lined up with:
 each floor's outline is matched against it (or against a floor that already matched) so shapes can be shown and
 copied from one floor to another.  `seed` is an earlier export that is loaded the first time a floor is opened
-in a browser that has nothing saved for it.
+in a browser that has nothing saved for it; `seedDxf` names the drawing it was traced on when that differs from
+the floor's, so it is moved onto the right place.  `extra` adds more drawings of the same floor (same coordinates).
 """
 import argparse
 import json
@@ -77,12 +78,20 @@ def build_one(config):
     offsets = solve_offsets(floors_config, config.get("reference") or floors_config[0]["title"]) if len(floors_config) > 1 else {}
     floors = []
     for item in floors_config:
-        floor = floor_record(item["dxf"], item["title"], item.get("crop"), item.get("label"))
+        extra = [(e["dxf"], e.get("crop")) for e in item.get("extra", [])]
+        floor = floor_record(item["dxf"], item["title"], item.get("crop"), item.get("label"), extra)
         found = offsets.get(item["title"], [0, 0, 1.0])
         floor["offset"] = [found[0], found[1]] if found else None
         floor["alignScore"] = found[2] if found else 0
         if item.get("seed") and Path(item["seed"]).exists():
             floor["seed"] = json.loads(Path(item["seed"]).read_text(encoding="utf-8"))
+            # The seed may have been drawn on another version of this floor's drawing: move it onto this one.
+            floor["seedShift"] = [0, 0]
+            if item.get("seedDxf"):
+                found = align(item["dxf"], item["seedDxf"], item.get("crop"), None)
+                print(f"seed {item['seedDxf']} -> {item['title']}: dx {found['dx']}, dy {found['dy']}, score {found['score']}", file=sys.stderr)
+                if clear_match(found):
+                    floor["seedShift"] = [found["dx"], found["dy"]]
         floors.append(floor)
         print(f"{item['title']}: {len(floor['segments'])} segments, {len(floor['texts'])} texts", file=sys.stderr)
     return {"name": config["name"], "floors": floors}

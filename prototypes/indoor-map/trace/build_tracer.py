@@ -78,16 +78,23 @@ def read_floor(dxf, crop=None):
     return major, minor, snap_segments, points, texts
 
 
-def floor_record(dxf, title, crop=None, label=None):
-    """Everything the page needs for one floor, as a JSON-ready dict (the offset is filled in later)."""
-    major, minor, snap_segments, points, texts = read_floor(dxf, crop)
+def floor_record(dxf, title, crop=None, label=None, extra=()):
+    """Everything the page needs for one floor, as a JSON-ready dict (the offset is filled in later).
+
+    `extra` lists more drawings of the same floor, as (dxf, crop) pairs in the same coordinates; their lines and
+    texts are added to the underlay."""
+    sources = [(dxf, crop), *extra]
+    major, minor, snap_segments, points, texts = [], [], [], set(), []
+    for path, area in sources:
+        m, n, s, p, t = read_floor(path, area)
+        major += m; minor += n; snap_segments += s; points |= p; texts += t
     xs = [x for group in (major, minor) for segment in group for x, _ in segment]
     ys = [-y for group in (major, minor) for segment in group for _, y in segment]
     return {
         "id": title,
         "title": title,
         "label": label or title,
-        "source": Path(dxf).name,
+        "source": " + ".join(Path(path).name for path, _ in sources),
         "unit": "cm",
         "bounds": [min(xs), min(ys), max(xs), max(ys)],
         "major": path_data(major),

@@ -731,7 +731,7 @@ function savedStateFor(floor) {
     const legacy = JSON.parse(localStorage.getItem(`indoor-trace:${floor.title}:${floor.source}`) || "null");
     if (legacy) { dirtyFloors.add(floor.id); return legacy; }
   } catch { /* ignore */ }
-  if (floor.seed) { dirtyFloors.add(floor.id); return convertPayload(floor.seed, shiftFor(floor.seed, floor), true); }
+  if (floor.seed) { dirtyFloors.add(floor.id); return convertPayload(floor.seed, floor.seedShift || [0, 0], true); }
   return null;
 }
 const roomCountOf = (id) => stateOf(id).rooms?.length || 0;
