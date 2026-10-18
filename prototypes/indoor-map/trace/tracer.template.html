@@ -146,6 +146,7 @@
   .also-chip.warn { background: #fdecef; }
   .also-chip button { background: transparent; border: 0; border-radius: 6px; color: var(--muted); cursor: pointer; height: 24px; width: 24px; }
   .also-chip button:hover { background: #e3e8f2; }
+  .draft.split { fill: none; stroke: #d6336c; stroke-dasharray: 8 5; stroke-width: 2.4; }
   .usage-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
   .usage-chips button { background: #eef2f9; border: 0; border-radius: 999px; color: var(--ink-2); cursor: pointer; font-size: 11.5px; padding: 2px 9px; }
   .usage-chips button:hover { background: #dfe6f2; }
@@ -289,6 +290,7 @@
     <button type="button" data-tool="semi" aria-pressed="false" title="點直徑兩端，再點一側">半圓<kbd>C</kbd></button>
     <button type="button" data-tool="circle" aria-pressed="false" title="點圓心，再點半徑">圓<kbd>O</kbd></button>
     <button type="button" data-tool="wand" aria-pressed="false" title="魔術棒：點一下房間內部，自動找出封閉範圍；按住拖曳塗抹可合併多處">魔術棒<kbd>M</kbd></button>
+    <button type="button" data-tool="split" aria-pressed="false" title="分割線：畫一條線把房間切成兩塊，不需要牆（開放空間用）">分割線<kbd>S</kbd></button>
     <button type="button" data-tool="trim" aria-pressed="false" title="修剪／延伸：點牆上要刪掉的一段；按住 Shift 點牆的一端則延伸到最近的牆">修剪<kbd>T</kbd></button>
   </div>
   <div class="group">
@@ -406,6 +408,7 @@ const HINTS = {
   poly: "逐點描房間外形；Enter、雙擊或點回第一點完成；Backspace 退一點；Shift 鎖定水平／垂直",
   semi: "半圓房間：先點直徑的兩個端點，再把滑鼠移到要凸出的一側後點一下",
   circle: "圓形房間：先點圓心，再點圓周上的任一點",
+  split: "分割線：逐點點出一條線，從房間的一邊拉到另一邊；Enter 或雙擊完成。被線完整切開的房間會變成兩塊以上，之後不需要牆也會保持分開；Backspace 退一點",
   trim: "修剪／延伸：滑鼠移到牆上會預覽（紅色虛線是要刪掉的一段），點一下刪除；按住 Shift 點牆的一端，延伸到最近的牆、房間邊或底圖牆線",
   wand: "魔術棒：游標移到房間內部會預覽，並盡量判斷成矩形、圓、半圓或水平垂直的多邊形；點一下建立；按住拖曳塗抹可把多處合併成一間。圍不起來時先用牆補缺口",
 };
@@ -421,7 +424,7 @@ const make = (name, attrs = {}, parent) => {
 // ---- state ---------------------------------------------------------------------
 let rooms = [];                   // { id, name, type, ring, auto?, anchor?, curve? }
 let walls = [];                   // { id, pts, curve? }
-let suppressed = [];              // anchors of generated rooms the user deleted
+let suppressed = [];              // anchors of generated rooms the user deleted; [x, y, 1] = fixed as a hand-drawn room instead (neighbours keep their hole)
 let selectedId = null;            // a room id
 let selectedWallId = null;
 let selectedVertex = null;
@@ -1190,7 +1193,8 @@ function generateRooms() {
   const gone = fresh.filter((f) => suppressed.some((s) => inRoom(f, s)));
   fresh = fresh.filter((f) => !gone.includes(f));
   const ringKey = (ring) => ring.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(";");
-  const goneKeys = new Set(gone.map((g) => ringKey(g.ring)));
+  // only a deleted room gives its space back; a room fixed by hand still sits where it is, so its neighbour keeps the hole
+  const goneKeys = new Set(gone.filter((g) => suppressed.some((s) => !s[2] && inRoom(g, s))).map((g) => ringKey(g.ring)));
   fresh.forEach((f) => {
     const kept = (f.holes || []).filter((h) => !goneKeys.has(ringKey(h)));
     if (kept.length !== (f.holes || []).length) { f.holes = kept; f.anchor = interiorPoint(f.ring, f.holes); }
@@ -1317,6 +1321,7 @@ function draftShape() {
     case "rect": return pts.length === 1 ? { ring: rectRing(pts[0], cursor), closed: true } : null;
     case "poly": return { ring: [...pts, cursor], closed: false };
     case "wall": return { ring: [...pts, cursor], closed: false, wall: true };
+    case "split": return { ring: [...pts, cursor], closed: false, split: true };
     case "arcwall":
       if (pts.length === 1) return { ring: [pts[0], cursor], closed: false, wall: true };
       if (pts.length === 2) return { ring: arcPoints(pts[0], pts[1], cursor), closed: false, wall: true };
@@ -1333,8 +1338,8 @@ function drawDraft() {
   const shape = draftShape();
   if (!shape || shape.ring.length < 2) return;
   const d = shape.ring.map((p, i) => { const [sx, sy] = toScreen(p); return (i ? "L" : "M") + sx + " " + sy; }).join("") + (shape.closed ? "Z" : "");
-  make("path", { class: "draft" + (shape.wall ? " wall" : ""), d }, overlay);
-  if (draft.tool === "poly" || draft.tool === "wall") draft.pts.forEach((p) => { const [sx, sy] = toScreen(p); make("circle", { class: "handle", cx: sx, cy: sy, r: 4 }, overlay); });
+  make("path", { class: "draft" + (shape.wall ? " wall" : "") + (shape.split ? " split" : ""), d }, overlay);
+  if (draft.tool === "poly" || draft.tool === "wall" || draft.tool === "split") draft.pts.forEach((p) => { const [sx, sy] = toScreen(p); make("circle", { class: "handle", cx: sx, cy: sy, r: 4 }, overlay); });
 }
 
 function showToast(text, options = {}) {
@@ -1387,7 +1392,7 @@ function renderSelbar() {
   const bar = $("selbar");
   const items = selectedItems();
   const show = tool === "select" && items.rooms.length + items.walls.length > 0;
-  const signature = show ? `${items.rooms.length}|${items.walls.length}|${align ? align.stage : ""}` : "";
+  const signature = show ? `${items.rooms.length}|${items.walls.length}|${items.rooms.filter((id) => roomById(id)?.auto).length}|${align ? align.stage : ""}` : "";
   bar.hidden = !show;
   if (bar.dataset.sig === signature) return;       // keep the step field alive while moving things around
   bar.dataset.sig = signature;
@@ -1419,6 +1424,12 @@ function renderSelbar() {
   stepInput.addEventListener("input", () => { const v = Number(stepInput.value); if (v > 0) stepCm = v; });
   step.append(stepInput, document.createTextNode(" 公分"));
   bar.append(keys, step, domEl("span", undefined, { className: "sep" }));
+  const loose = items.rooms.filter((id) => roomById(id)?.auto);
+  if (loose.length) {
+    const freeze = domEl("button", "固定房間", { type: "button", className: "btn", title: "把由牆生成的房間固定成手繪房間：之後刪掉牆，房間也不會合併或消失" });
+    freeze.addEventListener("click", () => { const n = freezeRooms(loose); if (n) showToast(`已固定 ${n} 個房間，現在可以放心刪掉分隔的牆`, { undo: true }); });
+    bar.append(freeze);
+  }
   const del = domEl("button", "刪除", { type: "button", className: "btn danger", title: "刪除所選（Delete）" });
   del.addEventListener("click", () => deleteSelected());
   const close = domEl("button", "✕", { type: "button", className: "close", title: "取消選取（Esc）" });
@@ -1956,6 +1967,65 @@ function deleteSelected(options) {
   }
   changed(true, !!room.auto);
 }
+/**
+ * Turn rooms made from walls into hand-drawn rooms.  They keep their shape, name and location and no longer depend on
+ * the walls around them, so the walls can be deleted afterwards without the room merging into its neighbour.
+ */
+function freezeRooms(ids) {
+  const list = ids.map(roomById).filter((r) => r?.auto);
+  if (!list.length) return 0;
+  pushHistory();
+  list.forEach((r) => { suppressed.push([...(r.anchor || interiorPoint(r.ring, r.holes || [])), 1]); r.auto = false; delete r.anchor; });
+  changed(true, true);
+  return list.length;
+}
+/**
+ * Cut rooms along a line that is not a wall.  The line has to run from one side of a room to another.  Every room it
+ * cuts in two becomes hand-drawn pieces: the biggest keeps the name and location, the others start empty.
+ * Returns how many rooms were cut.
+ */
+function splitRoomsByLine(line) {
+  const EXTEND = 6;
+  const pts = line.map((p) => [p[0], p[1]]);
+  if (pts.length < 2) return 0;
+  const stretch = (from, to) => { const d = dist(from, to) || 1; return [to[0] + ((to[0] - from[0]) / d) * EXTEND, to[1] + ((to[1] - from[1]) / d) * EXTEND]; };
+  pts[0] = stretch(pts[1], pts[0]);
+  pts[pts.length - 1] = stretch(pts[pts.length - 2], pts[pts.length - 1]);
+  const lineEdges = pts.slice(1).map((p, i) => [pts[i], p]);
+  const results = [];
+  for (const room of rooms) {
+    const edges = room.ring.map((p, i) => [p, room.ring[(i + 1) % room.ring.length]]);
+    const pieces = wallFaces([...edges, ...lineEdges], 500).filter((ring) => inRing(room.ring, interiorPoint(ring)));
+    const total = pieces.reduce((sum, ring) => sum + area(ring), 0);
+    // only a clean partition counts: pieces that overlap or leave gaps mean the line did not really cut the room
+    if (pieces.length < 2 || Math.abs(total - area(room.ring)) > area(room.ring) * 0.02) continue;
+    pieces.sort((a, b) => area(b) - area(a));
+    results.push({ room, pieces });
+  }
+  if (!results.length) return 0;
+  pushHistory();
+  const cutIds = results.map((r) => r.room.id);
+  rooms = rooms.filter((r) => !cutIds.includes(r.id));
+  for (const { room, pieces } of results) {
+    if (room.auto) suppressed.push([...(room.anchor || interiorPoint(room.ring, room.holes || [])), 1]);
+    const made = pieces.map((ring, i) => {
+      const clean = ring.map((q) => [round1(q[0]), round1(q[1])]);
+      const base = i === 0
+        ? { ...room, ring: clean, auto: false }
+        : { id: newId("T"), uid: newUid(), name: "", locationCode: "", type: room.type, ring: clean };
+      delete base.anchor; delete base.curve; delete base.holes;
+      return base;
+    });
+    // a room inside the cut one stays a hole in whichever piece holds it
+    (room.holes || []).forEach((h) => {
+      const owner = made.find((m) => inRing(m.ring, interiorPoint(h)));
+      if (owner) (owner.holes = owner.holes || []).push(h);
+    });
+    rooms.push(...made);
+  }
+  changed(true, true);
+  return results.length;
+}
 function finishPath() {
   if (!draft) return;
   const pts = draft.pts;
@@ -1963,6 +2033,11 @@ function finishPath() {
   draft = null;
   if (kind === "poly" && pts.length >= 3) addRoom(pts);
   else if (kind === "wall" && pts.length >= 2) addWall(pts);
+  else if (kind === "split" && pts.length >= 2) {
+    const cut = splitRoomsByLine(pts);
+    if (cut) showToast(`已把 ${cut} 個房間切成兩塊以上`, { undo: true });
+    else showToast("這條線沒有把任何房間完整切開：線的兩端要超出房間邊界，或剛好落在邊上");
+  }
   renderOverlay();
 }
 
@@ -3203,7 +3278,7 @@ function selectAll() {
 function captureSelection() {
   const items = selectedItems();
   const copy = (p) => [p[0], p[1]];
-  const cap = { rooms: new Map(), walls: new Map(), all: items.rooms.length === rooms.length && items.walls.length === walls.length, suppressed: suppressed.map(copy) };
+  const cap = { rooms: new Map(), walls: new Map(), all: items.rooms.length === rooms.length && items.walls.length === walls.length, suppressed: suppressed.map((p) => p.slice()) };
   items.rooms.forEach((id) => {
     const r = roomById(id);
     cap.rooms.set(id, { ring: r.ring.map(copy), holes: (r.holes || []).map((h) => h.map(copy)), anchor: r.anchor ? copy(r.anchor) : null, curve: r.curve ? JSON.parse(JSON.stringify(r.curve)) : null });
@@ -3223,7 +3298,7 @@ function placeSelection(cap, dx, dy) {
     if (o.curve) r.curve = moveCurve(o.curve, dx, -dy);
   });
   cap.walls.forEach((pts, id) => { const w = wallById(id); if (w) w.pts = pts.map(move); });
-  if (cap.all) suppressed = cap.suppressed.map(move);
+  if (cap.all) suppressed = cap.suppressed.map((p) => [...move(p), ...p.slice(2)]);
 }
 // Walls that moved without the rooms they enclose are re-derived; otherwise the rooms moved along with them.
 const needsRegenerate = (cap) => cap.walls.size > 0 && ![...cap.rooms.keys()].some((id) => roomById(id)?.auto);
@@ -3414,8 +3489,8 @@ stage.addEventListener("pointerdown", (e) => {
   if (tool === "rect") {
     if (draft && draft.pts.length === 1) { const ring = rectRing(draft.pts[0], p); draft = null; if (Math.abs(ring[0][0] - ring[2][0]) > 5 && Math.abs(ring[0][1] - ring[2][1]) > 5) addRoom(ring); }
     else { draft = { tool, pts: [p], cursor: p, press }; drag = { type: "rect" }; }
-  } else if (tool === "poly" || tool === "wall") {
-    const closing = draft && draft.pts.length >= (tool === "poly" ? 3 : 2) && dist(p, draft.pts[0]) <= 12 / view.z;
+  } else if (tool === "poly" || tool === "wall" || tool === "split") {
+    const closing = tool !== "split" && draft && draft.pts.length >= (tool === "poly" ? 3 : 2) && dist(p, draft.pts[0]) <= 12 / view.z;
     if (closing) {
       if (tool === "wall") draft.pts.push([...draft.pts[0]]);
       finishPath();
@@ -3545,7 +3620,7 @@ stage.addEventListener("pointerup", (e) => {
   }
 });
 stage.addEventListener("dblclick", (e) => {
-  if (tool === "poly" || tool === "wall") { if (draft) { draft.pts.pop(); finishPath(); } return; }
+  if (tool === "poly" || tool === "wall" || tool === "split") { if (draft) { draft.pts.pop(); finishPath(); } return; }
   if (tool !== "select") return;
   const wall = wallById(selectedWallId), room = roomById(selectedId);
   const points = wall?.pts || room?.ring;
@@ -3665,7 +3740,7 @@ window.addEventListener("keydown", (e) => {
   if (key === "b") { $("toggle-underlay").click(); return; }
   if (key === "f") { fit(); applyView(); return; }
   if (key === "?" ) { $("help").click(); return; }
-  const tools = { v: "select", w: "wall", a: "arcwall", r: "rect", p: "poly", c: "semi", o: "circle", m: "wand", t: "trim" };
+  const tools = { v: "select", w: "wall", a: "arcwall", r: "rect", p: "poly", c: "semi", o: "circle", m: "wand", t: "trim", s: "split" };
   if (tools[key]) setTool(tools[key]);
   else if (key === "escape") {
     if (align) { cancelAlign(); return; }
@@ -3674,8 +3749,8 @@ window.addEventListener("keydown", (e) => {
     else if (hasSelection()) { setSelection([], []); refresh(); return; }
     selectedVertex = null; renderOverlay();
   }
-  else if (key === "enter" && (tool === "poly" || tool === "wall")) finishPath();
-  else if (key === "backspace" && (draft?.tool === "poly" || draft?.tool === "wall")) { draft.pts.pop(); if (!draft.pts.length) draft = null; renderOverlay(); }
+  else if (key === "enter" && (tool === "poly" || tool === "wall" || tool === "split")) finishPath();
+  else if (key === "backspace" && (draft?.tool === "poly" || draft?.tool === "wall" || draft?.tool === "split")) { draft.pts.pop(); if (!draft.pts.length) draft = null; renderOverlay(); }
   else if ((key === "delete" || key === "backspace") && tool === "select") deleteSelected();
 });
 window.addEventListener("keyup", (e) => { if (e.code === "Space") spaceDown = false; });
