@@ -54,6 +54,7 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
   const viewRef = useRef(null);
   const tiltRef = useRef(1);
   const animRef = useRef(0);
+  const targetRef = useRef(null);            // where the running glide is heading, so quick repeated clicks add up
   const flyFresh = useRef(false);
   useEffect(() => { viewRef.current = view; }, [view]);
   useEffect(() => { tiltRef.current = tilt; }, [tilt]);
@@ -133,6 +134,7 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
   const animateView = useCallback((target, from = null, ms = FLY_MS) => {
     cancelAnimationFrame(animRef.current);
     const start = from || viewRef.current;
+    targetRef.current = { view: target, until: performance.now() + ms };
     if (!start || ms <= 0 || reduceMotion()) { setView(target); return; }
     const c0 = [start.x + start.w / 2, start.y + start.h / 2], c1 = [target.x + target.w / 2, target.y + target.h / 2];
     const t0 = performance.now();
@@ -206,6 +208,16 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
     if (at.x < limit - 24) return;
     const dx = (at.x - (rect.left + (limit - rect.left) / 2)) / ctm.a;
     animateView({ ...current, x: current.x + dx });
+  }, [animateView]);
+
+  /** The + and − buttons: glide to the zoomed view around the centre; clicking again while it moves carries on from where it is heading. */
+  const zoomStep = useCallback((factor) => {
+    const running = targetRef.current && performance.now() < targetRef.current.until ? targetRef.current.view : null;
+    const base = running || viewRef.current;
+    if (!base) return;
+    const w = Math.min(Math.max(base.w * factor, base.full / 40), base.full * 1.6), real = w / base.w;
+    const cx = base.x + base.w / 2, cy = base.y + base.h / 2;
+    animateView({ ...base, x: cx - w / 2, y: cy - (base.h * real) / 2, w, h: base.h * real }, null, 340);
   }, [animateView]);
 
   const zoomAt = useCallback((factor, clientX, clientY) => {
@@ -451,8 +463,8 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
                 {[...floorsHere].reverse().map((item) => <button aria-current={item.id === floorId} className={item.id === floorId ? "is-active" : ""} key={item.id} onClick={() => changeFloor(item.id)} title={floorName(item)} type="button">{item.label}</button>)}
               </nav>
               <div className="indoor-zoom" role="group" aria-label="縮放">
-                <button aria-label="放大" onClick={() => zoomAt(1 / 1.4)} type="button">+</button>
-                <button aria-label="縮小" onClick={() => zoomAt(1.4)} type="button">−</button>
+                <button aria-label="放大" onClick={() => zoomStep(1 / 1.5)} type="button">+</button>
+                <button aria-label="縮小" onClick={() => zoomStep(1.5)} type="button">−</button>
               </div>
               <p className="indoor-hint">{position >= 0 && floorsHere.length > 1 ? `${position + 1} / ${floorsHere.length} 層・` : ""}{stats.all} 個空間・{fmt(stats.area)} m²・財物 {fmt(stats.assets)} 筆</p>
 
