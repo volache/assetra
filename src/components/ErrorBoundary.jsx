@@ -4,10 +4,10 @@ import React from "react";
 // remounted on every page switch (the parent keys it by page), so moving to another
 // page always recovers; "重新載入" covers the case where a lazy chunk failed to load.
 export class ErrorBoundary extends React.Component {
-  state = { failed: false };
+  state = { failed: false, message: "" };
 
-  static getDerivedStateFromError() {
-    return { failed: true };
+  static getDerivedStateFromError(error) {
+    return { failed: true, message: String(error?.message || error) };
   }
 
   componentDidCatch(error) {
@@ -21,6 +21,7 @@ export class ErrorBoundary extends React.Component {
         <div className="empty-state" role="alert">
           <h2>這個畫面暫時無法顯示</h2>
           <p>請重新載入頁面；若問題持續發生，請改用左側選單切換到其他功能，並通知管理員。</p>
+          {import.meta.env.DEV && <p className="muted">開發模式錯誤訊息：{this.state.message}</p>}
           <button
             className="button button-primary"
             onClick={() => window.location.reload()}
