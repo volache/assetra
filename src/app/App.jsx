@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Login } from "../features/auth/Login";
 import { fromDatabaseAsset, fromDatabaseImport } from "../lib/inventory";
+import { fetchFunction } from "../lib/functions";
 import { loadStore, saveStore } from "../lib/local-store";
 import { authEmailFor, supabase } from "../supabase";
 import { Portal } from "./Portal";
@@ -55,21 +56,12 @@ export function App() {
     };
   };
   const refreshUsers = async () => {
-    const {
-      data: { session: authSession },
-    } = await supabase.auth.getSession();
-    if (!authSession) return;
-    const response = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/manage-users`,
-      {
-        headers: {
-          Authorization: `Bearer ${authSession.access_token}`,
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-        },
-      },
-    );
-    if (!response.ok) return;
-    const { users = [] } = await response.json();
+    let users;
+    try {
+      ({ users = [] } = await fetchFunction("manage-users", { method: "GET" }));
+    } catch {
+      return;
+    }
     setStore((current) => ({
       ...current,
       users: users.map((u) => ({

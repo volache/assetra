@@ -1,14 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { CapsuleSpinner, useFeedback } from "../../components/FeedbackCenter";
+import { fetchFunction } from "../../lib/functions";
 import { supabase } from "../../supabase";
 
-async function requestSettings(method, body) {
-  const { data: { session } } = await supabase.auth.getSession();
-  const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/manage-ai-settings`, { method, headers: { Authorization: `Bearer ${session.access_token}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "無法更新設定。");
-  return result;
-}
+const requestSettings = (method, body) =>
+  fetchFunction("manage-ai-settings", { method, body, fallback: "無法更新設定。" });
 
 export function PersonalSettings() {
   const [key, setKey] = useState("");

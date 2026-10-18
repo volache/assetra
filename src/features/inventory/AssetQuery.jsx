@@ -5,7 +5,7 @@ import { requestCollaboration } from "../collaboration/api";
 import { AssetPhotoPicker } from "../photos/AssetPhotoPicker";
 import { FilterCombo, HighlightText, SearchRuleMenu } from "./QueryControls";
 import { CapsuleSpinner, useFeedback } from "../../components/FeedbackCenter";
-import { supabase } from "../../supabase";
+import { fetchFunction } from "../../lib/functions";
 import {
   assetNumberCollator,
   collaborationFilterOptions,
@@ -518,13 +518,7 @@ export function AssetQuery({
     setAiClarification(null); setClarificationText(""); setAiAnalysis(result.analysis || null);
     setAiReport({ question: result.question || fallbackQuestion, modelVersion: result.modelVersion || null, summary: result.summary, explanation: result.explanation, analysisDescription: result.analysisDescription, conditionGroups: result.conditionGroups || [], scopeCount: result.scopeCount, trace: [...(result.trace || []), ...(asRules ? ["轉成可編輯的搜尋條件"] : [])] });
   }
-  async function callAiQuery(body) {
-    const { data: { session } } = await supabase.auth.getSession();
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/semantic-asset-query`, { method: "POST", headers: { Authorization: `Bearer ${session.access_token}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error);
-    return result;
-  }
+  const callAiQuery = (body) => fetchFunction("semantic-asset-query", { body });
   async function runAiSearch() {
     if (!term.trim()) return;
     // Already written as search rules: run them here, no AI call needed.

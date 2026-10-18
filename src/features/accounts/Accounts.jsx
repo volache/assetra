@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { supabase } from "../../supabase";
+import { fetchFunction } from "../../lib/functions";
 import { accountCodeFor } from "../../lib/accounts";
 import { roleDescriptions, roleLabels } from "../../lib/labels";
 import { HighlightText } from "../../components/HighlightText";
@@ -363,35 +363,21 @@ export function Accounts({ store, setStore, onUsersChanged }) {
     setIsSaving(true);
     try {
       await run(async () => {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        const response = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/manage-users`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${session.access_token}`,
-              apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              action: editingId ? "update" : "create",
-              id: editingId,
-              accountCode: form.accountCode,
-              displayName: form.name,
-              title: form.title,
-              contactEmail: form.email,
-              password: form.password || undefined,
-              roles: form.roles,
-              status: form.status,
-              unitCodes: form.unitCode ? [form.unitCode] : [],
-              custodianCodes: form.custodianCode ? [form.custodianCode] : [],
-            }),
+        await fetchFunction("manage-users", {
+          body: {
+            action: editingId ? "update" : "create",
+            id: editingId,
+            accountCode: form.accountCode,
+            displayName: form.name,
+            title: form.title,
+            contactEmail: form.email,
+            password: form.password || undefined,
+            roles: form.roles,
+            status: form.status,
+            unitCodes: form.unitCode ? [form.unitCode] : [],
+            custodianCodes: form.custodianCode ? [form.custodianCode] : [],
           },
-        );
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error);
+        });
         await onUsersChanged();
       }, {
         loading: editingId ? "正在儲存使用者資料…" : "正在建立使用者…",
