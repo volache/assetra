@@ -129,3 +129,16 @@ export function floorFromTracedFile(data) {
   const bounds = xs.length ? [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] : null;
   return { title: data.title, unit: data.unit || "cm", bounds, spaces, links };
 }
+
+// ---- looks ----------------------------------------------------------------------------------------------------------
+/** The box around one room on screen: [minX, minY, maxX, maxY]. */
+export function spaceBounds(space, mode) {
+  return screenBounds([space], mode);
+}
+
+/** Pale cream for no assets up to the system's coral for the busiest room on the floor (log scale, so one crowded room does not wash out the rest). */
+export function heatFill(count, max) {
+  if (!count || !max) return null;
+  const t = Math.min(1, Math.log1p(count) / Math.log1p(max));
+  return `oklch(${(95 - 27 * t).toFixed(1)}% ${(0.035 + 0.12 * t).toFixed(3)} ${(75 - 38 * t).toFixed(0)})`;
+}

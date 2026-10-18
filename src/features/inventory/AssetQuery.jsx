@@ -25,6 +25,7 @@ import {
   tokenizeSearch,
 } from "./search";
 import { KeywordSearchBox } from "./KeywordSearchBox";
+import { LocationMap } from "../indoor/LocationMap";
 import { rememberSearch } from "./searchHistory";
 // The derived fields every row carries for searching and display.
 function enrichAsset(asset) {
@@ -40,8 +41,13 @@ const compareByAssetNumber = (left, right) =>
   assetNumberCollator.compare(String(left.serialNo || ""), String(right.serialNo || ""));
 export function AssetQuery({
   assets,
+  assetFocus,
   focusTask,
   imports,
+  locationFocus,
+  onAssetFocusHandled,
+  onLocationFocusHandled,
+  onShowOnPlan,
   onTaskFocusHandled,
   user,
 }) {
@@ -61,6 +67,9 @@ export function AssetQuery({
   );
   const [photoFilter, setPhotoFilter] = useState("");
   const [collaborationFilter, setCollaborationFilter] = useState("");
+  // set when the list is opened from a room on the floor plan: only that 存置地點 code, shown as a removable chip
+  const [locationCode, setLocationCode] = useState("");
+  const [locationLabel, setLocationLabel] = useState("");
   const [flagged, setFlagged] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(defaultPageSize);
@@ -180,10 +189,11 @@ export function AssetQuery({
             matches(asset) &&
             matchesFlags(asset) &&
             matchesAdvancedSearch(asset, appliedTerm) &&
+            (!locationCode || asset.locationCode === locationCode) &&
             (!aiAssetIds || aiAssetIds.has(asset.identityId)),
         )
         .sort(compareByAssetNumber),
-    [sourceRows, filters, appliedTerm, aiAssetIds, photoFilter, collaborationFilter, flagged],
+    [sourceRows, filters, appliedTerm, aiAssetIds, photoFilter, collaborationFilter, flagged, locationCode],
   );
   const highlightTermsFor = useMemo(
     () => highlightTermsFactory(appliedTerm, filters),
@@ -201,6 +211,7 @@ export function AssetQuery({
     Number(Boolean(appliedTerm)) +
     Number(Boolean(photoFilter)) +
     Number(Boolean(collaborationFilter)) +
+    Number(Boolean(locationCode)) +
     Number(source !== "all");
   function loadFlagged() {
     requestCollaboration({ action: "flagged" })
@@ -224,11 +235,12 @@ export function AssetQuery({
     source,
     photoFilter,
     collaborationFilter,
+    locationCode,
     ...filterFields.map(([key]) => filters[key]),
   ]);
   useEffect(() => {
     if (defaultFilterApplied.current) return;
-    if (focusTask?.identityId) {
+    if (focusTask?.identityId || locationFocus?.requestId || assetFocus?.requestId) {
       defaultFilterApplied.current = true;
       return;
     }
@@ -240,6 +252,49 @@ export function AssetQuery({
     );
     if (own) setFilters((current) => ({ ...current, custodianName: own.custodianName }));
   }, [assets, focusTask?.identityId, user]);
+  // opened from the floor plan: one 存置地點, or one asset to show
+  useEffect(() => {
+    if (!locationFocus?.requestId) return;
+    setTerm("");
+    setAppliedTerm("");
+    setAiReport(null);
+    setAiAnalysis(null);
+    setAiClarification(null);
+    setAiAssetIds(null);
+    setSource("all");
+    setPhotoFilter("");
+    setCollaborationFilter("");
+    setFilters(Object.fromEntries(filterFields.map(([key]) => [key, ""])));
+    setLocationCode(locationFocus.code);
+    setLocationLabel(locationFocus.name || "");
+    onLocationFocusHandled?.();
+  }, [locationFocus?.requestId]);
+  useEffect(() => {
+    if (!assetFocus?.requestId) return;
+    const asset = assets.find((item) => item.id === assetFocus.id || (assetFocus.identityId && item.identityId === assetFocus.identityId));
+    if (!asset) {
+      onAssetFocusHandled?.();
+      return;
+    }
+    const orderedAssets = [...assets].sort(compareByAssetNumber);
+    const position = orderedAssets.findIndex((item) => item.id === asset.id);
+    setTerm("");
+    setAppliedTerm("");
+    setAiReport(null);
+    setAiAnalysis(null);
+    setAiClarification(null);
+    setAiAssetIds(null);
+    setSource("all");
+    setPhotoFilter("");
+    setCollaborationFilter("");
+    setLocationCode("");
+    setFilters(Object.fromEntries(filterFields.map(([key]) => [key, ""])));
+    window.requestAnimationFrame(() => {
+      setCurrentPage(Math.floor(Math.max(0, position) / pageSize) + 1);
+      setExpandedId(asset.id);
+      onAssetFocusHandled?.();
+    });
+  }, [assetFocus?.requestId]);
   useEffect(() => {
     if (!focusTask?.identityId) return;
     const asset = assets.find((item) => item.identityId === focusTask.identityId);
@@ -397,6 +452,7 @@ export function AssetQuery({
     setSource("all");
     setPhotoFilter("");
     setCollaborationFilter("");
+    setLocationCode("");
   }
   function resetAiState() {
     setAiReport(null);
@@ -667,6 +723,13 @@ export function AssetQuery({
           </div>
         </fieldset>
       </section>
+      {locationCode && (
+        <div className="query-location-filter" role="status">
+          <span>只列出存置地點 <strong>{locationCode}</strong>{locationLabel ? `　${locationLabel}` : ""}</span>
+          {onShowOnPlan && <button className="row-action" onClick={() => onShowOnPlan({ locationCode })} type="button">在平面圖查看</button>}
+          <button className="row-action" onClick={() => { setLocationCode(""); setLocationLabel(""); }} type="button">清除</button>
+        </div>
+      )}
       <div className="result-summary">
         <p className="result-count">
           查詢結果：<strong>{rows.length.toLocaleString()}</strong> 筆
@@ -838,6 +901,9 @@ export function AssetQuery({
                           >
                             {expandedId === a.id ? "收合" : "展開"}
                           </button>
+                          {a.locationCode && onShowOnPlan && (
+                            <button className="row-action" onClick={() => onShowOnPlan(a)} title="在室內平面圖上查看這筆財物放在哪裡" type="button">位置</button>
+                          )}
                           {a.identityId && (() => {
                             const photoCount = collaborationSummaries[a.identityId]?.photoCount || 0;
                             return <button aria-label={`照片${photoCount ? `，共 ${photoCount} 張` : ""}`} className="row-action asset-photo-action" onClick={() => setPhotoPickerAsset(a)} type="button">照片{photoCount ? <span className="collaboration-count-badge">{photoCount}</span> : null}</button>;
@@ -887,6 +953,9 @@ export function AssetQuery({
                                 </div>
                               ))}
                             </dl>
+                            {expandedId === a.id && a.locationCode && (
+                              <LocationMap locationCode={a.locationCode} locationName={a.locationName} onShowOnPlan={() => onShowOnPlan?.(a)} />
+                            )}
                           </div>
                         </div>
                       </td>

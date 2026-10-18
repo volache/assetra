@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useEffect, useMemo, useRef } from "react";
+import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { roleLabels } from "../lib/labels";
 import { applyOfficialPersonnelNames } from "../lib/personnel";
 
@@ -63,6 +63,23 @@ export function Portal({
   refreshInventory,
 }) {
   const canAdmin = user.roles.includes("admin");
+  // hand-overs between 財物查詢 and 室內平面圖: which room to show, which list to open, which asset to show
+  const [indoorFocus, setIndoorFocus] = useState(null);
+  const [queryLocation, setQueryLocation] = useState(null);
+  const [assetFocus, setAssetFocus] = useState(null);
+  const showOnPlan = (asset) => {
+    if (!asset?.locationCode) return;
+    setIndoorFocus({ code: asset.locationCode, assetId: asset.id || null, requestId: Date.now() });
+    setPage("indoor");
+  };
+  const openLocationInQuery = ({ code, name }) => {
+    setQueryLocation({ code, name, requestId: Date.now() });
+    setPage("query");
+  };
+  const openAssetInQuery = (asset) => {
+    setAssetFocus({ id: asset.id, identityId: asset.identityId, requestId: Date.now() });
+    setPage("query");
+  };
   const canChief = user.roles.includes("chief");
   const visible = useMemo(
     () => applyOfficialPersonnelNames(store.assets, [...store.users, user]),
@@ -155,6 +172,11 @@ export function Portal({
                 focusTask={taskFocus}
                 imports={store.imports}
                 onTaskFocusHandled={onTaskFocusHandled}
+                assetFocus={assetFocus}
+                onAssetFocusHandled={() => setAssetFocus(null)}
+                locationFocus={queryLocation}
+                onLocationFocusHandled={() => setQueryLocation(null)}
+                onShowOnPlan={showOnPlan}
               />
             )}
             {page === "tasks" && <CollaborationTasks onOpenTask={onOpenTask} />}
@@ -168,7 +190,16 @@ export function Portal({
               />
             )}
             {page === "geo" && canAdmin && <GeographicAssets />}
-            {page === "indoor" && <IndoorPlans canAdmin={canAdmin} />}
+            {page === "indoor" && (
+              <IndoorPlans
+                assets={visible}
+                canAdmin={canAdmin}
+                focus={indoorFocus}
+                onFocusHandled={() => setIndoorFocus(null)}
+                onOpenAsset={openAssetInQuery}
+                onOpenInQuery={openLocationInQuery}
+              />
+            )}
             {page === "accounts" && canAdmin && (
               <Accounts
                 store={{ ...store, assets: visible }}

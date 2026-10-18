@@ -1,110 +1,128 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../supabase";
 import { CapsuleSpinner } from "../../components/FeedbackCenter";
-import { deleteSpace, importTracedFiles, loadIndoor, saveSpace } from "./indoorData";
-import { CATEGORIES, SPACE_TYPE_LABELS, categoryOf, labelPoint, project, screenBounds, spacePath, spaceTitle } from "./geometry";
+import { AssetList } from "./AssetList";
+import { deleteSpace, importTracedFiles, saveSpace } from "./indoorData";
+import { useIndoorStore } from "./indoorStore";
+import { SPACE_TYPE_LABELS, heatFill, labelPoint, project, screenBounds, spaceBounds, spacePath, spaceTitle } from "./geometry";
+import { buildPlanIndex, roomsOfCode, searchAssets } from "./planIndex";
 import { RoomEditorDialog } from "./RoomEditorDialog";
 
 const SLAB = 120;               // thickness of the floor slab in the angled view, in drawing units
-const MARGIN = 0.07;
-const CATEGORY_ICONS = {
-  office: <path d="M4 8h16v11H4zM9 8V5.5h6V8M4 13h16" />,
-  machine: <path d="M5 4h14v6H5zM5 14h14v6H5zM8 7h.01M8 17h.01M12 7h4M12 17h4" />,
-  toilet: <path d="M8 4.5a1.7 1.7 0 1 1 0 3.4 1.7 1.7 0 0 1 0-3.4ZM5.5 20v-7l-1-3.5h7L10.5 13v7M16 4.5a1.7 1.7 0 1 1 0 3.4 1.7 1.7 0 0 1 0-3.4ZM13.5 20l2.5-6 2.5 6M13.5 11.5h5" />,
-  storage: <path d="M4 7.5 12 4l8 3.5v9L12 20l-8-3.5zM4 7.5l8 3.5 8-3.5M12 11v9" />,
-};
+const MARGIN = 0.06;
 const fmt = (number, digits = 0) => Number(number || 0).toLocaleString("zh-TW", { maximumFractionDigits: digits, minimumFractionDigits: digits });
 
-function useIndoorData(client) {
-  const [state, setState] = useState({ loading: true, error: "", data: null });
-  const reload = useCallback(async () => {
-    if (!client) { setState({ loading: false, error: "尚未設定 Supabase 連線。", data: null }); return; }
-    try { setState({ loading: false, error: "", data: await loadIndoor(client) }); }
-    catch (cause) { setState({ loading: false, error: cause.message, data: null }); }
-  }, [client]);
-  useEffect(() => { reload(); }, [reload]);
-  return { ...state, reload };
-}
+/**
+ * 室內平面圖.  The whole page fits one screen height like 地理圖資: a room list on the left (it scrolls inside), the plan in the
+ * middle, and, once a room is picked, its assets in a column on the right (that scrolls inside too).
+ *
+ * assets            the inventory this person may see (the same list 財物查詢 uses)
+ * focus             { code, assetId, requestId }: open on the room(s) of a 存置地點 code, from 財物查詢
+ * onOpenAsset       show one asset in 財物查詢
+ * onOpenInQuery     list a 存置地點's assets in 財物查詢
+ */
+export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAsset, onOpenInQuery, client = supabase }) {
+  const { loading, error, data, reload } = useIndoorStore({ client });
+  const index = useMemo(() => (data ? buildPlanIndex(data, assets) : null), [data, assets]);
 
-export function IndoorPlans({ canAdmin, client = supabase }) {
-  const { loading, error, data, reload } = useIndoorData(client);
   const [building, setBuilding] = useState("");
   const [floorId, setFloorId] = useState("");
   const [selectedId, setSelectedId] = useState(null);
   const [hoverId, setHoverId] = useState(null);
+  const [highlightAsset, setHighlightAsset] = useState(null);
+  const [unlocated, setUnlocated] = useState(null);            // null = closed, "" = the list of codes, else one code
   const [term, setTerm] = useState("");
   const [mode, setMode] = useState("iso");
+  const [colorBy, setColorBy] = useState("assets");
   const [editingId, setEditingId] = useState(null);
   const [view, setView] = useState(null);
+  const [flyId, setFlyId] = useState(null);
   const [importing, setImporting] = useState(false);
   const [report, setReport] = useState(null);
+  const [fullscreen, setFullscreen] = useState(false);
   const svgRef = useRef(null);
   const fileRef = useRef(null);
   const dragRef = useRef(null);
+  const workbenchRef = useRef(null);
 
-  const floors = data?.floors || [];
+  const floors = index?.floors || [];
   const buildings = useMemo(() => [...new Set(floors.map((floor) => floor.building))], [floors]);
   const floorsHere = useMemo(() => floors.filter((floor) => floor.building === building), [floors, building]);
-  const floor = floors.find((item) => item.id === floorId) || null;
+  const floor = index?.floorById.get(floorId) || null;
 
   // first load: open the first building on its ground floor
   useEffect(() => {
     if (!floors.length || floors.some((item) => item.id === floorId)) return;
     const first = floors[0].building;
     const here = floors.filter((item) => item.building === first);
-    const start = here.find((item) => /^一樓/.test(item.label)) || here[0];
-    setBuilding(first); setFloorId(start.id);
+    setBuilding(first); setFloorId((here.find((item) => /^一樓/.test(item.label)) || here[0]).id);
   }, [floors, floorId]);
 
-  const countByCode = useMemo(() => new Map((data?.summary || []).map((row) => [row.location_code, row.asset_count])), [data]);
-  const linksBySpace = useMemo(() => {
-    const map = new Map();
-    for (const link of data?.links || []) { if (!map.has(link.space_id)) map.set(link.space_id, []); map.get(link.space_id).push(link); }
-    for (const list of map.values()) list.sort((a, b) => Number(b.is_primary) - Number(a.is_primary));
-    return map;
-  }, [data]);
-  const spaces = useMemo(() => (data?.spaces || []).filter((space) => space.floor_id === floorId), [data, floorId]);
-  const assetsOf = useCallback((space) => (linksBySpace.get(space.id) || []).reduce((sum, link) => sum + (countByCode.get(link.location_code) || 0), 0), [linksBySpace, countByCode]);
+  const spaces = useMemo(() => index?.spacesByFloor.get(floorId) || [], [index, floorId]);
+  const countOf = useCallback((space) => index?.countOfSpace(space.id) || 0, [index]);
+  const maxCount = useMemo(() => Math.max(0, ...spaces.filter((space) => space.space_type !== "void").map(countOf)), [spaces, countOf]);
 
   const stats = useMemo(() => {
+    if (!index) return { area: 0, rooms: 0, assets: 0, all: 0 };
     const codes = new Set();
-    const counts = Object.fromEntries(CATEGORIES.map((category) => [category.id, 0]));
     let area = 0, rooms = 0;
     for (const space of spaces) {
       if (space.space_type === "void") continue;
       area += Number(space.area_m2) || 0;
       if (space.space_type === "room") rooms += 1;
-      const category = categoryOf(space);
-      if (category) counts[category] += 1;
-      for (const link of linksBySpace.get(space.id) || []) codes.add(link.location_code);
+      for (const link of index.linksBySpace.get(space.id) || []) codes.add(link.location_code);
     }
-    let assets = 0;
-    for (const code of codes) assets += countByCode.get(code) || 0;
-    return { area, rooms, locations: codes.size, assets, counts, all: spaces.filter((space) => space.space_type !== "void").length };
-  }, [spaces, linksBySpace, countByCode]);
+    let count = 0;
+    for (const code of codes) count += index.countByCode.get(code) || 0;
+    return { area, rooms, assets: count, all: spaces.filter((space) => space.space_type !== "void").length };
+  }, [index, spaces]);
 
+  // ---- search: rooms by name or code, assets by name or number
   const query = term.trim().toLowerCase();
   const matches = useCallback((space) => {
     if (!query) return true;
-    const codes = (linksBySpace.get(space.id) || []).map((link) => `${link.location_code} ${link.location_name || ""}`).join(" ");
+    const codes = (index?.linksBySpace.get(space.id) || []).map((link) => `${link.location_code} ${link.location_name || ""}`).join(" ");
     return `${space.name || ""} ${space.usage || ""} ${space.tool_id || ""} ${codes}`.toLowerCase().includes(query);
-  }, [query, linksBySpace]);
+  }, [query, index]);
   const listed = useMemo(() => spaces.filter((space) => space.space_type !== "void" && matches(space)).sort((a, b) => {
-    const rank = (space) => ((linksBySpace.get(space.id) || []).length ? 0 : space.name ? 1 : space.usage ? 2 : 3);
+    const rank = (space) => ((index.linksBySpace.get(space.id) || []).length ? 0 : space.name ? 1 : space.usage ? 2 : 3);
     return rank(a) - rank(b) || spaceTitle(a).localeCompare(spaceTitle(b), "zh-Hant");
-  }), [spaces, matches, linksBySpace]);
+  }), [spaces, matches, index]);
+  const assetHits = useMemo(() => (index ? searchAssets(index, term) : { list: [], total: 0 }), [index, term]);
+  const hitSpaces = useMemo(() => {
+    const ids = new Set();
+    if (index && query) for (const asset of assetHits.list) for (const id of index.spacesByCode.get(asset.locationCode) || []) ids.add(id);
+    return ids;
+  }, [index, query, assetHits]);
 
-  const selected = spaces.find((space) => space.id === selectedId) || null;
-  const editing = (data?.spaces || []).find((space) => space.id === editingId) || null;
+  const selected = selectedId ? index?.spaceById.get(selectedId) || null : null;
+  const editing = editingId ? index?.spaceById.get(editingId) || null : null;
+  const selectedAssets = useMemo(() => (selected ? index.assetsOfSpace(selected.id) : []), [index, selected]);
+  const selectedLinks = selected ? index.linksBySpace.get(selected.id) || [] : [];
 
-  // fit the floor into the frame whenever the floor or the angle changes
-  const fit = useCallback(() => {
+  // ---- the view: fit the floor, zoom, pan, fly to a room
+  const frame = useCallback(() => {
     const [x0, y0, x1, y1] = screenBounds(spaces, mode, mode === "iso" ? SLAB : 0);
     const w = Math.max(x1 - x0, 1), h = Math.max(y1 - y0, 1), m = Math.max(w, h) * MARGIN;
-    setView({ x: x0 - m, y: y0 - m, w: w + 2 * m, h: h + 2 * m, full: Math.max(w + 2 * m, h + 2 * m) });
+    return { x: x0 - m, y: y0 - m, w: w + 2 * m, h: h + 2 * m, full: Math.max(w + 2 * m, h + 2 * m) };
   }, [spaces, mode]);
-  useEffect(() => { fit(); setSelectedId(null); setHoverId(null); }, [floorId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const fit = useCallback(() => setView(frame()), [frame]);
   useEffect(() => { fit(); }, [spaces, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  // after the floor has changed (the effect above ran first), zoom to the room that was asked for
+  useEffect(() => {
+    if (!flyId) return;
+    const space = index?.spaceById.get(flyId);
+    if (space && space.floor_id === floorId) {
+      const whole = frame();
+      const [x0, y0, x1, y1] = spaceBounds(space, mode);
+      const size = Math.min(whole.full, Math.max(Math.max(x1 - x0, y1 - y0) * 1.8, whole.full / 7));
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+      setView({ x: cx - size / 2, y: cy - size / 2, w: size, h: size, full: whole.full });
+    }
+    setFlyId(null);
+  }, [flyId, spaces, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  // moving to another floor yourself clears what was picked on the old one
+  const changeFloor = useCallback((id) => { setFloorId(id); setSelectedId(null); setHoverId(null); setHighlightAsset(null); }, []);
 
   const zoomAt = useCallback((factor, clientX, clientY) => {
     setView((current) => {
@@ -127,7 +145,6 @@ export function IndoorPlans({ canAdmin, client = supabase }) {
     svg.addEventListener("wheel", onWheel, { passive: false });
     return () => svg.removeEventListener("wheel", onWheel);
   });
-
   function startDrag(event) {
     if (event.button !== 0 || !view) return;
     const start = { x: event.clientX, y: event.clientY, view, moved: false };
@@ -143,14 +160,42 @@ export function IndoorPlans({ canAdmin, client = supabase }) {
     const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.setTimeout(() => { dragRef.current = null; }, 0); };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   }
-  const clicked = (id) => { if (!dragRef.current?.moved) setSelectedId((current) => (current === id ? null : id)); };
 
-  const changeFloor = (next) => { if (next) setFloorId(next.id); };
-  const index = floorsHere.findIndex((item) => item.id === floorId);
+  // ---- choosing things
+  const pickRoom = useCallback((id, { fly = false, asset = null } = {}) => {
+    const space = index?.spaceById.get(id);
+    if (!space) return;
+    const target = index.floorById.get(space.floor_id);
+    if (target) { setBuilding(target.building); if (target.id !== floorId) setFloorId(target.id); }
+    setUnlocated(null); setSelectedId(id); setHighlightAsset(asset);
+    if (fly) setFlyId(id);
+  }, [index, floorId]);
+  const clickRoom = (id) => { if (!dragRef.current?.moved) { if (selectedId === id) setSelectedId(null); else pickRoom(id); } };
   const chooseBuilding = (name) => {
     const here = floors.filter((item) => item.building === name);
-    setBuilding(name); setFloorId((here.find((item) => /^一樓/.test(item.label)) || here[0]).id); setTerm("");
+    setBuilding(name); changeFloor((here.find((item) => /^一樓/.test(item.label)) || here[0]).id); setTerm(""); setUnlocated(null);
   };
+  const goToCode = useCallback((code, assetId = null) => {
+    const places = roomsOfCode(index, code);
+    if (!places.length) { setSelectedId(null); setUnlocated(code); setHighlightAsset(assetId); return; }
+    const here = places.find((item) => item.floor.id === floorId) || places[0];
+    pickRoom(here.space.id, { fly: true, asset: assetId });
+  }, [index, floorId, pickRoom]);
+
+  // opened from 財物查詢
+  useEffect(() => {
+    if (!focus?.requestId || !index) return;
+    goToCode(focus.code, focus.assetId || null);
+    onFocusHandled?.();
+  }, [focus?.requestId, index]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // fullscreen
+  useEffect(() => {
+    const onChange = () => setFullscreen(document.fullscreenElement === workbenchRef.current);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+  const toggleFullscreen = () => { if (document.fullscreenElement) document.exitFullscreen(); else workbenchRef.current?.requestFullscreen?.()?.catch?.(() => {}); };
 
   async function runImport(files) {
     if (!files.length) return;
@@ -162,8 +207,12 @@ export function IndoorPlans({ canAdmin, client = supabase }) {
   }
 
   const ordered = ["void", "public", "room"].flatMap((type) => spaces.filter((space) => space.space_type === type));
+  const solid = ordered.filter((space) => space.space_type !== "void");
   const showLabels = view && view.full / view.w >= 2.4;
   const tag = selected || spaces.find((space) => space.id === hoverId) || null;
+  const drawerOpen = Boolean(selected) || unlocated !== null;
+  const position = floorsHere.findIndex((item) => item.id === floorId);
+  const unlocatedAssets = unlocated ? index?.assetsByCode.get(unlocated) || [] : [];
 
   return (
     <section className="page geographic-page indoor-page">
@@ -171,7 +220,7 @@ export function IndoorPlans({ canAdmin, client = supabase }) {
         <div>
           <p className="eyebrow">INDOOR FLOOR PLANS</p>
           <h1>室內平面圖</h1>
-          <p>依描圖工具整理的房間範圍，對照存置地點與財物筆數；點選房間可查看對應的代碼與面積。</p>
+          <p>在平面圖上點選房間，就能看到存放在那裡的所有財物；也可以直接搜尋財物，找出它在哪個房間。</p>
         </div>
         {canAdmin && (
           <div className="geo-page-actions">
@@ -188,47 +237,67 @@ export function IndoorPlans({ canAdmin, client = supabase }) {
           <button className="text-button" onClick={() => setReport(null)} type="button">關閉</button>
         </div>
       )}
-      {loading ? <p className="muted">正在讀取平面圖…</p> : error ? <p className="form-error" role="alert">{error}</p> : !floors.length || !data.spaces.length ? (
+      {loading ? <p className="muted">正在讀取平面圖…</p> : error && !index ? <p className="form-error" role="alert">{error}</p> : !index || !floors.length || !data.spaces.length ? (
         <p className="muted">尚未匯入平面圖資料。{canAdmin ? "請按右上角「匯入平面圖資料」，選取描圖工具存出的 .rooms.json。" : "請洽系統管理員。"}</p>
       ) : (
-        <section className="geo-workbench indoor-workbench">
+        <section className={`geo-workbench indoor-workbench ${drawerOpen ? "has-drawer" : ""}`} ref={workbenchRef}>
           <aside className="geo-list-panel">
             <header>
               <h2>房間清單</h2>
-              <div className="geo-list-header-actions"><strong>{listed.length} 筆</strong>{canAdmin && selected && <button className="row-action" onClick={() => setEditingId(selected.id)} type="button">編輯</button>}</div>
+              <div className="geo-list-header-actions"><strong>{listed.length} 間</strong>{canAdmin && selected && <button className="row-action" onClick={() => setEditingId(selected.id)} type="button">編輯</button>}</div>
             </header>
             <label className="geo-search">
-              <span className="sr-only">搜尋房間</span>
-              <input onChange={(event) => setTerm(event.target.value)} placeholder="名稱、代碼、空間用途…" value={term} />
+              <span className="sr-only">搜尋房間或財物</span>
+              <input onChange={(event) => setTerm(event.target.value)} placeholder="房間、代碼，或財物名稱、編號…" value={term} />
             </label>
             <div className="geo-list-scroll">
+              {query && <p className="indoor-list-heading">房間 {listed.length}</p>}
               {listed.length ? listed.map((space) => {
-                const links = linksBySpace.get(space.id) || [];
+                const links = index.linksBySpace.get(space.id) || [];
+                const count = countOf(space);
                 return (
-                  <button aria-pressed={selectedId === space.id} className={`geo-list-item ${selectedId === space.id ? "is-selected" : ""}`} key={space.id} onClick={() => setSelectedId(space.id)} onMouseEnter={() => setHoverId(space.id)} onMouseLeave={() => setHoverId(null)} type="button">
+                  <button aria-pressed={selectedId === space.id} className={`geo-list-item ${selectedId === space.id ? "is-selected" : ""}`} key={space.id} onClick={() => pickRoom(space.id, { fly: true })} onMouseEnter={() => setHoverId(space.id)} onMouseLeave={() => setHoverId(null)} type="button">
                     <span aria-hidden="true" className="geo-list-map-icon"><svg fill="none" viewBox="0 0 24 24"><path d="M4 5h16v14H4zM4 11h8M12 5v14" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.8" /></svg></span>
                     <div>
                       <strong>{spaceTitle(space)}</strong>
-                      <small>{links.length ? links.map((link) => link.location_code).join("、") : space.name && space.usage ? space.usage : "未對應存置地點"}</small>
+                      <small>{links.length ? links.map((link) => link.location_code).join("、") : "未對應存置地點"}</small>
                     </div>
-                    <em>{fmt(space.area_m2, 1)} m²</em>
+                    <em>{count ? `${fmt(count)} 筆` : "—"}</em>
                   </button>
                 );
-              }) : <p className="geo-no-result">沒有符合的房間。</p>}
+              }) : !query && <p className="geo-no-result">這一層沒有房間。</p>}
+              {query && assetHits.total > 0 && (
+                <>
+                  <p className="indoor-list-heading">財物 {assetHits.total > assetHits.list.length ? `${assetHits.list.length}+（共 ${fmt(assetHits.total)}）` : assetHits.total}</p>
+                  {assetHits.list.map((asset) => {
+                    const places = roomsOfCode(index, asset.locationCode);
+                    const here = places.find((item) => item.floor.id === floorId) || places[0];
+                    return (
+                      <button className="geo-list-item indoor-asset-hit" key={asset.id} onClick={() => goToCode(asset.locationCode, asset.id)} type="button">
+                        <span aria-hidden="true" className="geo-list-map-icon"><svg fill="none" viewBox="0 0 24 24"><path d="m4 7.5 8-3.5 8 3.5v9l-8 3.5-8-3.5zM4 7.5l8 3.5 8-3.5M12 11v9" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.8" /></svg></span>
+                        <div><strong>{asset.name || "未命名財物"}</strong><small>{asset.assetNo}{asset.serialNo ? `-${asset.serialNo}` : ""}</small></div>
+                        <em>{here ? `${here.floor.label}${places.length > 1 ? " 等" : ""}` : "未定位"}</em>
+                      </button>
+                    );
+                  })}
+                </>
+              )}
+              {query && !listed.length && !assetHits.total && <p className="geo-no-result">沒有符合的房間或財物。</p>}
             </div>
             <footer>
-              <div><span>目前筆數</span><strong>{listed.length} 筆</strong></div>
               <div><span>樓層面積</span><strong>{fmt(stats.area, 1)} m²</strong></div>
               <div><span>對應財物</span><strong>{fmt(stats.assets)} 筆</strong></div>
+              {index.hasAssets && index.unlocated.length > 0 && (
+                <button className="indoor-unlocated" onClick={() => { setSelectedId(null); setUnlocated(unlocated === null ? "" : null); }} type="button">
+                  <span>未定位財物</span><strong>{fmt(index.unlocatedCount)} 筆 ›</strong>
+                </button>
+              )}
             </footer>
           </aside>
 
           <section aria-label="室內平面圖" className="geo-map-panel indoor-map-panel">
             <header>
-              <div>
-                <span className="geo-live-dot" />
-                {floor ? `${floor.building} ${floor.label}` : "平面圖"}
-              </div>
+              <div><span className="geo-live-dot" />{floor ? `${floor.building} ${floor.label}` : "平面圖"}　<span className="indoor-info">{stats.all} 個空間・{fmt(stats.area)} m²・財物 {fmt(stats.assets)} 筆</span></div>
               <div className="geo-map-actions">
                 <span aria-label="選擇建築物" className="geo-basemap-toggle">
                   {buildings.map((name) => <button aria-pressed={building === name} className={building === name ? "is-active" : ""} key={name} onClick={() => chooseBuilding(name)} type="button">{name}</button>)}
@@ -237,95 +306,115 @@ export function IndoorPlans({ canAdmin, client = supabase }) {
                   <button aria-pressed={mode === "iso"} className={mode === "iso" ? "is-active" : ""} onClick={() => setMode("iso")} type="button">立體</button>
                   <button aria-pressed={mode === "flat"} className={mode === "flat" ? "is-active" : ""} onClick={() => setMode("flat")} type="button">平面</button>
                 </span>
+                <span aria-label="顏色依據" className="geo-basemap-toggle">
+                  <button aria-pressed={colorBy === "assets"} className={colorBy === "assets" ? "is-active" : ""} onClick={() => setColorBy("assets")} type="button">財物筆數</button>
+                  <button aria-pressed={colorBy === "type"} className={colorBy === "type" ? "is-active" : ""} onClick={() => setColorBy("type")} type="button">空間類型</button>
+                </span>
+                <button className="text-button" onClick={fit} type="button">回到全區</button>
+                <button className="text-button" onClick={toggleFullscreen} type="button">{fullscreen ? "離開全螢幕" : "全螢幕"}</button>
               </div>
             </header>
             <div className="indoor-stage">
-              <button aria-label="上一層" className="indoor-arrow is-prev" disabled={index <= 0} onClick={() => changeFloor(floorsHere[index - 1])} type="button">‹</button>
-              <button aria-label="下一層" className="indoor-arrow is-next" disabled={index < 0 || index >= floorsHere.length - 1} onClick={() => changeFloor(floorsHere[index + 1])} type="button">›</button>
-              <div className="indoor-card">
-                <header className="indoor-card-head">
-                  <h2>{floor?.building} {floor?.label}</h2>
-                  <span>{stats.all} 個空間</span>
-                </header>
-                <div className="indoor-plan">
-                  {view && (
-                    <svg aria-label={`${floor?.building || ""}${floor?.label || ""}平面圖`} onMouseDown={startDrag} preserveAspectRatio="xMidYMid meet" ref={svgRef} role="img" viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}>
-                      {mode === "iso" && <g className="indoor-slab">{ordered.filter((space) => space.space_type !== "void").map((space) => <path d={spacePath(space, mode, SLAB)} fillRule="evenodd" key={space.id} />)}</g>}
-                      <g className="indoor-edge">{ordered.filter((space) => space.space_type !== "void").map((space) => <path d={spacePath(space, mode)} key={space.id} />)}</g>
-                      <g className="indoor-rooms">
-                        {ordered.map((space) => (
+              <div className="indoor-plan">
+                {view && (
+                  <svg aria-label={`${floor?.building || ""}${floor?.label || ""}平面圖`} onMouseDown={startDrag} preserveAspectRatio="xMidYMid meet" ref={svgRef} role="img" viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}>
+                    {mode === "iso" && <g className="indoor-slab">{solid.map((space) => <path d={spacePath(space, mode, SLAB)} fillRule="evenodd" key={space.id} />)}</g>}
+                    <g className="indoor-edge">{solid.map((space) => <path d={spacePath(space, mode)} key={space.id} />)}</g>
+                    <g className="indoor-rooms">
+                      {ordered.map((space) => {
+                        const heat = colorBy === "assets" && space.space_type !== "void" ? heatFill(countOf(space), maxCount) : null;
+                        return (
                           <path
-                            className={`indoor-room is-${space.space_type} ${selectedId === space.id ? "is-selected" : ""} ${hoverId === space.id ? "is-hover" : ""} ${query && !matches(space) ? "is-dim" : ""}`}
+                            className={`indoor-room is-${space.space_type} ${selectedId === space.id ? "is-selected" : ""} ${hoverId === space.id ? "is-hover" : ""} ${query && !matches(space) && !hitSpaces.has(space.id) ? "is-dim" : ""} ${hitSpaces.has(space.id) ? "is-hit" : ""}`}
                             d={spacePath(space, mode)} fillRule="evenodd" key={space.id}
-                            onClick={() => clicked(space.id)} onMouseEnter={() => setHoverId(space.id)} onMouseLeave={() => setHoverId(null)}
+                            onClick={() => clickRoom(space.id)} onMouseEnter={() => setHoverId(space.id)} onMouseLeave={() => setHoverId(null)}
+                            style={heat && selectedId !== space.id ? { fill: heat } : undefined}
                           />
-                        ))}
-                      </g>
-                      <g className="indoor-labels">
-                        {(showLabels ? spaces.filter((space) => space.space_type !== "void" && (space.name || space.usage)) : tag ? [tag] : []).map((space) => {
-                          const [x, y] = project(labelPoint(space), mode);
-                          return <text fontSize={view.w / (showLabels ? 70 : 52)} key={space.id} x={x} y={y}>{spaceTitle(space)}</text>;
-                        })}
-                      </g>
-                    </svg>
-                  )}
-                  <div className="indoor-zoom" role="group" aria-label="縮放">
-                    <button aria-label="放大" onClick={() => zoomAt(1 / 1.4)} type="button">+</button>
-                    <button aria-label="縮小" onClick={() => zoomAt(1.4)} type="button">−</button>
-                    <button aria-label="符合視窗" onClick={fit} type="button">⤢</button>
-                  </div>
-                  {selected && (
-                    <article aria-live="polite" className="indoor-detail">
-                      <button aria-label="關閉" className="indoor-detail-close" onClick={() => setSelectedId(null)} type="button">×</button>
-                      <p>{SPACE_TYPE_LABELS[selected.space_type]}{selected.tool_id ? ` ・ ${selected.tool_id}` : ""}</p>
-                      <h3>{spaceTitle(selected)}</h3>
-                      {selected.name && selected.usage && <span className="indoor-note">{selected.usage}</span>}
-                      <dl>
-                        <div><dt>面積</dt><dd>{fmt(selected.area_m2, 1)} m²</dd></div>
-                        <div><dt>財物</dt><dd>{fmt(assetsOf(selected))} 筆</dd></div>
-                      </dl>
-                      <ul className="indoor-codes">
-                        {(linksBySpace.get(selected.id) || []).map((link) => (
-                          <li key={link.location_code}><strong>{link.location_code}</strong><span>{link.location_name || "—"}</span><em>{fmt(countByCode.get(link.location_code) || 0)} 筆</em></li>
-                        ))}
-                        {!(linksBySpace.get(selected.id) || []).length && <li className="is-empty">尚未對應存置地點</li>}
-                      </ul>
-                      {canAdmin && <button className="indoor-edit" onClick={() => setEditingId(selected.id)} type="button">編輯這個房間</button>}
-                    </article>
-                  )}
+                        );
+                      })}
+                    </g>
+                    <g className="indoor-labels">
+                      {(showLabels ? spaces.filter((space) => space.space_type !== "void" && (space.name || space.usage)) : tag ? [tag] : []).map((space) => {
+                        const [x, y] = project(labelPoint(space), mode);
+                        return <text fontSize={view.w / (showLabels ? 70 : 52)} key={space.id} x={x} y={y}>{spaceTitle(space)}</text>;
+                      })}
+                    </g>
+                  </svg>
+                )}
+                <nav aria-label="樓層" className="indoor-floors">
+                  {[...floorsHere].reverse().map((item) => <button aria-current={item.id === floorId} className={item.id === floorId ? "is-active" : ""} key={item.id} onClick={() => changeFloor(item.id)} title={`${item.building} ${item.label}`} type="button">{item.label}</button>)}
+                </nav>
+                <div className="indoor-zoom" role="group" aria-label="縮放">
+                  <button aria-label="放大" onClick={() => zoomAt(1 / 1.4)} type="button">+</button>
+                  <button aria-label="縮小" onClick={() => zoomAt(1.4)} type="button">−</button>
                 </div>
-                <div className="indoor-stats">
-                  <dl className="indoor-totals">
-                    <div><dt>樓層面積</dt><dd>{fmt(stats.area, 1)} m²</dd></div>
-                    <div><dt>房間數</dt><dd>{fmt(stats.rooms)}</dd></div>
-                    <div><dt>存置地點</dt><dd>{fmt(stats.locations)}</dd></div>
-                    <div><dt>財物筆數</dt><dd>{fmt(stats.assets)}</dd></div>
-                  </dl>
-                  <ul className="indoor-categories">
-                    {CATEGORIES.map((category) => (
-                      <li key={category.id}>
-                        <b>{stats.counts[category.id]}</b>
-                        <svg aria-hidden="true" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" viewBox="0 0 24 24">{CATEGORY_ICONS[category.id]}</svg>
-                        <span>{category.label}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <footer className="indoor-card-actions">
-                  <span className="indoor-floor-name">{floor ? `${index + 1} / ${floorsHere.length}　${floor.label}` : ""}</span>
-                  <div>
-                    <button className="indoor-pill" disabled={index <= 0} onClick={() => changeFloor(floorsHere[index - 1])} type="button">‹ 上一層</button>
-                    <button className="indoor-pill is-primary" disabled={index < 0 || index >= floorsHere.length - 1} onClick={() => changeFloor(floorsHere[index + 1])} type="button">下一層 ›</button>
-                  </div>
-                </footer>
+                {position >= 0 && floorsHere.length > 1 && <span className="indoor-hint">{position + 1} / {floorsHere.length} 層</span>}
               </div>
-              <nav aria-label="樓層" className="indoor-dots">
-                {floorsHere.map((item) => <button aria-current={item.id === floorId} aria-label={`${item.building} ${item.label}`} className={item.id === floorId ? "is-active" : ""} key={item.id} onClick={() => setFloorId(item.id)} title={item.label} type="button" />)}
-              </nav>
+
+              {drawerOpen && (
+                <aside aria-label={selected ? "房間財物" : "未定位財物"} className="indoor-drawer">
+                  {selected ? (
+                    <>
+                      <header>
+                        <div>
+                          <p>{SPACE_TYPE_LABELS[selected.space_type]}・{fmt(selected.area_m2, 1)} m²{selected.tool_id ? `・${selected.tool_id}` : ""}</p>
+                          <h2>{spaceTitle(selected)}</h2>
+                          {selected.name && selected.usage && <span className="indoor-note">{selected.usage}</span>}
+                        </div>
+                        <button aria-label="關閉" className="indoor-close" onClick={() => setSelectedId(null)} type="button">×</button>
+                      </header>
+                      <ul className="indoor-codes">
+                        {selectedLinks.map((link) => {
+                          const shared = (index.spacesByCode.get(link.location_code) || []).length > 1;
+                          return (
+                            <li key={link.location_code}>
+                              <strong>{link.location_code}</strong><span>{link.location_name || "—"}</span>
+                              <em>{fmt(index.countByCode.get(link.location_code) || 0)} 筆{shared ? "・共用" : ""}</em>
+                              {onOpenInQuery && <button className="row-action" onClick={() => onOpenInQuery({ code: link.location_code, name: link.location_name })} title="在財物查詢中列出這個存置地點的財物" type="button">查詢</button>}
+                            </li>
+                          );
+                        })}
+                        {!selectedLinks.length && <li className="is-empty">尚未對應存置地點，所以沒有財物。{canAdmin ? "可以按「編輯」指派。" : ""}</li>}
+                      </ul>
+                      {selectedLinks.some((link) => (index.spacesByCode.get(link.location_code) || []).length > 1) && (
+                        <p className="indoor-shared">共用代碼的財物只記錄存置地點，無法分辨在哪一間，所以每個共用的房間都會列出同一批財物。</p>
+                      )}
+                      {index.hasAssets
+                        ? <AssetList assets={selectedAssets} empty="這個房間目前沒有財物。" highlightId={highlightAsset} onOpenAsset={onOpenAsset} />
+                        : <p className="indoor-empty">財物清單尚未載入。</p>}
+                      {canAdmin && <button className="indoor-edit" onClick={() => setEditingId(selected.id)} type="button">編輯這個房間</button>}
+                    </>
+                  ) : (
+                    <>
+                      <header>
+                        <div>
+                          <p>這些存置地點還沒有對應到平面圖上的房間</p>
+                          <h2>{unlocated ? `${unlocated}　${index.nameByCode.get(unlocated) || ""}` : "未定位財物"}</h2>
+                        </div>
+                        <button aria-label="關閉" className="indoor-close" onClick={() => setUnlocated(null)} type="button">×</button>
+                      </header>
+                      {unlocated ? (
+                        <>
+                          <button className="indoor-back" onClick={() => setUnlocated("")} type="button">‹ 全部未定位的存置地點</button>
+                          {onOpenInQuery && <button className="row-action indoor-query" onClick={() => onOpenInQuery({ code: unlocated, name: index.nameByCode.get(unlocated) })} type="button">在財物查詢中列出</button>}
+                          <AssetList assets={unlocatedAssets} highlightId={highlightAsset} onOpenAsset={onOpenAsset} />
+                        </>
+                      ) : (
+                        <ul className="indoor-unlocated-list">
+                          {index.unlocated.map((item) => (
+                            <li key={item.code}><button onClick={() => setUnlocated(item.code)} type="button"><strong>{item.code}</strong><span>{item.name || "—"}</span><em>{fmt(item.count)} 筆</em></button></li>
+                          ))}
+                        </ul>
+                      )}
+                    </>
+                  )}
+                </aside>
+              )}
             </div>
             <footer>
-              <span><i className="indoor-legend-room" />房間</span>
-              <span><i className="indoor-legend-public" />公共區域</span>
+              {colorBy === "assets"
+                ? <><span><i className="indoor-legend-none" />沒有財物</span><span className="indoor-gradient">少<i />多</span></>
+                : <><span><i className="indoor-legend-room" />房間</span><span><i className="indoor-legend-public" />公共區域</span></>}
               <span><i className="indoor-legend-selected" />已選取</span>
               <span className="geo-building-note">滾輪縮放、拖曳平移；放大後會顯示房間名稱</span>
             </footer>
@@ -334,7 +423,7 @@ export function IndoorPlans({ canAdmin, client = supabase }) {
       )}
       {editing && canAdmin && (
         <RoomEditorDialog
-          links={linksBySpace.get(editing.id) || []} locations={data.summary} onClose={() => setEditingId(null)}
+          links={index.linksBySpace.get(editing.id) || []} locations={data.summary} onClose={() => setEditingId(null)}
           onDelete={async () => { await deleteSpace(client, editing.id); setEditingId(null); setSelectedId(null); await reload(); }}
           onSave={async (draft) => { await saveSpace(client, editing.id, draft); setEditingId(null); await reload(); }}
           space={editing}
