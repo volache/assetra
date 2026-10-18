@@ -22,7 +22,16 @@ const BUILDING_ORDER = ["航廈", "宿舍", "消防站", "汙水處理廠"];
 const floors = [];
 const configs = readdirSync(buildingsFolder).filter((f) => f.endsWith(".json")).map((f) => JSON.parse(readFileSync(join(buildingsFolder, f), "utf8")));
 configs.sort((a, b) => BUILDING_ORDER.indexOf(a.name) - BUILDING_ORDER.indexOf(b.name));
-for (const config of configs) for (const floor of config.floors) floors.push({ key: floor.title, building: config.name, label: floor.label || floor.title });
+// floors within a building, lowest first (the plan lists them from the top down, so the reverse); others keep the config order
+const FLOOR_ORDER = {
+  航廈: ["航廈地下一樓", "航廈淺漥區", "航廈貨運站", "航廈一樓", "航廈二樓", "航廈三樓"],
+  宿舍: ["宿舍機房", "宿舍一樓", "宿舍二樓", "宿舍三樓"],
+};
+for (const config of configs) {
+  const rank = (floor) => { const at = (FLOOR_ORDER[config.name] || []).indexOf(floor.title); return at < 0 ? 1e6 : at; };
+  const ordered = [...config.floors].sort((a, b) => rank(a) - rank(b));
+  for (const floor of ordered) floors.push({ key: floor.title, building: config.name, label: floor.label || floor.title });
+}
 
 const ringArea = (ring) => Math.abs(ring.reduce((sum, [x1, y1], i) => { const [x2, y2] = ring[(i + 1) % ring.length]; return sum + (x1 * y2 - x2 * y1); }, 0)) / 2;
 

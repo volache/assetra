@@ -87,6 +87,9 @@ export function screenBounds(spaces, mode, extra = 0) {
   return Number.isFinite(minX) ? [minX, minY, maxX, maxY] : [0, 0, 100, 100];
 }
 
+/** A floor's name: the building and the floor, "航廈｜二樓" (a site that is one floor just shows its name). */
+export const floorName = (floor) => (!floor ? "" : floor.building === floor.label ? floor.label : `${floor.building}｜${floor.label}`);
+
 export const SPACE_TYPE_LABELS = { room: "房間", public: "公共區域", void: "挑空／採光" };
 
 /** The kinds of room counted at the bottom of the plan, from what the room is called. */

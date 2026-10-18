@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { buildPlanIndex, roomsOfCode } from "./planIndex";
-import { screenBounds, spacePath, spaceTitle } from "./geometry";
+import { floorName, screenBounds, spacePath, spaceTitle } from "./geometry";
 import { useIndoorStore } from "./indoorStore";
 
 /**
@@ -26,11 +26,11 @@ export function LocationMap({ locationCode, locationName, onShowOnPlan }) {
   const names = places.filter((item) => item.floor.id === floor.id).map((item) => spaceTitle(item.space));
   return (
     <figure className="location-map">
-      <svg aria-label={`${floor.building}${floor.label}的位置`} preserveAspectRatio="xMidYMid meet" role="img" viewBox={`${x0 - margin} ${y0 - margin} ${x1 - x0 + 2 * margin} ${y1 - y0 + 2 * margin}`}>
+      <svg aria-label={`${floorName(floor)}的位置`} preserveAspectRatio="xMidYMid meet" role="img" viewBox={`${x0 - margin} ${y0 - margin} ${x1 - x0 + 2 * margin} ${y1 - y0 + 2 * margin}`}>
         {spaces.map((space) => <path className={`location-map-room is-${space.space_type} ${here.has(space.id) ? "is-here" : ""}`} d={spacePath(space, "flat")} fillRule="evenodd" key={space.id} />)}
       </svg>
       <figcaption>
-        <strong>{floor.building} {floor.label}</strong>
+        <strong>{floorName(floor)}</strong>
         <span>{names.slice(0, 2).join("、")}{names.length > 2 ? ` 等 ${names.length} 間` : ""}{places.length > 1 && names.length === places.length ? "（共用代碼）" : ""}</span>
         {floors.length > 1 && <span className="location-map-floors">{floors.map((item) => <button aria-pressed={item.id === floor.id} key={item.id} onClick={() => setPickedFloor(item.id)} type="button">{item.label}</button>)}</span>}
         <button className="row-action" onClick={() => onShowOnPlan?.()} type="button">在平面圖查看</button>

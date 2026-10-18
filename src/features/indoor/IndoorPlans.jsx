@@ -4,7 +4,7 @@ import { CapsuleSpinner } from "../../components/FeedbackCenter";
 import { AssetList } from "./AssetList";
 import { deleteSpace, importTracedFiles, saveSpace } from "./indoorData";
 import { useIndoorStore } from "./indoorStore";
-import { SPACE_TYPE_LABELS, heatFill, labelPoint, project, ringPath, screenBounds, segmentsPath, spaceBounds, spacePath, spaceTitle, unproject, voidEdgeKinds, wallsPath } from "./geometry";
+import { SPACE_TYPE_LABELS, floorName, heatFill, labelPoint, project, ringPath, screenBounds, segmentsPath, spaceBounds, spacePath, spaceTitle, unproject, voidEdgeKinds, wallsPath } from "./geometry";
 import { buildPlanIndex, roomsOfCode, searchAssets } from "./planIndex";
 import { RoomEditorDialog } from "./RoomEditorDialog";
 
@@ -386,7 +386,7 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
 
           <section aria-label="室內平面圖" className="geo-map-panel indoor-map-panel">
             <header>
-              <div><span className="geo-live-dot" />{floor ? `${floor.building} ${floor.label}` : "平面圖"}</div>
+              <div><span className="geo-live-dot" />{floor ? floorName(floor) : "平面圖"}</div>
               <div className="geo-map-actions">
                 <span aria-label="選擇建築物" className="geo-basemap-toggle">
                   {buildings.map((name) => <button aria-pressed={building === name} className={building === name ? "is-active" : ""} key={name} onClick={() => chooseBuilding(name)} type="button">{name}</button>)}
@@ -405,7 +405,7 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
             </header>
             <div className="indoor-stage">
               {view && (
-                <svg aria-label={`${floor?.building || ""}${floor?.label || ""}平面圖`} className="indoor-svg" onMouseDown={startDrag} preserveAspectRatio="xMidYMid meet" ref={svgRef} role="img" viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}>
+                <svg aria-label={`${floorName(floor)}平面圖`} className="indoor-svg" onMouseDown={startDrag} preserveAspectRatio="xMidYMid meet" ref={svgRef} role="img" viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}>
                   <defs>
                     {[...voidEdges].map(([id, edges]) => (edges.outer.length ? (
                       // keeps only the outer half of a void's edge line, so it is as thick as the line of a room beside it
@@ -448,7 +448,7 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
                 </svg>
               )}
               <nav aria-label="樓層" className="indoor-floors">
-                {[...floorsHere].reverse().map((item) => <button aria-current={item.id === floorId} className={item.id === floorId ? "is-active" : ""} key={item.id} onClick={() => changeFloor(item.id)} title={`${item.building} ${item.label}`} type="button">{item.label}</button>)}
+                {[...floorsHere].reverse().map((item) => <button aria-current={item.id === floorId} className={item.id === floorId ? "is-active" : ""} key={item.id} onClick={() => changeFloor(item.id)} title={floorName(item)} type="button">{item.label}</button>)}
               </nav>
               <div className="indoor-zoom" role="group" aria-label="縮放">
                 <button aria-label="放大" onClick={() => zoomAt(1 / 1.4)} type="button">+</button>

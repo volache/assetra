@@ -1,5 +1,5 @@
 // Reading and writing the indoor_* tables.  Everyone signed in may read; the database only lets administrators write.
-import { floorFromTracedFile } from "./geometry";
+import { floorFromTracedFile, floorName } from "./geometry";
 
 const CHUNK = 80;
 const chunks = (list) => Array.from({ length: Math.ceil(list.length / CHUNK) }, (_, i) => list.slice(i * CHUNK, (i + 1) * CHUNK));
@@ -62,7 +62,7 @@ export async function importTracedFiles(supabase, files, floors) {
       for (const part of chunks(stale)) check(await supabase.from("indoor_spaces").delete().in("id", part), "移除已刪除的房間失敗");
       for (const part of chunks(parsed.spaces.map((space) => space.id))) check(await supabase.from("indoor_space_locations").delete().in("space_id", part), "更新存置地點失敗");
       for (const part of chunks(parsed.links)) check(await supabase.from("indoor_space_locations").insert(part), "寫入存置地點失敗");
-      report.push({ name: file.name, ok: true, text: `${floor.building} ${floor.label}：${parsed.spaces.length} 個房間${stale.length ? `，移除 ${stale.length} 個已不存在的房間` : ""}` });
+      report.push({ name: file.name, ok: true, text: `${floorName(floor)}：${parsed.spaces.length} 個房間${stale.length ? `，移除 ${stale.length} 個已不存在的房間` : ""}` });
     } catch (cause) {
       report.push({ name: file.name, ok: false, text: cause.message });
     }
