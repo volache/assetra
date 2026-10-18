@@ -341,6 +341,7 @@
     </span>
     <span class="sep"></span>
   </span>
+  <button type="button" class="btn" id="paste" disabled title="貼上剛複製的房間：同一層會貼在旁邊一點的地方，換到別的樓層會貼在對位後相同的位置">貼上<kbd>Ctrl+V</kbd></button>
   <button type="button" class="btn" id="select-all" title="選取所有牆與房間，之後可整組移動、對齊到底圖">全選<kbd>Ctrl+A</kbd></button>
   <button type="button" class="btn" id="generate" title="依目前的牆重新產生房間">由牆生成房間</button>
   <button type="button" class="btn" id="tidy" title="頂點靠攏、邊線拉直、相鄰物件共邊">自動整理</button>
@@ -372,6 +373,7 @@
         <dt>修剪延伸</dt><dd>T：點牆上要刪掉的一段（刪到和其他牆或房間邊的交點為止）；Shift＋點牆的一端，延伸到最近的牆、房間邊或底圖牆線</dd>
         <dt>參考線</dt><dd>拖曳或繪製時，和其他物件的頂點或邊界對齊會出現洋紅色虛線並自動吸附，可用「參考線」開關</dd>
         <dt>編輯</dt><dd>拖曳白點移動頂點；雙擊邊線加點；Delete 刪除；Ctrl+Z、Ctrl+Y 復原重做</dd>
+        <dt>複製貼上</dt><dd>選取房間後按「複製」（Ctrl+C），再按上方「貼上」（Ctrl+V）：同一層貼在旁邊，切到別的樓層則貼在對位後相同的位置；Ctrl+D 直接在旁邊多一份。名稱與存置地點不會帶過去，要重新指派</dd>
         <dt>沒有牆的分區</dt><dd>S 分割線：在開放空間裡畫一條線（兩端超出房間邊界），Enter 或雙擊完成，房間被切成兩塊以上，不需要牆。已用牆分好的房間：選取後按選取列「固定房間」，之後刪掉牆也不會合併</dd>
         <dt>合併與重疊</dt><dd>選兩個以上相鄰的房間按「合併房間」合成一個；房間範圍互相重疊時，選取壓在上面的房間按「扣掉重疊」，把它的範圍從其他房間挖掉</dd>
         <dt>多個存置地點</dt><dd>同一個位置有好幾個代碼時：先指派一個主要代碼，再在搜尋結果或存置地點清單按該列右邊的「＋」加成其他代碼；房間面板可移除</dd>
@@ -1465,6 +1467,9 @@ function renderSelbar() {
   stepInput.addEventListener("input", () => { const v = Number(stepInput.value); if (v > 0) stepCm = v; });
   step.append(stepInput, document.createTextNode(" 公分"));
   bar.append(keys, step, domEl("span", undefined, { className: "sep" }));
+  const copyButton = domEl("button", "複製", { type: "button", className: "btn", title: "複製所選（Ctrl+C）；到同一層或別的樓層按「貼上」（Ctrl+V）。Ctrl+D 則是直接在旁邊多一份" });
+  copyButton.addEventListener("click", copySelection);
+  bar.append(copyButton);
   if (items.rooms.length >= 1 && rooms.length >= 2) {
     const carve = domEl("button", "扣掉重疊", { type: "button", className: "btn", title: "把所選房間的範圍從和它重疊的其他房間裡挖掉，其他房間的邊界就不會穿過所選房間" });
     carve.addEventListener("click", () => {
@@ -3501,6 +3506,55 @@ $("batchfind").addEventListener("click", () => {
   renderBatchPanel(); renderOverlay();
 });
 
+// ---- copy and paste ------------------------------------------------------------------------------------------------
+let clip = null;          // { payload, floorTitle, pastes }: the copied rooms (and walls) in the exported file format
+const PASTE_STEP = 200;   // cm: how far a copy lands from the original on the same floor
+function renderPasteButton() {
+  const b = $("paste");
+  b.disabled = !clip;
+  b.title = clip ? `貼上剛複製的 ${clip.payload.rooms.length} 個房間${clip.payload.walls.length ? `與 ${clip.payload.walls.length} 道牆` : ""}（${clip.floorTitle}）` : "先選取房間再按「複製」（Ctrl+C），才能貼上";
+}
+function copySelection() {
+  const items = selectedItems();
+  if (!items.rooms.length && !items.walls.length) { showToast("先選取要複製的房間"); return; }
+  const payload = payloadFor(DATA, { rooms: items.rooms.map(roomById), walls: items.walls.map(wallById) });
+  clip = { payload, floorTitle: `${DATA.building || ""} ${DATA.label || DATA.title}`.trim(), sourceTitle: DATA.title, pastes: 0 };
+  renderPasteButton();
+  const parts = [`${payload.rooms.length} 個房間`];
+  if (payload.walls.length) parts.push(`${payload.walls.length} 道牆`);
+  showToast(`已複製 ${parts.join("、")}，到想要的樓層按「貼上」（Ctrl+V）`);
+}
+function pasteClipboard() {
+  if (!clip) { showToast("還沒有複製任何房間"); return; }
+  const payload = clip.payload;
+  const sameFloor = clip.sourceTitle === DATA.title;
+  let shift = sameFloor ? [0, 0] : shiftFor(payload, DATA);
+  const aligned = sameFloor || !!shift;
+  if (!shift) shift = [0, 0];
+  // the first copy on the same floor sits beside the original and every further one steps along again; on another
+  // floor the first copy lands exactly where it was (after alignment) and only repeats step along
+  clip.pastes = clip.lastTitle === DATA.title ? clip.pastes + 1 : (sameFloor ? 1 : 0);
+  clip.lastTitle = DATA.title;
+  shift = [shift[0] + PASTE_STEP * clip.pastes, shift[1] - PASTE_STEP * clip.pastes];
+  const state = convertPayload(payload, shift, false, { copy: true, startAt: counter });
+  // rooms made from walls only stay generated when their walls come along; otherwise they become hand-drawn rooms
+  state.rooms.forEach((r) => { if (r.auto && !state.walls.length) { r.auto = false; delete r.anchor; } });
+  pushHistory();
+  rooms = [...rooms, ...state.rooms];
+  walls = [...walls, ...state.walls];
+  counter = Math.max(counter, state.counter);
+  setTool("select");
+  setSelection(state.rooms.map((r) => r.id), state.walls.map((w) => w.id));
+  changed(true, state.walls.length > 0);
+  refresh();
+  showToast(
+    aligned ? `已貼上 ${state.rooms.length} 個房間${sameFloor ? "，在原位置旁邊；按住 Alt 拖曳或用方向鍵移到想要的位置" : "（位置與原樓層對位）"}。名稱與存置地點已清空` : "已貼上，但頁面沒有兩層的對位資訊，位置可能對不上；請用方向鍵調整",
+    { undo: true },
+  );
+}
+$("paste").addEventListener("click", pasteClipboard);
+renderPasteButton();
+
 // ---- selection, moving and aligning ------------------------------------------------------------------------------
 const hasSelection = () => { const i = selectedItems(); return i.rooms.length + i.walls.length > 0; };
 function selectedItems() {
@@ -3970,6 +4024,9 @@ window.addEventListener("keydown", (e) => {
     if (key === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
     else if (key === "y" || (key === "z" && e.shiftKey)) { e.preventDefault(); redo(); }
     else if (key === "a") { e.preventDefault(); selectAll(); }
+    else if (key === "c" && hasSelection()) { e.preventDefault(); copySelection(); }
+    else if (key === "v" && clip) { e.preventDefault(); pasteClipboard(); }
+    else if (key === "d" && hasSelection()) { e.preventDefault(); copySelection(); pasteClipboard(); }
     return;
   }
   if (e.code === "Space") { spaceDown = true; e.preventDefault(); return; }
