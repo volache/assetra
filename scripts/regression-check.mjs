@@ -62,7 +62,7 @@ function checkFeatureContracts() {
   assert.match(read("src/app/Portal.jsx"), /CollaborationTasks/);
   assert.match(read("src/features/accounts/Accounts.jsx"), /manage-users/);
   assert.match(read("src/features/accounts/Accounts.jsx"), /使用者資料已更新/);
-  assert.match(read("src/features/accounts/Accounts.jsx"), /儲存中/);
+  assert.match(read("src/features/accounts/UserEditorDialog.jsx"), /儲存中/);
   assert.match(read("src/features/auth/Password.jsx"), /正在更新密碼/);
   assert.match(read("src/main.jsx"), /FeedbackProvider/);
   assert.match(read("src/components/FeedbackCenter.jsx"), /CapsuleSpinner/);
