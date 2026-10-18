@@ -27,7 +27,7 @@ export default [
     },
   },
   {
-    files: ["scripts/**/*.mjs"],
+    files: ["scripts/**/*.mjs", "tests/**/*.js"],
     languageOptions: { ecmaVersion: 2024, sourceType: "module", globals: { ...globals.node } },
     rules: { "no-undef": "error", "no-unused-vars": "warn" },
   },

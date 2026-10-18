@@ -42,7 +42,9 @@ semantic-asset-query
 ## 驗證
 
 ```powershell
-npm run check
+npm run lint    # 抓出寫錯的變數與未使用的程式（只有警告不會擋住）
+npm test        # 單元測試：格式化、搜尋規則、座標轉換等
+npm run check   # 匯入路徑與功能對應檢查
 npm run build
 ```
 

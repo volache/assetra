@@ -8,8 +8,9 @@
     "build": "vite build",
     "check": "node scripts/regression-check.mjs",
     "preview": "vite preview",
-    "lint": "eslint src scripts",
-    "format": "prettier --write \"src/**/*.css\""
+    "lint": "eslint src scripts tests",
+    "format": "prettier --write \"src/**/*.css\"",
+    "test": "node --test \"tests/*.test.js\""
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
