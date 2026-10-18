@@ -102,11 +102,11 @@ function checkFeatureContracts() {
   assert.match(read("supabase/functions/import-inventory/index.ts"), /財產大類/);
   assert.match(read("supabase/functions/semantic-asset-query/query-rules.ts"), /identifierSpan/);
   assert.match(read("supabase/functions/semantic-asset-query/index.ts"), /kind.*self|"self"/);
-  assert.match(read("src/features/inventory/AssetQuery.jsx"), /想再確認一下/);
+  assert.match(read("src/features/inventory/AiAnswerPanels.jsx"), /想再確認一下/);
   assert.match(read("src/features/inventory/AssetQuery.jsx"), /智慧查詢/);
-  assert.match(read("src/features/inventory/AssetQuery.jsx"), /智慧查詢結果/);
-  assert.match(read("src/features/inventory/AssetQuery.jsx"), /分析摘要/);
-  assert.match(read("src/features/inventory/AssetQuery.jsx"), /推理模型/);
+  assert.match(read("src/features/inventory/AiAnswerPanels.jsx"), /智慧查詢結果/);
+  assert.match(read("src/features/inventory/AiAnswerPanels.jsx"), /分析摘要/);
+  assert.match(read("src/features/inventory/AiAnswerPanels.jsx"), /推理模型/);
   assert.match(read("supabase/migrations/20261004140000_add_ai_query_clarifications.sql"), /expires_at/);
   assert.match(read("supabase/migrations/20261004150000_add_ai_analysis_capabilities.sql"), /analysis/);
   assert.match(read("supabase/migrations/20261004160000_add_major_class_and_data_quality_analysis.sql"), /asset_major_class/);

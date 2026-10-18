@@ -22,6 +22,7 @@ import {
   normalized,
   searchTermWarnings,
 } from "./search";
+import { AiAnswerPanels } from "./AiAnswerPanels";
 import { KeywordSearchBox } from "./KeywordSearchBox";
 import { LocationMap } from "../indoor/LocationMap";
 import { rememberSearch } from "./searchHistory";
@@ -691,9 +692,16 @@ export function AssetQuery({
               ))}
             </ul>
           )}
-          {aiReport && <aside aria-live="polite" className="ai-search-report"><strong>智慧查詢結果</strong><span>提問：{aiReport.question}</span>{aiReport.modelVersion && <span>推理模型：{aiReport.modelVersion}</span>}<span>{aiReport.summary}</span>{aiReport.conditionGroups.some((group) => group.length) ? <span className="ai-report-conditions">查詢條件：<span className="ai-condition-chips">{aiReport.conditionGroups.map((group, groupIndex) => <React.Fragment key={`group-${groupIndex}`}>{groupIndex > 0 && <i className="ai-condition-or">或</i>}{group.map((rule) => <code className="ai-condition-chip" key={`${groupIndex}-${rule}`}>{rule}</code>)}</React.Fragment>)}</span></span> : <span>{aiReport.analysisDescription || aiReport.explanation}</span>}<span>{aiAnalysis ? `${typeof aiAnalysis.matchCount === "number" ? `符合分析條件共 ${formatNumber(aiAnalysis.matchCount)} 筆資料；` : ""}分析範圍共 ${formatNumber(aiReport.scopeCount ?? 0)} 筆資料。` : `共找到 ${formatNumber(rows.length)} 筆資料。`}{aiReport.trace.length ? ` 已執行：${aiReport.trace.join("、")}。` : ""}</span></aside>}
-          {aiAnalysis && <aside aria-live="polite" className="ai-analysis"><strong>分析摘要</strong><span>{aiAnalysis.title}</span><span>{aiAnalysis.summary}</span>{aiAnalysis.value ? <b className="ai-analysis-value">{aiAnalysis.value}{aiAnalysis.unit}</b> : <div className="ai-analysis-table-wrap"><table><thead><tr>{aiAnalysis.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{aiAnalysis.rows.map((row, index) => <tr key={`${row[0]}-${index}`}>{row.map((value, cellIndex) => <td key={cellIndex}>{value}</td>)}</tr>)}</tbody></table></div>}</aside>}
-          {aiClarification && <aside aria-live="polite" className="ai-clarification"><strong>想再確認一下</strong><span>{aiClarification.prompt}</span><div className="ai-clarification-options">{aiClarification.options.map((option) => <button className="button button-secondary" disabled={aiBusy} key={option.id} onClick={() => answerClarification(option.id)} type="button">{option.label}</button>)}</div><div className="ai-clarification-custom-row"><label className="ai-clarification-custom">或用自己的話說明<input disabled={aiBusy} onChange={(event) => setClarificationText(event.target.value)} placeholder="例如：放在消防班的財產" value={clarificationText} /></label><button className="button button-primary ai-clarification-submit" disabled={aiBusy || !clarificationText.trim()} onClick={() => answerClarification("custom")} type="button">依這個說明查詢</button></div></aside>}
+          <AiAnswerPanels
+            aiAnalysis={aiAnalysis}
+            aiBusy={aiBusy}
+            aiClarification={aiClarification}
+            aiReport={aiReport}
+            clarificationText={clarificationText}
+            onAnswerClarification={answerClarification}
+            onClarificationTextChange={setClarificationText}
+            rowCount={rows.length}
+          />
         </div>
         <fieldset>
           <legend>資料類型</legend>
