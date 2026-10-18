@@ -2,11 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { formatNumber } from "../../lib/formatters";
 import { fetchFunction } from "../../lib/functions";
 import { accountCodeFor } from "../../lib/accounts";
-import { roleDescriptions, roleLabels } from "../../lib/labels";
+import { roleLabels } from "../../lib/labels";
 import { HighlightText } from "../../components/HighlightText";
-import { FormCombo, UserFilterCombo } from "../../components/Comboboxes";
-import { CapsuleSpinner, useFeedback } from "../../components/FeedbackCenter";
+import { UserFilterCombo } from "../../components/Comboboxes";
+import { useFeedback } from "../../components/FeedbackCenter";
 import { normalized } from "../inventory/search";
+import { ExportInventoryDialog } from "./ExportInventoryDialog";
+import { UserEditorDialog } from "./UserEditorDialog";
 
 export function Accounts({ store, setStore, onUsersChanged }) {
   const emptyForm = {
@@ -706,230 +708,38 @@ export function Accounts({ store, setStore, onUsersChanged }) {
         </div>
       )}
       {isExportOpen && (
-        <dialog
-          open
-          className="detail-dialog user-editor export-sheets-dialog"
-          onClick={(event) => {
-            if (event.target === event.currentTarget && !exportState)
-              setIsExportOpen(false);
-          }}
-        >
-          <div>
-            <header>
-              <div>
-                <p className="eyebrow">INVENTORY SHEETS</p>
-                <h2>匯出盤點清冊</h2>
-              </div>
-              <button
-                className="close-button"
-                disabled={Boolean(exportState)}
-                onClick={() => setIsExportOpen(false)}
-                aria-label="關閉"
-              >
-                ×
-              </button>
-            </header>
-            <div className="account-form user-account-form">
-              <p className="export-note">
-                依清冊上的保管人產生財物盤點清冊（僅「使用中」財物），每位保管人一份，財產與物品併為不同的財產大類。
-                未建立使用者帳號的保管人也會一併匯出。
-              </p>
-              <div className="user-form-grid user-editor-grid">
-                <FormCombo
-                  id="export-unit"
-                  label="保管單位"
-                  value={exportUnit}
-                  options={exportUnitOptions}
-                  open={openEditorCombo === "export-unit"}
-                  onChange={setExportUnit}
-                  onOpenChange={setOpenEditorCombo}
-                />
-                <FormCombo
-                  id="export-person"
-                  label="保管人"
-                  value={exportSelected}
-                  options={exportPersonOptions}
-                  open={openEditorCombo === "export-person"}
-                  onChange={setExportCode}
-                  onOpenChange={setOpenEditorCombo}
-                />
-              </div>
-              <footer className="user-editor-actions">
-                <button
-                  className="button button-secondary"
-                  disabled={Boolean(exportState)}
-                  onClick={() => setIsExportOpen(false)}
-                  type="button"
-                >
-                  取消
-                </button>
-                <button
-                  className="button button-primary"
-                  disabled={!exportPeople.length || Boolean(exportState)}
-                  onClick={runInventoryExport}
-                  type="button"
-                >
-                  {exportState && <CapsuleSpinner compact />}
-                  {exportState
-                    ? `產生中 ${exportState.label}`
-                    : exportSelected
-                      ? "匯出盤點清冊（PDF）"
-                      : `打包匯出（${exportPeople.length} 位保管人）`}
-                </button>
-              </footer>
-            </div>
-          </div>
-        </dialog>
+        <ExportInventoryDialog
+          exportState={exportState}
+          exportUnit={exportUnit}
+          exportUnitOptions={exportUnitOptions}
+          exportSelected={exportSelected}
+          exportPersonOptions={exportPersonOptions}
+          exportPeople={exportPeople}
+          openEditorCombo={openEditorCombo}
+          onUnitChange={setExportUnit}
+          onPersonChange={setExportCode}
+          onOpenComboChange={setOpenEditorCombo}
+          onExport={runInventoryExport}
+          onClose={() => setIsExportOpen(false)}
+        />
       )}
       {isEditorOpen && (
-        <dialog
-          open
-          className="detail-dialog user-editor"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) setIsEditorOpen(false);
-          }}
-        >
-          <div>
-            <header>
-              <div>
-                <p className="eyebrow">
-                  {editingId ? "EDIT USER" : "CREATE USER"}
-                </p>
-                <h2>{editingId ? "編輯使用者" : "新增使用者"}</h2>
-              </div>
-              <button
-                className="close-button"
-                onClick={() => setIsEditorOpen(false)}
-                aria-label="關閉"
-              >
-                ×
-              </button>
-            </header>
-            <form
-              className="account-form user-account-form"
-              onSubmit={saveUser}
-            >
-              <div className="user-form-grid user-editor-grid">
-                <label>
-                  帳號
-                  <input
-                    value={form.accountCode}
-                    readOnly={Boolean(editingId)}
-                    onChange={(event) =>
-                      setForm({ ...form, accountCode: event.target.value })
-                    }
-                  />
-                </label>
-                <label>
-                  {editingId ? "修改密碼" : "初始密碼"}
-                  <input
-                    type="password"
-                    value={form.password}
-                    onChange={(event) =>
-                      setForm({ ...form, password: event.target.value })
-                    }
-                  />
-                </label>
-                <label>
-                  姓名
-                  <input
-                    value={form.name}
-                    onChange={(event) =>
-                      setForm({ ...form, name: event.target.value })
-                    }
-                  />
-                </label>
-                <FormCombo
-                  id="editor-custodian"
-                  label="配對保管人（選填）"
-                  value={form.custodianCode}
-                  options={accountOptions}
-                  open={openEditorCombo === "editor-custodian"}
-                  onChange={setFromDirectory}
-                  onOpenChange={setOpenEditorCombo}
-                />
-                <FormCombo
-                  id="editor-unit"
-                  label="所屬單位"
-                  value={form.unitCode}
-                  options={editorUnitOptions}
-                  open={openEditorCombo === "editor-unit"}
-                  onChange={(value) => setForm({ ...form, unitCode: value })}
-                  onOpenChange={setOpenEditorCombo}
-                />
-                <label>
-                  職稱
-                  <input
-                    value={form.title}
-                    onChange={(event) =>
-                      setForm({ ...form, title: event.target.value })
-                    }
-                  />
-                </label>
-                <label>
-                  Email（選填）
-                  <input
-                    type="email"
-                    value={form.email}
-                    onChange={(event) =>
-                      setForm({ ...form, email: event.target.value })
-                    }
-                  />
-                </label>
-                <FormCombo
-                  id="editor-status"
-                  label="狀態"
-                  value={form.status}
-                  options={editorStatusOptions}
-                  open={openEditorCombo === "editor-status"}
-                  onChange={(value) => setForm({ ...form, status: value })}
-                  onOpenChange={setOpenEditorCombo}
-                />
-              </div>
-              <fieldset>
-                <legend>權限</legend>
-                <div className="role-checks">
-                  {Object.entries(roleLabels).map(([role, label]) => (
-                    <label key={role}>
-                      <input
-                        type="checkbox"
-                        checked={form.roles.includes(role)}
-                        onChange={() => toggleRole(role)}
-                      />
-                      <span>{label}</span>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-              <div className="role-guidance" aria-label="權限說明">
-                {Object.entries(roleDescriptions).map(([role, description]) => (
-                  <p key={role}>
-                    <strong>{roleLabels[role]}</strong>
-                    <span>{description}</span>
-                  </p>
-                ))}
-              </div>
-              {message && (
-                <p className="form-error" role="alert">
-                  {message}
-                </p>
-              )}
-              <footer className="user-editor-actions">
-                <button
-                  className="button button-secondary"
-                  onClick={() => setIsEditorOpen(false)}
-                  type="button"
-                >
-                  取消
-                </button>
-                <button className="button button-primary" disabled={isSaving} type="submit">
-                  {isSaving && <CapsuleSpinner compact />}
-                  {isSaving ? "儲存中…" : editingId ? "儲存變更" : "新增使用者"}
-                </button>
-              </footer>
-            </form>
-          </div>
-        </dialog>
+        <UserEditorDialog
+          form={form}
+          setForm={setForm}
+          editingId={editingId}
+          message={message}
+          isSaving={isSaving}
+          accountOptions={accountOptions}
+          editorUnitOptions={editorUnitOptions}
+          editorStatusOptions={editorStatusOptions}
+          openEditorCombo={openEditorCombo}
+          onCustodianChange={setFromDirectory}
+          onOpenComboChange={setOpenEditorCombo}
+          onToggleRole={toggleRole}
+          onSubmit={saveUser}
+          onClose={() => setIsEditorOpen(false)}
+        />
       )}
     </section>
   );
