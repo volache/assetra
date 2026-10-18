@@ -967,7 +967,7 @@ export function GeographicAssets() {
         [119, 21],
         [123, 26],
       ],
-      pitch: saved?.pitch ?? 0,
+      pitch: saved?.pitch ?? (is3DRef.current ? 58 : 0),
       style: mapStyleUrlRef.current,
       zoom: saved?.zoom ?? 6.2,
     });
@@ -1036,16 +1036,52 @@ export function GeographicAssets() {
       landPaintRef.current?.(map);
     });
   }, [mapStyleUrl]);
-  // 3D buildings on or off, without touching the camera.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
+  // 立體／平面: the camera tilts over (or back to the plain top view) and the 3D buildings follow it.  Tilting by hand with the
+  // right mouse button also flips the switch, so it always says what the map is showing.
+  const tiltAnimatingRef = useRef(false);
+  const tiltSkipFirstRef = useRef(true);
+  const show3dObjects = (map, on) => {
     try {
-      map.setConfigProperty("basemap", "show3dObjects", is3D);
+      map.setConfigProperty("basemap", "show3dObjects", on);
     } catch {
       // The style has no basemap import to configure.
     }
+  };
+  useEffect(() => {
+    if (tiltSkipFirstRef.current) {
+      tiltSkipFirstRef.current = false;
+      return;
+    }
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const duration = reduced ? 0 : 900;
+    tiltAnimatingRef.current = true;
+    map.once("moveend", () => {
+      tiltAnimatingRef.current = false;
+      if (!is3DRef.current) show3dObjects(map, false);
+    });
+    if (is3D) {
+      show3dObjects(map, true);
+      map.easeTo({ duration, essential: true, pitch: 58 });
+    } else {
+      map.easeTo({ bearing: 0, duration, essential: true, pitch: 0 });
+    }
   }, [is3D]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return undefined;
+    const sync = () => {
+      if (tiltAnimatingRef.current) return;
+      const tilted = map.getPitch() > 10;
+      if (tilted !== is3DRef.current) {
+        if (tilted) show3dObjects(map, true);
+        setIs3D(tilted);
+      }
+    };
+    map.on("pitchend", sync);
+    return () => map.off("pitchend", sync);
+  }, [hasLands, mapToken, viewMode]);
   // New land data: update the source in place.
   useEffect(() => {
     const source = mapRef.current?.getSource?.("land-properties");
@@ -1564,19 +1600,24 @@ export function GeographicAssets() {
                     衛星
                   </button>
                 </span>
-                <button
-                  aria-label={is3D ? "停用 3D 視圖" : "啟用 3D 視圖"}
-                  aria-pressed={is3D}
-                  className={`geo-3d-toggle ${is3D ? "is-active" : ""}`}
-                  onClick={() => setIs3D((enabled) => !enabled)}
-                  title={is3D ? "停用 3D 視圖" : "啟用 3D 視圖"}
-                  type="button"
-                >
-                  <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
-                    <path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.7" />
-                    <path d="m4 7.5 8 4.5 8-4.5M12 12v9" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.7" />
-                  </svg>
-                </button>
+                <span aria-label="檢視角度" className="geo-basemap-toggle" title="立體：鏡頭傾斜並顯示 3D 建築物；平面：回到正上方的視角">
+                  <button
+                    aria-pressed={is3D}
+                    className={is3D ? "is-active" : ""}
+                    onClick={() => setIs3D(true)}
+                    type="button"
+                  >
+                    立體
+                  </button>
+                  <button
+                    aria-pressed={!is3D}
+                    className={!is3D ? "is-active" : ""}
+                    onClick={() => setIs3D(false)}
+                    type="button"
+                  >
+                    平面
+                  </button>
+                </span>
                 <button
                   className="text-button"
                   onClick={showFullExtent}
