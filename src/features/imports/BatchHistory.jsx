@@ -1,5 +1,5 @@
 import React, { Fragment, useEffect, useMemo, useState } from "react";
-import { supabase } from "../../supabase";
+import { loadImportBatchChanges, requestImportInventory } from "./api";
 import { rocDate, formatNumber } from "../../lib/formatters";
 import { sourceLabels } from "../../lib/labels";
 import { CapsuleSpinner } from "../../components/FeedbackCenter";
@@ -31,22 +31,7 @@ export function BatchHistory({ imports, onDeleted }) {
     setError("");
     (async () => {
       try {
-        const all = [];
-        for (let from = 0; ; from += 1000) {
-          const { data, error: queryError } = await supabase
-            .from("import_batch_changes")
-            .select(
-              "change_kind, category_type_code, asset_no, serial_no, asset_name, before_record, after_record",
-            )
-            .eq("import_id", selected.id)
-            .order("change_kind")
-            .order("asset_no")
-            .order("serial_no")
-            .range(from, from + 999);
-          if (queryError) throw queryError;
-          all.push(...(data || []));
-          if (!data || data.length < 1000) break;
-        }
+        const all = await loadImportBatchChanges(selected.id);
         if (alive) setChanges(all);
       } catch (queryError) {
         if (alive) setError(queryError.message);
@@ -206,15 +191,7 @@ export function BatchHistory({ imports, onDeleted }) {
     setDeletingId(selected.id);
     setMessage("");
     try {
-      const { data, error: deleteError } = await supabase.functions.invoke(
-        "import-inventory",
-        { body: { mode: "delete", importId: selected.id } },
-      );
-      if (deleteError) {
-        const detail = await deleteError.context?.json().catch(() => null);
-        throw new Error(detail?.error || deleteError.message);
-      }
-      if (data?.error) throw new Error(data.error);
+      const data = await requestImportInventory({ mode: "delete", importId: selected.id });
       const snapshots = Number(data?.deleted?.deletedSnapshots || 0);
       const changesCount = Number(data?.deleted?.deletedChanges || 0);
       setSelected(null);

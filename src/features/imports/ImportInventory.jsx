@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import * as XLSX from "xlsx";
-import { supabase } from "../../supabase";
+import { requestImportInventory } from "./api";
 import { rocDate, formatNumber } from "../../lib/formatters";
 import { sourceLabels } from "../../lib/labels";
 import { CapsuleSpinner } from "../../components/FeedbackCenter";
@@ -163,7 +163,6 @@ export function ImportInventory({ store, onImported }) {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState(null);
-  const [batchChanges, setBatchChanges] = useState(null);
   async function preparePreview(e) {
     e.preventDefault();
     if (!file) return setMessage("請先選擇 Excel 檔案。");
@@ -176,21 +175,12 @@ export function ImportInventory({ store, onImported }) {
       const result = inspectImportRows(readWorksheetRows(first), sourceType);
       if (!result.total) throw new Error("找不到有效的資料列。");
       if (!result.errors.length && result.records.length) {
-        const { data, error } = await supabase.functions.invoke(
-          "import-inventory",
-          {
-            body: {
-              mode: "preview",
-              sourceType,
-              fileName: file.name,
-              records: result.records,
-            },
-          },
-        );
-        if (error) {
-          const detail = await error.context?.json().catch(() => null);
-          throw new Error(detail?.error || error.message);
-        }
+        const data = await requestImportInventory({
+          mode: "preview",
+          sourceType,
+          fileName: file.name,
+          records: result.records,
+        });
         result.databaseSummary = data?.summary;
       }
       setPreview(result);
@@ -206,15 +196,11 @@ export function ImportInventory({ store, onImported }) {
     setBusy(true);
     setMessage("");
     try {
-      const { data, error } = await supabase.functions.invoke(
-        "import-inventory",
-        { body: { sourceType, fileName: file.name, records: preview.records } },
-      );
-      if (error) {
-        const detail = await error.context?.json().catch(() => null);
-        throw new Error(detail?.error || error.message);
-      }
-      if (data?.error) throw new Error(data.error);
+      const data = await requestImportInventory({
+        sourceType,
+        fileName: file.name,
+        records: preview.records,
+      });
       await onImported();
       const deleted = Number(data?.retention?.deletedImports || 0);
       setMessage(
@@ -231,24 +217,6 @@ export function ImportInventory({ store, onImported }) {
     setFile(nextFile);
     setPreview(null);
     setMessage("");
-  }
-  async function viewChanges(entry) {
-    setBusy(true);
-    try {
-      const { data, error } = await supabase.functions.invoke(
-        "import-inventory",
-        { body: { mode: "changes", importId: entry.id } },
-      );
-      if (error) {
-        const detail = await error.context?.json().catch(() => null);
-        throw new Error(detail?.error || error.message);
-      }
-      setBatchChanges({ entry, rows: data?.changes || [] });
-    } catch (error) {
-      setMessage(error.message || "無法讀取批次差異。");
-    } finally {
-      setBusy(false);
-    }
   }
   return (
     <section className="page">
