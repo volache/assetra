@@ -2,7 +2,7 @@
 
 Isolated from the application: nothing under src/ or supabase/ is touched.
 
-    python prototypes/indoor-map/trace/build_building.py data/private/indoor-map/buildings/*.json         --title 花蓮航空站平面圖製作工具 --key 航廈平面圖製作工具 --output data/private/indoor-map/花蓮航空站平面圖製作工具.html
+    python tools/indoor-map/trace/build_building.py data/private/indoor-map/buildings/*.json         --title 花蓮航空站平面圖製作工具 --key 航廈平面圖製作工具 --output data/private/indoor-map/buildings/花蓮航空站平面圖製作工具.html
 
 Each JSON file is one building; the page lets you switch between buildings and between the floors of each.
 The page holds only the drawings.  Nothing the user traced and no 存置地點 list is built in: that is all read from

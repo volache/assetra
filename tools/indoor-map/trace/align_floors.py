@@ -5,7 +5,7 @@ in the wrong place on another floor's underlay.  The outer walls of a building
 are nearly the same on every floor, so this lays the long wall lines of both
 drawings on a raster and finds the shift that makes them overlap the most.
 
-    python prototypes/indoor-map/trace/align_floors.py \
+    python tools/indoor-map/trace/align_floors.py \
         data/private/floorplans/航廈二樓不含外部.dxf \
         data/private/floorplans/航廈三樓-修改.dxf
 

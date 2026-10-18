@@ -1,4 +1,4 @@
-// Turns the floor plans traced with prototypes/indoor-map into SQL for the indoor_* tables.
+// Turns the floor plans traced with tools/indoor-map into SQL for the indoor_* tables.
 //
 //   node scripts/generate-indoor-import-sql.mjs <folder with the *.rooms.json files> [output folder]
 //

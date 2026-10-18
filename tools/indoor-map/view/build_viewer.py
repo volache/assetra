@@ -2,7 +2,7 @@
 
 Isolated from the application: nothing under src/ or supabase/ is touched.
 
-    python prototypes/indoor-map/view/build_viewer.py \
+    python tools/indoor-map/view/build_viewer.py \
         data/private/indoor-map/航廈三樓_等角檢視.html \
         --floor "3F|航廈三樓=data/private/indoor-map/航廈三樓.rooms.json" \
         --stats data/private/indoor-map/location-stats.json

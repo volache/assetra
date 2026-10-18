@@ -230,10 +230,6 @@
   padding: 0.65rem 0.75rem;
 }
 
-/* Hallmark · component: collaboration workspace · genre: modern-minimal · theme: existing Assetra tokens
- * states: default · hover · focus · active · disabled · loading · error · success
- * contrast: pass (46–50)
- */
 @media (min-width: 52.0625rem) {
   /* Keep the existing drawer geometrically fixed. The compose surface lives
      beside it, so its expansion never shifts the header or the timeline. */

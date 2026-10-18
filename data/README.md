@@ -1,21 +1,35 @@
 # Private source data
 
-Place locally supplied, non-versioned source material under `data/private/`:
+Everything under `data/private/` is ignored by Git. Only this README is versioned, so it is
+safe to push the whole repository: registers, ownership documents, CAD files and generated
+SQL stay on the local machine.
 
 ```text
 data/private/
-├─ inventory/
-│  ├─ 財產清冊_使用中_1150922.xlsx
-│  └─ 物品清冊_使用中_1150922.xlsx
+├─ inventory/                 Source registers (.xlsx) used by the import page
 ├─ geospatial/
-│  └─ land-properties.geojson
-└─ ownership/
-   ├─ 土地所有權狀/
-   └─ 建物所有權狀/
+│  └─ land-properties.geojson Cadastral source; see "Land parcels" below
+├─ ownership/
+│  ├─ 土地所有權狀/
+│  └─ 建物所有權狀/
+├─ floorplans/                Original CAD drawings (.dxf / .ai), never edited
+├─ indoor-map/                Working files of the floor-plan tools (tools/indoor-map)
+│  ├─ buildings/              One config per building, plus the combined tracer .html
+│  ├─ floors/                 Per-floor tracer pages (regenerable)
+│  ├─ rooms/                  Traced rooms, one `<floor>.rooms.json` per floor (the real work product)
+│  ├─ import-sql/             SQL generated from `rooms/` (regenerable)
+│  ├─ locations.json          Location codes offered by the tracer
+│  └─ location-stats.json     Per-location asset totals shown in the viewer
+└─ _archive/                  Old backups; delete once no longer needed
 ```
 
-`data/private/` is intentionally ignored by Git. The local GeoJSON is retained only as
-an import source: run `node scripts/generate-land-parcel-import-sql.mjs` when preparing
-an approved cadastral refresh. The application reads published parcel features from
-Supabase at runtime, so it no longer bundles this private file into the frontend.
+## Regenerating
+
+- **Land parcels** – run `node scripts/generate-land-parcel-import-sql.mjs` when preparing an
+  approved cadastral refresh. The application reads published parcels from Supabase at
+  runtime, so the GeoJSON is an import source only and is not bundled into the frontend.
+- **Indoor floor plans** – see `tools/indoor-map/README.md`. After tracing, run
+  `node scripts/generate-indoor-import-sql.mjs data/private/indoor-map/rooms` to rebuild
+  `import-sql/`.
+
 Do not place ownership documents or full source registers in `public/` or `src/`.
