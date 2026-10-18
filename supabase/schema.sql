@@ -1,4 +1,6 @@
 -- Assetra cloud schema reference. Apply changes through migrations; do not rerun this file on an existing project.
+-- This is a SNAPSHOT of the core tables (as of 2026-10-14). Later migrations add more (land parcel editor,
+-- AI query catalog, asset photos, indoor floor plans, ...); supabase/migrations/ is the source of truth.
 create type public.app_role as enum ('custodian', 'chief', 'admin');
 create type public.account_status as enum ('active', 'inactive');
 create type public.source_type as enum ('asset', 'item');
