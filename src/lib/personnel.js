@@ -7,7 +7,7 @@ function clean(value) {
  * code.  A duplicated assignment intentionally falls back to the imported
  * name instead of picking an arbitrary account.
  */
-export function officialNamesByCode(users = []) {
+function officialNamesByCode(users = []) {
   const namesByCode = new Map();
   users.forEach((user) => {
     if (user?.status && user.status !== "active") return;
