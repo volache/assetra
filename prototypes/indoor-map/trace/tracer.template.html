@@ -150,7 +150,8 @@
   .usage-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
   .usage-chips button { background: #eef2f9; border: 0; border-radius: 999px; color: var(--ink-2); cursor: pointer; font-size: 11.5px; padding: 2px 9px; }
   .usage-chips button:hover { background: #dfe6f2; }
-  .label.usage { fill: #55627f; font-style: italic; }
+  .tag-box { fill: #eef3fb; stroke: #a9b7d3; stroke-width: 1; }
+  .tag-text { fill: #34456b; font-size: 11px; pointer-events: none; text-anchor: middle; }
   .gappanel { background: #fff; border: 1px solid var(--rule); border-radius: 12px; box-shadow: 0 6px 24px rgba(20, 30, 60, 0.16); display: flex; flex-direction: column; left: 12px; max-height: calc(100% - 140px); position: absolute; top: 66px; width: 310px; z-index: 4; }
   .gappanel[hidden] { display: none; }
   .gap-head { align-items: center; display: flex; justify-content: space-between; padding: 10px 12px 4px 14px; }
@@ -313,6 +314,7 @@
     <button type="button" id="toggle-underlay" aria-pressed="true" title="顯示或關閉整張底圖（B）。關閉時不會吸附到底圖，魔術棒、延伸也不再參考底圖，只看你描的牆與房間">顯示底圖</button>
     <button type="button" id="toggle-faint" aria-pressed="false" title="把底圖調淡">淡化底圖</button>
     <button type="button" id="toggle-texts" aria-pressed="true" title="顯示原圖文字">顯示原圖文字</button>
+    <button type="button" id="toggle-notes" aria-pressed="true" title="房間上自己加註的文字（空間用途）以小標籤顯示；關閉後地圖上只剩房間名稱">顯示註記</button>
     <button type="button" id="toggle-minor" aria-pressed="false" title="顯示短線（門、傢俱等）">顯示短線</button>
   </div>
   <span class="sep"></span>
@@ -354,7 +356,12 @@
         <dt>修剪延伸</dt><dd>T：點牆上要刪掉的一段（刪到和其他牆或房間邊的交點為止）；Shift＋點牆的一端，延伸到最近的牆、房間邊或底圖牆線</dd>
         <dt>參考線</dt><dd>拖曳或繪製時，和其他物件的頂點或邊界對齊會出現洋紅色虛線並自動吸附，可用「參考線」開關</dd>
         <dt>編輯</dt><dd>拖曳白點移動頂點；雙擊邊線加點；Delete 刪除；Ctrl+Z、Ctrl+Y 復原重做</dd>
-        <dt>工具</dt><dd>V 選取、W 牆、A 弧牆、R 矩形、P 多邊形、C 半圓、O 圓、M 魔術棒、T 修剪或延伸</dd>
+        <dt>沒有牆的分區</dt><dd>S 分割線：在開放空間裡畫一條線（兩端超出房間邊界），Enter 或雙擊完成，房間被切成兩塊以上，不需要牆。已用牆分好的房間：選取後按選取列「固定房間」，之後刪掉牆也不會合併</dd>
+        <dt>合併與重疊</dt><dd>選兩個以上相鄰的房間按「合併房間」合成一個；房間範圍互相重疊時，選取壓在上面的房間按「扣掉重疊」，把它的範圍從其他房間挖掉</dd>
+        <dt>多個存置地點</dt><dd>同一個位置有好幾個代碼時：先指派一個主要代碼，再在搜尋結果或存置地點清單按該列右邊的「＋」加成其他代碼；房間面板可移除</dd>
+        <dt>註記</dt><dd>「空間用途」填的文字會以小標籤顯示在房間名稱下方，上方「顯示註記」可一鍵隱藏</dd>
+        <dt>清單</dt><dd>存置地點清單可用搜尋框右邊的下拉選單排序（代碼、名稱、財物筆數、未對應優先、房間數）</dd>
+        <dt>工具</dt><dd>V 選取、W 牆、A 弧牆、R 矩形、P 多邊形、C 半圓、O 圓、M 魔術棒、S 分割線、T 修剪或延伸</dd>
       </dl>
     </div>
   </div>
@@ -447,7 +454,7 @@ let drag = null;
 let view = { z: 1, tx: 0, ty: 0 };
 let size = { w: 1000, h: 700 };
 let snapOn = true;
-let showTexts = true;
+let showTexts = true, showNotes = true;
 let liveRooms = true;
 let spaceDown = false;
 let snapHit = null;
@@ -1257,12 +1264,11 @@ function renderOverlay() {
     }
   }
   for (const room of rooms) {
-    const text = room.name || room.locationCode || room.usage;
-    if (!text) continue;
+    const title = room.name || room.locationCode, note = showNotes ? room.usage : "";
+    if (!title && !note) continue;
     const [sx, sy] = toScreen(room.anchor || centroid(room.ring));
-    const named = !!(room.name || room.locationCode), both = named && room.usage;
-    make("text", { class: "label" + (named ? "" : " usage"), x: sx, y: sy + (both ? -3 : 4) }, overlay).textContent = text;
-    if (both) make("text", { class: "label usage", x: sx, y: sy + 11 }, overlay).textContent = room.usage;   // the 空間用途 note under the matched name
+    if (title) make("text", { class: "label", x: sx, y: sy + (note ? -2 : 4) }, overlay).textContent = title;
+    if (note) drawTag(note, sx, title ? sy + 13 : sy);          // the 空間用途 note, as a small tag under the name
   }
   if (tool === "select") {
     const handles = roomById(selectedId)?.ring || wallById(selectedWallId)?.pts || [];
@@ -1315,6 +1321,16 @@ function renderOverlay() {
     const color = { vertex: "#e0654a", corner: "#1fb5a5", edge: "#c08a00", wall: "#7a6bd6" }[snapHit.kind];
     make("circle", { class: "snap", cx: sx, cy: sy, r: 8, stroke: color }, overlay);
   }
+}
+/** A small rounded tag with the note in it, centred on (cx, cy). */
+function drawTag(text, cx, cy) {
+  const box = make("rect", { class: "tag-box", rx: 8, ry: 8 }, overlay);
+  const label = make("text", { class: "tag-text", x: cx, y: cy + 4 }, overlay);
+  label.textContent = text;
+  let width = [...text].reduce((sum, ch) => sum + (ch.charCodeAt(0) > 255 ? 11 : 6.2), 0);
+  try { width = label.getComputedTextLength() || width; } catch { /* keep the estimate */ }
+  box.setAttribute("x", cx - width / 2 - 6); box.setAttribute("y", cy - 8);
+  box.setAttribute("width", width + 12); box.setAttribute("height", 16);
 }
 function draftShape() {
   if (!draft || !draft.cursor) return null;
@@ -3866,6 +3882,7 @@ $("toggle-minor").addEventListener("click", (e) => {
   flip("toggle-minor", on);
   minorPath.style.display = on ? "" : "none";
 });
+$("toggle-notes").addEventListener("click", () => { showNotes = !showNotes; flip("toggle-notes", showNotes); renderOverlay(); });
 $("toggle-texts").addEventListener("click", () => { showTexts = !showTexts; flip("toggle-texts", showTexts); renderOverlay(); });
 $("toggle-faint").addEventListener("click", (e) => {
   const on = e.currentTarget.getAttribute("aria-pressed") !== "true";
