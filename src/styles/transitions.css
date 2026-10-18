@@ -1,53 +1,292 @@
 /* A warm, precise focus treatment that belongs to the ledger's coral palette. */
-:root { --color-focus: oklch(55% .13 35); }
-:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; }
-input:focus, select:focus { border-color: var(--color-accent-deep); box-shadow: 0 0 0 3px oklch(68% .15 35 / .18); outline-color: transparent; }
-::selection { background: oklch(79% .105 40); color: var(--color-ink); }
+:root {
+  --color-focus: oklch(55% 0.13 35);
+}
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 3px;
+}
+input:focus,
+select:focus {
+  border-color: var(--color-accent-deep);
+  box-shadow: 0 0 0 3px oklch(68% 0.15 35 / 0.18);
+  outline-color: transparent;
+}
+::selection {
+  background: oklch(79% 0.105 40);
+  color: var(--color-ink);
+}
 
 /* Session handoff: a coral field opens the ledger before the workspace appears. */
-.login-shell { isolation: isolate; position: relative; }
-.login-shell::after { background: var(--color-accent); content: ''; inset: 0; pointer-events: none; position: fixed; transform: scaleX(0); transform-origin: left center; z-index: 10; }
-.login-shell.is-loading { pointer-events: none; }
-.login-shell.is-loading::after { animation: session-coral-sweep 440ms var(--ease-out) forwards; }
-.login-shell.is-loading .login-intro > *, .login-shell.is-loading .login-panel { animation: session-login-content-depart 200ms var(--ease-out) forwards; }
-.session-loader { align-content: center; color: var(--color-accent-ink); display: grid; gap: var(--space-sm); inset: 0; justify-items: center; opacity: 0; padding: var(--space-xl); pointer-events: none; position: fixed; text-align: center; visibility: hidden; z-index: 11; }
-.session-loader strong { font-family: var(--font-display); font-size: var(--text-xl); letter-spacing: -.035em; }
-.session-loader small { color: oklch(30% .025 25 / .76); font-family: var(--font-mono); font-size: var(--text-xs); }
-.session-loader-pills { align-items: center; display: flex; gap: var(--space-sm); margin-bottom: var(--space-sm); }
-.session-loader-pills span { border-radius: var(--radius-pill); display: block; height: 1rem; width: 3.4rem; }
-.session-loader-pills span:nth-child(1) { background: oklch(91% .07 62); }
-.session-loader-pills span:nth-child(2) { background: var(--color-asset); width: 1.8rem; }
-.session-loader-pills span:nth-child(3) { background: var(--color-item); width: 2.5rem; }
-.login-shell.is-loading .session-loader { animation: session-loader-arrive 220ms var(--ease-out) 300ms both; visibility: visible; }
-.login-shell.is-loading .session-loader-pills span { animation: session-pill-cycle 1.05s var(--ease-out) 450ms infinite; }
-.login-shell.is-loading .session-loader-pills span:nth-child(2) { animation-delay: 570ms; }
-.login-shell.is-loading .session-loader-pills span:nth-child(3) { animation-delay: 690ms; }
-.app-shell.is-entering .brand-dot { animation: session-mark-arrive 560ms var(--ease-out) both; }
-.app-shell.is-entering .main-area { animation: session-workspace-arrive 560ms var(--ease-out) both; }
-.app-shell { isolation: isolate; position: relative; }
-.app-shell::after { background: var(--color-accent); content: ''; inset: 0; pointer-events: none; position: fixed; transform: scaleX(0); transform-origin: right center; z-index: 20; }
-.app-shell.is-leaving { pointer-events: none; }
-.app-shell.is-leaving::after { animation: session-coral-return 420ms var(--ease-out) forwards; }
-.app-shell.is-leaving .side-nav, .app-shell.is-leaving .main-area { animation: session-workspace-depart 280ms var(--ease-out) forwards; }
-@keyframes session-coral-sweep { to { transform: scaleX(1); } }
-@keyframes session-coral-return { to { transform: scaleX(1); } }
-@keyframes session-login-content-depart { to { opacity: 0; transform: translateX(-1rem); } }
-@keyframes session-loader-arrive { from { opacity: 0; transform: translateY(.9rem); } to { opacity: 1; transform: translateY(0); } }
-@keyframes session-pill-cycle { 0%, 100% { transform: translateY(0) scaleX(1); } 45% { transform: translateY(-.7rem) scaleX(1.1); } 70% { transform: translateY(.15rem) scaleX(.94); } }
-@keyframes session-mark-arrive { from { opacity: 0; transform: scale(.5); } 55% { opacity: 1; transform: scale(1.18); } to { transform: scale(1); } }
-@keyframes session-workspace-arrive { from { opacity: 0; transform: translate(1rem, .8rem); } to { opacity: 1; transform: translate(0, 0); } }
-@keyframes session-workspace-depart { to { opacity: 0; transform: translate(-.65rem, -.45rem); } }
-@media (prefers-reduced-motion: reduce) { .login-shell.is-loading::after, .login-shell.is-loading .login-intro > *, .login-shell.is-loading .login-panel, .login-shell.is-loading .session-loader, .login-shell.is-loading .session-loader-pills span, .app-shell.is-entering .brand-dot, .app-shell.is-entering .main-area, .app-shell.is-leaving::after, .app-shell.is-leaving .side-nav, .app-shell.is-leaving .main-area { animation: none; } }
+.login-shell {
+  isolation: isolate;
+  position: relative;
+}
+.login-shell::after {
+  background: var(--color-accent);
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: fixed;
+  transform: scaleX(0);
+  transform-origin: left center;
+  z-index: 10;
+}
+.login-shell.is-loading {
+  pointer-events: none;
+}
+.login-shell.is-loading::after {
+  animation: session-coral-sweep 440ms var(--ease-out) forwards;
+}
+.login-shell.is-loading .login-intro > *,
+.login-shell.is-loading .login-panel {
+  animation: session-login-content-depart 200ms var(--ease-out) forwards;
+}
+.session-loader {
+  align-content: center;
+  color: var(--color-accent-ink);
+  display: grid;
+  gap: var(--space-sm);
+  inset: 0;
+  justify-items: center;
+  opacity: 0;
+  padding: var(--space-xl);
+  pointer-events: none;
+  position: fixed;
+  text-align: center;
+  visibility: hidden;
+  z-index: 11;
+}
+.session-loader strong {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  letter-spacing: -0.035em;
+}
+.session-loader small {
+  color: oklch(30% 0.025 25 / 0.76);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.session-loader-pills {
+  align-items: center;
+  display: flex;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+.session-loader-pills span {
+  border-radius: var(--radius-pill);
+  display: block;
+  height: 1rem;
+  width: 3.4rem;
+}
+.session-loader-pills span:nth-child(1) {
+  background: oklch(91% 0.07 62);
+}
+.session-loader-pills span:nth-child(2) {
+  background: var(--color-asset);
+  width: 1.8rem;
+}
+.session-loader-pills span:nth-child(3) {
+  background: var(--color-item);
+  width: 2.5rem;
+}
+.login-shell.is-loading .session-loader {
+  animation: session-loader-arrive 220ms var(--ease-out) 300ms both;
+  visibility: visible;
+}
+.login-shell.is-loading .session-loader-pills span {
+  animation: session-pill-cycle 1.05s var(--ease-out) 450ms infinite;
+}
+.login-shell.is-loading .session-loader-pills span:nth-child(2) {
+  animation-delay: 570ms;
+}
+.login-shell.is-loading .session-loader-pills span:nth-child(3) {
+  animation-delay: 690ms;
+}
+.app-shell.is-entering .brand-dot {
+  animation: session-mark-arrive 560ms var(--ease-out) both;
+}
+.app-shell.is-entering .main-area {
+  animation: session-workspace-arrive 560ms var(--ease-out) both;
+}
+.app-shell {
+  isolation: isolate;
+  position: relative;
+}
+.app-shell::after {
+  background: var(--color-accent);
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: fixed;
+  transform: scaleX(0);
+  transform-origin: right center;
+  z-index: 20;
+}
+.app-shell.is-leaving {
+  pointer-events: none;
+}
+.app-shell.is-leaving::after {
+  animation: session-coral-return 420ms var(--ease-out) forwards;
+}
+.app-shell.is-leaving .side-nav,
+.app-shell.is-leaving .main-area {
+  animation: session-workspace-depart 280ms var(--ease-out) forwards;
+}
+@keyframes session-coral-sweep {
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes session-coral-return {
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes session-login-content-depart {
+  to {
+    opacity: 0;
+    transform: translateX(-1rem);
+  }
+}
+@keyframes session-loader-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(0.9rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes session-pill-cycle {
+  0%,
+  100% {
+    transform: translateY(0) scaleX(1);
+  }
+  45% {
+    transform: translateY(-0.7rem) scaleX(1.1);
+  }
+  70% {
+    transform: translateY(0.15rem) scaleX(0.94);
+  }
+}
+@keyframes session-mark-arrive {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.18);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+@keyframes session-workspace-arrive {
+  from {
+    opacity: 0;
+    transform: translate(1rem, 0.8rem);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+}
+@keyframes session-workspace-depart {
+  to {
+    opacity: 0;
+    transform: translate(-0.65rem, -0.45rem);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .login-shell.is-loading::after,
+  .login-shell.is-loading .login-intro > *,
+  .login-shell.is-loading .login-panel,
+  .login-shell.is-loading .session-loader,
+  .login-shell.is-loading .session-loader-pills span,
+  .app-shell.is-entering .brand-dot,
+  .app-shell.is-entering .main-area,
+  .app-shell.is-leaving::after,
+  .app-shell.is-leaving .side-nav,
+  .app-shell.is-leaving .main-area {
+    animation: none;
+  }
+}
 
 /* Everyday navigation is calmer than the loading handoff, but intentionally unhurried. */
-.page-transition.is-switching { animation: page-content-arrive 420ms var(--ease-out) backwards; }
-.page-transition.is-switching .page-heading { animation: page-heading-arrive 460ms var(--ease-out) 45ms backwards; }
-@keyframes page-content-arrive { from { opacity: 0; transform: translate(.8rem, .75rem); } to { opacity: 1; transform: translate(0, 0); } }
-@keyframes page-heading-arrive { from { opacity: 0; transform: translateY(.55rem); } to { opacity: 1; transform: translateY(0); } }
-@media (prefers-reduced-motion: reduce) { .page-transition, .page-transition .page-heading { animation: none; } }
-@media (min-width: 60rem) { .compact-filter-popover { background: var(--color-paper); border-bottom: 1px solid var(--color-rule); box-shadow: 0 .85rem 1.6rem oklch(25% .018 25 / .13); inset: 100% 0 auto; padding: var(--space-md) max(1rem, 4vw); position: absolute; } .compact-filter-popover .filter-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 38rem) { .advanced-search { grid-template-columns: 1fr; } .advanced-search-actions { justify-self: start; } .search-rule-menu { justify-self: start; } .search-rule-popover { left: 0; right: auto; } }
-@media (max-width: 38rem) { .value-triad { grid-template-columns: 1fr; } .asset-detail dl { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (prefers-reduced-motion: reduce) { .search-submit.pending { animation: none; box-shadow: 0 0 0 .22rem oklch(70% .14 40 / .22); } }
-
-
+.page-transition.is-switching {
+  animation: page-content-arrive 420ms var(--ease-out) backwards;
+}
+.page-transition.is-switching .page-heading {
+  animation: page-heading-arrive 460ms var(--ease-out) 45ms backwards;
+}
+@keyframes page-content-arrive {
+  from {
+    opacity: 0;
+    transform: translate(0.8rem, 0.75rem);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+}
+@keyframes page-heading-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(0.55rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-transition,
+  .page-transition .page-heading {
+    animation: none;
+  }
+}
+@media (min-width: 60rem) {
+  .compact-filter-popover {
+    background: var(--color-paper);
+    border-bottom: 1px solid var(--color-rule);
+    box-shadow: 0 0.85rem 1.6rem oklch(25% 0.018 25 / 0.13);
+    inset: 100% 0 auto;
+    padding: var(--space-md) max(1rem, 4vw);
+    position: absolute;
+  }
+  .compact-filter-popover .filter-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 38rem) {
+  .advanced-search {
+    grid-template-columns: 1fr;
+  }
+  .advanced-search-actions {
+    justify-self: start;
+  }
+  .search-rule-menu {
+    justify-self: start;
+  }
+  .search-rule-popover {
+    left: 0;
+    right: auto;
+  }
+}
+@media (max-width: 38rem) {
+  .value-triad {
+    grid-template-columns: 1fr;
+  }
+  .asset-detail dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .search-submit.pending {
+    animation: none;
+    box-shadow: 0 0 0 0.22rem oklch(70% 0.14 40 / 0.22);
+  }
+}

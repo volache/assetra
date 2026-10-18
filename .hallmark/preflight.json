@@ -2,7 +2,7 @@
   "date": "2026-10-03",
   "framework": "Vite + React",
   "fonts": ["Bricolage Grotesque", "IBM Plex Sans TC", "IBM Plex Mono"],
-  "palette": "Existing OKLCH CSS tokens in tokens.css",
+  "palette": "Existing OKLCH CSS tokens in src/styles/tokens.css",
   "motion": "motion-cut; CSS transitions and keyframes only",
   "spacing": "Existing --space-* token scale"
 }
