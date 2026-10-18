@@ -13,57 +13,19 @@ import { CapsuleSpinner } from "../../components/FeedbackCenter";
 import { LandEditorDialog } from "./LandEditorDialog";
 
 import { GeoListView } from "./GeoListView";
-import { landAssetNumberParts, parcelLabel } from "./landLabels";
+import { parcelLabel } from "./landLabels";
+import { useLandParcels } from "./useLandParcels";
 import { addLandLayers } from "./mapLayers";
 import { OwnershipDeleteDialog } from "./OwnershipDeleteDialog";
 
-const emptyFeatureCollection = { type: "FeatureCollection", features: [] };
-
 export function GeographicAssets() {
-  const [landProperties, setLandProperties] = useState(emptyFeatureCollection);
-  const [isLoadingLandProperties, setIsLoadingLandProperties] = useState(true);
-  const [landPropertiesError, setLandPropertiesError] = useState("");
+  const {
+    lands,
+    isLoading: isLoadingLandProperties,
+    error: landPropertiesError,
+    reload: reloadLands,
+  } = useLandParcels();
   const [landEditorTarget, setLandEditorTarget] = useState(undefined);
-  const [landReloadKey, setLandReloadKey] = useState(0);
-  const lands = useMemo(
-    () =>
-      landProperties.features.map((feature, index) => {
-        const basic = feature.properties?.basic_info || {};
-        const property = feature.properties?.property_info || {};
-        const propertyNumber =
-          property.property_number ||
-          `${basic.section_code}-${basic.land_number}-${index}`;
-        const number = landAssetNumberParts(propertyNumber);
-        return {
-          announcedLandPrice: Number(basic.announced_land_price) || 0,
-          announcedLandValue: Number(basic.announced_land_value) || 0,
-          area: Number(basic.area) || 0,
-          feature,
-          documentLandParcelId: feature.properties?.land_parcel_id || null,
-          // Identity of the parcel on the map and in the lists.  The 財產編號 is
-          // not unique here: 120-1040103-0001-0000004 and 200-1040103-0001-0000004
-          // both shorten to the same displayed number.
-          id:
-            feature.properties?.land_parcel_id ||
-            `${basic.section_code}-${basic.land_number}`,
-          assetNumber: number.serial
-            ? `${number.primary}\n${number.serial}`
-            : number.primary,
-          propertyNumber: String(property.property_number || ""),
-          landNumber: basic.land_number || "—",
-          landUseType: basic.land_use_type || "—",
-          name: property.property_name || "未命名土地",
-          price: Number(property.property_value) || 0,
-          relatedBuildingNumbers:
-            feature.properties?.related_building_numbers?.join("、") || "—",
-          section: basic.section_name || "未分類段",
-          sectionCode: basic.section_code || "—",
-          zoning: `${basic.zoning || "未分類"}\n${basic.land_use_type || "—"}`,
-          zoningLabel: basic.zoning || "未分類",
-        };
-      }),
-    [landProperties],
-  );
   const [term, setTerm] = useState("");
   const [appliedTerm, setAppliedTerm] = useState("");
   const [landFilters, setLandFilters] = useState({
@@ -104,49 +66,6 @@ export function GeographicAssets() {
     const timer = window.setTimeout(() => setOwnershipUploadSummary(""), 3500);
     return () => window.clearTimeout(timer);
   }, [ownershipUploadSummary]);
-  useEffect(() => {
-    let isCurrent = true;
-
-    async function loadLandProperties() {
-      if (!supabase) {
-        if (isCurrent) {
-          setLandPropertiesError("尚未設定 Supabase 連線，無法讀取地籍資料。");
-          setIsLoadingLandProperties(false);
-        }
-        return;
-      }
-
-      setIsLoadingLandProperties(true);
-      setLandPropertiesError("");
-      const { data, error } = await supabase
-        .from("land_parcel_features")
-        .select("id, feature")
-        .order("parcel_key");
-
-      if (!isCurrent) return;
-      if (error) {
-        setLandPropertiesError("地籍資料讀取失敗，請重新整理後再試。");
-        setLandProperties(emptyFeatureCollection);
-      } else {
-        setLandProperties({
-          type: "FeatureCollection",
-          features: (data || []).flatMap((row) => {
-            if (!row.feature) return [];
-            return [{
-              ...row.feature,
-              properties: { ...row.feature.properties, land_parcel_id: row.id },
-            }];
-          }),
-        });
-      }
-      setIsLoadingLandProperties(false);
-    }
-
-    loadLandProperties();
-    return () => {
-      isCurrent = false;
-    };
-  }, [landReloadKey]);
   useEffect(() => {
     if (lands.length && !lands.some((land) => land.id === selectedId))
       setSelectedId(lands[0].id);
@@ -713,7 +632,7 @@ export function GeographicAssets() {
       <LandEditorDialog
         land={landEditorTarget}
         onClose={() => setLandEditorTarget(undefined)}
-        onSaved={() => { setLandEditorTarget(undefined); setLandReloadKey((key) => key + 1); }}
+        onSaved={() => { setLandEditorTarget(undefined); reloadLands(); }}
         supabase={supabase}
       />
       <OwnershipDeleteDialog document={ownershipDeleteTarget} onCancel={() => setOwnershipDeleteTarget(null)} onConfirm={confirmOwnershipDeletion} />
@@ -1072,7 +991,7 @@ export function GeographicAssets() {
       <LandEditorDialog
         land={landEditorTarget}
         onClose={() => setLandEditorTarget(undefined)}
-        onSaved={() => { setLandEditorTarget(undefined); setLandReloadKey((key) => key + 1); }}
+        onSaved={() => { setLandEditorTarget(undefined); reloadLands(); }}
         supabase={supabase}
       />
     </section>
