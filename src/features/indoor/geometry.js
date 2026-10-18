@@ -204,3 +204,85 @@ export function segmentsPath(segments, mode, lift = 0) {
     return `M${ax.toFixed(1)} ${(ay + lift).toFixed(1)}L${bx.toFixed(1)} ${(by + lift).toFixed(1)}`;
   }).join("");
 }
+
+// ---- walls ------------------------------------------------------------------------------------------------------------
+// Walls grow out of the room outlines.  Between two public areas (a hall cut in two by a line) there is no wall, so nothing
+// is built there; every other side of a room is.  The angled view looks at the plan from one side, so a wall on the far side
+// of a room is built full height and one on the near side low, which keeps the inside of a room in sight.
+const toViewer = [-Math.sin(ISO_ANGLE), -Math.cos(ISO_ANGLE)];   // in the drawing, pointing at whoever looks at the angled plan
+const sunlight = [-0.7, 0.7];
+
+const signedRingArea = (ring) => ring.reduce((sum, [x1, y1], i) => { const [x2, y2] = ring[(i + 1) % ring.length]; return sum + (x1 * y2 - x2 * y1); }, 0) / 2;
+
+/**
+ * Every wall of a floor as { a, b, height, tone, rooms }: `height` is a share of the full wall height, `tone` is "l" or "d"
+ * (the side lit or in shade), `rooms` the ids of the rooms the wall belongs to (to colour the walls of the chosen room).
+ */
+export function wallEdges(spaces, tolerance = 4) {
+  const rings = [];
+  for (const space of spaces) for (const ring of [space.ring, ...(space.holes || [])]) {
+    ring.forEach((a, i) => {
+      const b = ring[(i + 1) % ring.length];
+      rings.push({ id: space.id, type: space.space_type, a, b, minX: Math.min(a[0], b[0]) - tolerance, maxX: Math.max(a[0], b[0]) + tolerance, minY: Math.min(a[1], b[1]) - tolerance, maxY: Math.max(a[1], b[1]) + tolerance });
+    });
+  }
+  const touching = (p, owner) => rings.filter((edge) => edge.id !== owner && p[0] >= edge.minX && p[0] <= edge.maxX && p[1] >= edge.minY && p[1] <= edge.maxY && nearSegment(p, edge.a, edge.b, tolerance));
+  const out = [];
+  const add = (a, b, height, outward, rooms) => {
+    const dx = b[0] - a[0], dy = b[1] - a[1], length = Math.hypot(dx, dy) || 1;
+    let n = [dy / length, -dx / length];                               // one of the two sides of the wall
+    if (n[0] * outward[0] + n[1] * outward[1] < 0) n = [-n[0], -n[1]];
+    const visible = n[0] * toViewer[0] + n[1] * toViewer[1] > 0 ? n : [-n[0], -n[1]];   // the side the viewer sees
+    out.push({ a, b, height, tone: visible[0] * sunlight[0] + visible[1] * sunlight[1] > 0 ? "l" : "d", rooms });
+  };
+  for (const space of spaces) {
+    if (space.space_type === "void") continue;
+    const ccw = signedRingArea(space.ring) > 0;
+    space.ring.forEach((a, i) => {
+      const b = space.ring[(i + 1) % space.ring.length];
+      const dx = b[0] - a[0], dy = b[1] - a[1], length = Math.hypot(dx, dy) || 1;
+      const outward = ccw ? [dy / length, -dx / length] : [-dy / length, dx / length];   // away from the room
+      const near = new Map();
+      for (const t of [0.25, 0.5, 0.75]) for (const edge of touching([a[0] + dx * t, a[1] + dy * t], space.id)) near.set(edge.id, edge.type);
+      if (!near.size) {                                                                     // the edge of the floor
+        const front = outward[0] * toViewer[0] + outward[1] * toViewer[1] > 0;
+        add(a, b, front ? 0.2 : 1, outward, [space.id]);
+        return;
+      }
+      const types = [...near.values()];
+      if (space.space_type !== "room" && !types.includes("room")) return;                  // open: nothing stands there
+      const solid = [...near].filter(([, type]) => type !== "void").map(([id]) => id);
+      if (solid.some((id) => id < space.id)) return;                                       // the neighbour builds this one
+      add(a, b, 0.5, outward, [space.id, ...solid]);
+    });
+  }
+  // where a void reaches the edge of the floor only a low parapet stands
+  for (const [id, edges] of voidEdgeKinds(spaces, tolerance)) {
+    const space = spaces.find((item) => item.id === id);
+    const ccw = signedRingArea(space.ring) > 0;
+    for (const [a, b] of edges.outer) {
+      const dx = b[0] - a[0], dy = b[1] - a[1], length = Math.hypot(dx, dy) || 1;
+      add(a, b, 0.22, ccw ? [dy / length, -dx / length] : [-dy / length, dx / length], [id]);
+    }
+  }
+  return out;
+}
+
+/** The walls as loose shapes from the drawing's own scale: runs of walls in drawing order (far to near) that share a colour. */
+export function wallRuns(edges, mode, fullHeight, tilt, selectedId) {
+  const lift = fullHeight * tilt;
+  const items = edges.map((edge) => {
+    const [ax, ay] = project(edge.a, mode), [bx, by] = project(edge.b, mode), up = lift * edge.height;
+    const chosen = selectedId && edge.rooms.includes(selectedId);
+    return {
+      depth: (ay + by) / 2, tone: chosen ? (edge.tone === "l" ? "sl" : "sd") : edge.tone,
+      d: `M${ax.toFixed(1)} ${ay.toFixed(1)}L${bx.toFixed(1)} ${by.toFixed(1)}L${bx.toFixed(1)} ${(by - up).toFixed(1)}L${ax.toFixed(1)} ${(ay - up).toFixed(1)}Z`,
+    };
+  }).sort((p, q) => p.depth - q.depth);
+  const runs = [];
+  for (const item of items) {
+    const last = runs[runs.length - 1];
+    if (last && last.tone === item.tone) last.d += item.d; else runs.push({ tone: item.tone, d: item.d });
+  }
+  return runs;
+}

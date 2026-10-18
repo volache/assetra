@@ -26,6 +26,15 @@
 .indoor-room.is-room { fill: oklch(99% .004 35); }
 .indoor-room.is-public { fill: oklch(91% .02 35); }
 .indoor-room.is-void { fill: oklch(94% .012 35 / .5); stroke: none; }
+.indoor-wall-button { background: oklch(99% .004 35 / .94); border: 1px solid var(--color-rule); border-radius: var(--radius-md); box-shadow: 0 .4rem 1rem oklch(25% .02 30 / .1); color: var(--color-ink-2); font-size: var(--text-xs); min-height: 2.1rem; padding: 0 .85rem; white-space: nowrap; }
+.indoor-wall-button.is-on { color: var(--color-ink); font-weight: 700; }
+.indoor-wall-button:hover { background: var(--color-paper-2); }
+.indoor-walls { pointer-events: none; }
+.indoor-walls path { stroke: oklch(52% .03 35 / .55); stroke-linejoin: round; stroke-width: .5px; vector-effect: non-scaling-stroke; }
+.indoor-walls .wall-l { fill: oklch(94% .012 35); }
+.indoor-walls .wall-d { fill: oklch(84% .02 35); }
+.indoor-walls .wall-sl { fill: oklch(74% .13 38); }
+.indoor-walls .wall-sd { fill: oklch(62% .14 36); }
 .indoor-void-line path { fill: none; pointer-events: none; stroke: oklch(72% .02 35); stroke-width: .8px; vector-effect: non-scaling-stroke; }
 .indoor-void-dash path { fill: none; pointer-events: none; stroke: oklch(52% .03 35 / .75); stroke-dasharray: 4 3; stroke-width: 1px; vector-effect: non-scaling-stroke; }
 .indoor-room.is-hover { stroke: var(--color-accent-deep); stroke-width: 2px; }
@@ -34,7 +43,8 @@
 .indoor-room.is-dim { opacity: .2; }
 .indoor-labels text { fill: var(--color-ink); font-family: var(--font-body); font-weight: 600; paint-order: stroke; pointer-events: none; stroke: oklch(99% .004 35 / .92); stroke-linejoin: round; stroke-width: .3em; text-anchor: middle; }
 
-.indoor-floors { background: oklch(99% .004 35 / .94); border: 1px solid var(--color-rule); border-radius: var(--radius-md); box-shadow: 0 .4rem 1rem oklch(25% .02 30 / .1); display: grid; left: var(--space-md); overflow: hidden; position: absolute; top: var(--space-md); z-index: 2; }
+.indoor-tools { display: grid; gap: var(--space-sm); justify-items: stretch; left: var(--space-md); position: absolute; top: var(--space-md); z-index: 2; }
+.indoor-floors { background: oklch(99% .004 35 / .94); border: 1px solid var(--color-rule); border-radius: var(--radius-md); box-shadow: 0 .4rem 1rem oklch(25% .02 30 / .1); display: grid; overflow: hidden; }
 .indoor-floors button { background: transparent; border: 0; border-bottom: 1px solid var(--color-rule); color: var(--color-ink-2); font-size: var(--text-xs); min-height: 2.1rem; padding: 0 .85rem; transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); white-space: nowrap; }
 .indoor-floors button:last-child { border-bottom: 0; }
 .indoor-floors button:hover { background: var(--color-paper-2); }

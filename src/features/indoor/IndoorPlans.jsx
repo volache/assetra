@@ -4,7 +4,7 @@ import { CapsuleSpinner } from "../../components/FeedbackCenter";
 import { AssetList } from "./AssetList";
 import { deleteSpace, importTracedFiles, saveSpace } from "./indoorData";
 import { useIndoorStore } from "./indoorStore";
-import { SPACE_TYPE_LABELS, floorName, heatFill, labelPoint, project, ringPath, screenBounds, segmentsPath, spaceBounds, spacePath, spaceTitle, unproject, voidEdgeKinds, wallsPath } from "./geometry";
+import { SPACE_TYPE_LABELS, floorName, heatFill, labelPoint, project, ringPath, screenBounds, segmentsPath, spaceBounds, spacePath, spaceTitle, unproject, voidEdgeKinds, wallEdges, wallRuns, wallsPath } from "./geometry";
 import { buildPlanIndex, roomsOfCode, searchAssets } from "./planIndex";
 import { RoomEditorDialog } from "./RoomEditorDialog";
 
@@ -13,6 +13,8 @@ const MARGIN = 0.06;
 const DRAWER_PX = 408;          // the room panel (24rem) plus its gaps, used to keep a room clear of it
 const FLY_MS = 620;
 const TURN_MS = 780;
+const WALL_SHARE = 0.015;      // a full wall is this share of the floor's width, which reads as a wall at the angled view
+const WALL_LEVELS = [["關", 0], ["矮", 0.6], ["中", 1], ["高", 1.8]];
 const fmt = (number, digits = 0) => Number(number || 0).toLocaleString("zh-TW", { maximumFractionDigits: digits, minimumFractionDigits: digits });
 const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 const reduceMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -41,6 +43,7 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
   const [mode, setMode] = useState("iso");              // what was asked for; `tilt` follows it a little at a time
   const [tilt, setTilt] = useState(1);                  // 0 = plain top view, 1 = angled view
   const [colorBy, setColorBy] = useState("type");
+  const [wallLevel, setWallLevel] = useState(2);
   const [editingId, setEditingId] = useState(null);
   const [view, setView] = useState(null);
   const [flyId, setFlyId] = useState(null);
@@ -122,11 +125,14 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
   const unlocatedAssets = shownCode ? index?.assetsByCode.get(shownCode) || [] : [];
 
   // ---- the view: fit the floor, zoom, pan, and slide to a room
+  const walls = useMemo(() => wallEdges(spaces), [spaces]);
+  const planSize = useMemo(() => { const [x0, y0, x1, y1] = screenBounds(spaces, "flat"); return Math.max(x1 - x0, y1 - y0); }, [spaces]);
+  const fullWall = planSize * WALL_SHARE * WALL_LEVELS[wallLevel][1];
   const frameAt = useCallback((angle) => {
     const [x0, y0, x1, y1] = screenBounds(spaces, angle, SLAB * angle);
-    const w = Math.max(x1 - x0, 1), h = Math.max(y1 - y0, 1), m = Math.max(w, h) * MARGIN;
-    return { x: x0 - m, y: y0 - m, w: w + 2 * m, h: h + 2 * m, full: Math.max(w + 2 * m, h + 2 * m) };
-  }, [spaces]);
+    const top = y0 - fullWall * angle, w = Math.max(x1 - x0, 1), h = Math.max(y1 - top, 1), m = Math.max(w, h) * MARGIN;
+    return { x: x0 - m, y: top - m, w: w + 2 * m, h: h + 2 * m, full: Math.max(w + 2 * m, h + 2 * m) };
+  }, [spaces, fullWall]);
   const frame = useCallback(() => frameAt(tiltRef.current), [frameAt]);
 
   /** Glide from where the plan is now (or from `from`) to `target`, zooming and panning together. */
@@ -436,6 +442,9 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
                         );
                       })}
                     </g>
+                    {fullWall > 0 && tilt > 0.02 && (
+                      <g className="indoor-walls">{wallRuns(walls, tilt, fullWall, tilt, selectedId).map((run, at) => <path className={`wall-${run.tone}`} d={run.d} key={at} />)}</g>
+                    )}
                     <g className="indoor-void-dash">{[...voidEdges].map(([id, edges]) => (edges.inner.length ? <path d={segmentsPath(edges.inner, tilt)} key={id} /> : null))}</g>
                     <g className="indoor-void-line">{[...voidEdges].map(([id, edges]) => (edges.outer.length ? <path d={segmentsPath(edges.outer, tilt)} key={id} /> : null))}</g>
                     <g className="indoor-labels">
@@ -447,9 +456,14 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
                   </g>
                 </svg>
               )}
-              <nav aria-label="樓層" className="indoor-floors">
-                {[...floorsHere].reverse().map((item) => <button aria-current={item.id === floorId} className={item.id === floorId ? "is-active" : ""} key={item.id} onClick={() => changeFloor(item.id)} title={floorName(item)} type="button">{item.label}</button>)}
-              </nav>
+              <div className="indoor-tools">
+                <nav aria-label="樓層" className="indoor-floors">
+                  {[...floorsHere].reverse().map((item) => <button aria-current={item.id === floorId} className={item.id === floorId ? "is-active" : ""} key={item.id} onClick={() => changeFloor(item.id)} title={floorName(item)} type="button">{item.label}</button>)}
+                </nav>
+                <button className={`indoor-wall-button ${wallLevel ? "is-on" : ""}`} onClick={() => setWallLevel((level) => (level + 1) % WALL_LEVELS.length)} title="立體視角下，房間邊界長出的牆（點一下換高度）；兩個公共區域之間沒有牆" type="button">
+                  牆　{WALL_LEVELS[wallLevel][0]}
+                </button>
+              </div>
               <div className="indoor-zoom" role="group" aria-label="縮放">
                 <button aria-label="放大" onClick={() => zoomAt(1 / 1.4)} type="button">+</button>
                 <button aria-label="縮小" onClick={() => zoomAt(1.4)} type="button">−</button>
