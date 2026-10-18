@@ -14,13 +14,12 @@ data/private/
 │  └─ 建物所有權狀/
 ├─ floorplans/                Original CAD drawings (.dxf / .ai), never edited
 ├─ indoor-map/                Working files of the floor-plan tools (tools/indoor-map)
-│  ├─ buildings/              One config per building, plus the combined tracer .html
-│  ├─ floors/                 Per-floor tracer pages (regenerable)
+│  ├─ buildings/              Building configs, plus the combined tracer .html (rebuild after template changes)
 │  ├─ rooms/                  Traced rooms, one `<floor>.rooms.json` per floor (the real work product)
 │  ├─ import-sql/             SQL generated from `rooms/` (regenerable)
 │  ├─ locations.json          Location codes offered by the tracer
 │  └─ location-stats.json     Per-location asset totals shown in the viewer
-└─ _archive/                  Old backups; delete once no longer needed
+└─ _archive/                  Old backups and superseded tracer pages; delete once no longer needed
 ```
 
 ## Regenerating
