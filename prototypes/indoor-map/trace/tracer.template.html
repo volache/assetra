@@ -165,6 +165,7 @@
   .usage-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
   .usage-chips button { background: #eef2f9; border: 0; border-radius: 999px; color: var(--ink-2); cursor: pointer; font-size: 11.5px; padding: 2px 9px; }
   .usage-chips button:hover { background: #dfe6f2; }
+  .label.also { fill: #3b4a6b; font-size: 11px; }
   .tag-box { fill: #eef3fb; stroke: #a9b7d3; stroke-width: 1; }
   .tag-text { fill: #34456b; font-size: 11px; pointer-events: none; text-anchor: middle; }
   .gappanel { background: #fff; border: 1px solid var(--rule); border-radius: 12px; box-shadow: 0 6px 24px rgba(20, 30, 60, 0.16); display: flex; flex-direction: column; left: 12px; max-height: calc(100% - 140px); position: absolute; top: 66px; width: 310px; z-index: 4; }
@@ -1280,10 +1281,17 @@ function renderOverlay() {
   }
   for (const room of rooms) {
     const title = room.name || room.locationCode, note = showNotes ? room.usage : "";
+    const others = showNotes ? (room.also || []).map((a) => a.name || locationByCode.get(a.code)?.name || a.code) : [];
     if (!title && !note) continue;
     const [sx, sy] = toScreen(room.anchor || centroid(room.ring));
-    if (title) make("text", { class: "label", x: sx, y: sy + (note ? -2 : 4) }, overlay).textContent = title;
-    if (note) drawTag(note, sx, title ? sy + 13 : sy);          // the 空間用途 note, as a small tag under the name
+    // a room with other codes shows "＋N" after its name, and lists them one per line once it is big enough on screen
+    const wide = (Math.max(...room.ring.map((q) => q[0])) - Math.min(...room.ring.map((q) => q[0]))) * view.z;
+    const expand = others.length > 0 && wide >= 150;
+    const lines = [title, ...(expand ? others : [])].filter(Boolean);
+    const extra = others.length && !expand && title ? " ＋" + others.length : "";
+    const rows = lines.length + (note ? 1 : 0), top = sy - ((rows - 1) * 14) / 2;
+    lines.forEach((line, i) => make("text", { class: "label" + (i > 0 ? " also" : ""), x: sx, y: top + i * 14 + 4 }, overlay).textContent = line + (i === 0 ? extra : ""));
+    if (note) drawTag(note, sx, top + lines.length * 14);          // the 空間用途 note, as a small tag under the names
   }
   if (tool === "select") {
     const handles = roomById(selectedId)?.ring || wallById(selectedWallId)?.pts || [];
@@ -1507,7 +1515,7 @@ function renderPanel() {
     const m2 = `${(roomArea(room) / 10000).toFixed(1)} m²`;
     const located = room.locationCode || room.name;
     const first = located ? locationTitle(room) : room.usage ? `用途：${room.usage}` : `${room.id}　${m2}`;
-    const second = located || room.usage ? `${room.id} · ${m2}${room.also?.length ? ` · 另 ${room.also.length} 個代碼` : ""}` : "尚未設定存置地點";
+    const second = located || room.usage ? `${room.id} · ${m2}${room.also?.length ? ` · 另有 ${room.also.map((a) => a.name || locationByCode.get(a.code)?.name || a.code).join("、")}` : ""}` : "尚未設定存置地點";
     const body = domEl("span", undefined, { className: "body" });
     body.append(domEl("span", first, { className: "t1 ellip" }), domEl("span", second, { className: "t2 ellip" }));
     const tags = domEl("span", undefined, { className: "tags" });
