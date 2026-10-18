@@ -25,7 +25,8 @@
 .indoor-room { cursor: pointer; stroke: oklch(72% .02 35); stroke-linejoin: round; stroke-width: .8px; transition: fill var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out); vector-effect: non-scaling-stroke; }
 .indoor-room.is-room { fill: oklch(99% .004 35); }
 .indoor-room.is-public { fill: oklch(91% .02 35); }
-.indoor-room.is-void { fill: oklch(94% .012 35 / .5); stroke-dasharray: 4 3; }
+.indoor-room.is-void { fill: oklch(94% .012 35 / .5); stroke: none; }
+.indoor-void-dash path { fill: none; pointer-events: none; stroke: oklch(52% .03 35 / .75); stroke-dasharray: 4 3; stroke-width: 1px; vector-effect: non-scaling-stroke; }
 .indoor-room.is-hover { stroke: var(--color-accent-deep); stroke-width: 2px; }
 .indoor-room.is-hit { stroke: var(--color-focus); stroke-width: 2.6px; }
 .indoor-room.is-selected, .indoor-room.is-public.is-selected { fill: oklch(30% .02 25); stroke: oklch(99% .004 35); stroke-width: 1.6px; }

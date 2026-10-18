@@ -4,7 +4,7 @@ import { CapsuleSpinner } from "../../components/FeedbackCenter";
 import { AssetList } from "./AssetList";
 import { deleteSpace, importTracedFiles, saveSpace } from "./indoorData";
 import { useIndoorStore } from "./indoorStore";
-import { SPACE_TYPE_LABELS, heatFill, labelPoint, project, screenBounds, spaceBounds, spacePath, spaceTitle } from "./geometry";
+import { SPACE_TYPE_LABELS, heatFill, labelPoint, project, screenBounds, segmentsPath, spaceBounds, spacePath, spaceTitle, voidEdgeKinds } from "./geometry";
 import { buildPlanIndex, roomsOfCode, searchAssets } from "./planIndex";
 import { RoomEditorDialog } from "./RoomEditorDialog";
 
@@ -269,6 +269,8 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
 
   const ordered = ["void", "public", "room"].flatMap((type) => spaces.filter((space) => space.space_type === type));
   const solid = ordered.filter((space) => space.space_type !== "void");
+  // a void is dashed where it sits among other rooms, and solid like any room where it reaches the edge of the floor
+  const voidEdges = useMemo(() => voidEdgeKinds(spaces), [spaces]);
   const showLabels = view && view.full / view.w >= 2.4;
   const tag = selected || spaces.find((space) => space.id === hoverId) || null;
   const position = floorsHere.findIndex((item) => item.id === floorId);
@@ -378,7 +380,10 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
                 <svg aria-label={`${floor?.building || ""}${floor?.label || ""}平面圖`} className="indoor-svg" onMouseDown={startDrag} preserveAspectRatio="xMidYMid meet" ref={svgRef} role="img" viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}>
                   <g className="indoor-scene" key={`${floorId}-${mode}`}>
                     {mode === "iso" && <g className="indoor-slab">{solid.map((space) => <path d={spacePath(space, mode, SLAB)} fillRule="evenodd" key={space.id} />)}</g>}
-                    <g className="indoor-edge">{solid.map((space) => <path d={spacePath(space, mode)} key={space.id} />)}</g>
+                    <g className="indoor-edge">
+                      {solid.map((space) => <path d={spacePath(space, mode)} key={space.id} />)}
+                      {[...voidEdges].map(([id, edges]) => (edges.outer.length ? <path d={segmentsPath(edges.outer, mode)} key={id} /> : null))}
+                    </g>
                     <g className="indoor-rooms">
                       {ordered.map((space) => {
                         const heat = colorBy === "assets" && space.space_type !== "void" ? heatFill(countOf(space), maxCount) : null;
@@ -392,6 +397,7 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
                         );
                       })}
                     </g>
+                    <g className="indoor-void-dash">{[...voidEdges].map(([id, edges]) => (edges.inner.length ? <path d={segmentsPath(edges.inner, mode)} key={id} /> : null))}</g>
                     <g className="indoor-labels">
                       {(showLabels ? spaces.filter((space) => space.space_type !== "void" && (space.name || space.usage)) : tag ? [tag] : []).map((space) => {
                         const [x, y] = project(labelPoint(space), mode);

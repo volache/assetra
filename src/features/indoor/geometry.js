@@ -142,3 +142,45 @@ export function heatFill(count, max) {
   const t = Math.min(1, Math.log1p(count) / Math.log1p(max));
   return `oklch(${(95 - 27 * t).toFixed(1)}% ${(0.035 + 0.12 * t).toFixed(3)} ${(75 - 38 * t).toFixed(0)})`;
 }
+
+// ---- void (挑空) outlines ---------------------------------------------------------------------------------------------
+const nearSegment = (p, a, b, tolerance) => {
+  const dx = b[0] - a[0], dy = b[1] - a[1], len2 = dx * dx + dy * dy;
+  const t = len2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2)) : 0;
+  return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy)) <= tolerance;
+};
+
+/**
+ * Splits the outline of every void into the sides that another room shares or touches (`inner`: those stay dashed, the
+ * void is in the middle of the floor there) and the sides nothing else touches (`outer`: the edge of the floor, drawn as a
+ * solid line like any other room).  Returns Map(void id -> { inner, outer }) with segments as [[x, y], [x, y]].
+ */
+export function voidEdgeKinds(spaces, tolerance = 4) {
+  const edges = [];
+  for (const space of spaces) for (const ring of [space.ring, ...(space.holes || [])]) {
+    ring.forEach((a, i) => edges.push({ id: space.id, a, b: ring[(i + 1) % ring.length] }));
+  }
+  const result = new Map();
+  for (const space of spaces) {
+    if (space.space_type !== "void") continue;
+    const inner = [], outer = [];
+    space.ring.forEach((a, i) => {
+      const b = space.ring[(i + 1) % space.ring.length];
+      const touching = [0.25, 0.5, 0.75].filter((t) => {
+        const p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+        return edges.some((edge) => edge.id !== space.id && nearSegment(p, edge.a, edge.b, tolerance));
+      }).length;
+      (touching >= 2 ? inner : outer).push([a, b]);
+    });
+    result.set(space.id, { inner, outer });
+  }
+  return result;
+}
+
+/** Loose segments as one SVG path (each its own sub-path). */
+export function segmentsPath(segments, mode, lift = 0) {
+  return segments.map(([a, b]) => {
+    const [ax, ay] = project(a, mode), [bx, by] = project(b, mode);
+    return `M${ax.toFixed(1)} ${(ay + lift).toFixed(1)}L${bx.toFixed(1)} ${(by + lift).toFixed(1)}`;
+  }).join("");
+}
