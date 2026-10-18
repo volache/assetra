@@ -1424,6 +1424,16 @@ function renderSelbar() {
   stepInput.addEventListener("input", () => { const v = Number(stepInput.value); if (v > 0) stepCm = v; });
   step.append(stepInput, document.createTextNode(" 公分"));
   bar.append(keys, step, domEl("span", undefined, { className: "sep" }));
+  if (items.rooms.length >= 2) {
+    const mergeButton = domEl("button", "合併房間", { type: "button", className: "btn", title: "把相鄰的所選房間合成一個（名稱與存置地點取自有設定的那一間；其他代碼會變成「其他代碼」）" });
+    mergeButton.addEventListener("click", () => {
+      const result = mergeRooms(items.rooms);
+      if (!result) return;
+      if (result.error) showToast(result.error);
+      else showToast(`已把 ${result.count} 個房間合成一個`, { undo: true });
+    });
+    bar.append(mergeButton);
+  }
   const loose = items.rooms.filter((id) => roomById(id)?.auto);
   if (loose.length) {
     const freeze = domEl("button", "固定房間", { type: "button", className: "btn", title: "把由牆生成的房間固定成手繪房間：之後刪掉牆，房間也不會合併或消失" });
@@ -2025,6 +2035,83 @@ function splitRoomsByLine(line) {
   }
   changed(true, true);
   return results.length;
+}
+/**
+ * The outline of two rooms that share part of an edge, or null when they do not touch along a line.  Each ring is cut at
+ * the corners of the other, then the stretches both rings walk (in opposite directions) cancel out.
+ */
+function unionRings(a, b) {
+  const key = (p) => p[0].toFixed(1) + "," + p[1].toFixed(1);
+  const ccw = (ring) => (signedArea(ring) < 0 ? [...ring].reverse() : ring);
+  const split = (ring, others) => {
+    const out = [];
+    ring.forEach((p, i) => {
+      const q = ring[(i + 1) % ring.length];
+      out.push(p);
+      others
+        .map((o) => ({ o, hit: closestOnSegment(o, p, q) }))
+        .filter(({ o, hit }) => dist(o, hit.point) < 0.6 && hit.t > 1e-6 && hit.t < 1 - 1e-6)
+        .sort((m, n) => m.hit.t - n.hit.t)
+        .forEach(({ o }) => { if (key(o) !== key(p) && key(o) !== key(q)) out.push(o); });
+    });
+    return out;
+  };
+  const A = split(ccw(a), b), B = split(ccw(b), a);
+  const edges = new Map();
+  const add = (ring) => ring.forEach((p, i) => { const q = ring[(i + 1) % ring.length]; edges.set(key(p) + ">" + key(q), [p, q]); });
+  add(A); add(B);
+  let shared = 0;
+  for (const k of [...edges.keys()]) {
+    const [from, to] = k.split(">");
+    if (edges.has(to + ">" + from)) { edges.delete(k); edges.delete(to + ">" + from); shared += 1; }
+  }
+  if (!shared || !edges.size) return null;
+  const next = new Map();
+  for (const [k, [p, q]] of edges) { if (next.has(key(p))) return null; next.set(key(p), q); }
+  const ring = [];
+  let at = [...edges.values()][0][0];
+  for (let guard = 0; guard < 5000; guard++) {
+    ring.push(at);
+    at = next.get(key(at));
+    if (!at) return null;
+    if (key(at) === key(ring[0])) break;
+  }
+  if (ring.length !== edges.size) return null;      // two outlines, or a hole, remain: not a single room
+  return ring.filter((p, i) => {
+    const u = ring[(i + ring.length - 1) % ring.length], v = ring[(i + 1) % ring.length];
+    return Math.abs((v[0] - u[0]) * (p[1] - u[1]) - (v[1] - u[1]) * (p[0] - u[0])) / Math.max(1, dist(u, v)) > 0.3;
+  });
+}
+/** Join rooms that touch along an edge into one hand-drawn room (it keeps the name and location of the biggest named one). */
+function mergeRooms(ids) {
+  const list = ids.map(roomById).filter(Boolean);
+  if (list.length < 2) return null;
+  let outline = list[0].ring, joined = [list[0]];
+  const rest = list.slice(1);
+  for (let progress = true; progress && rest.length;) {
+    progress = false;
+    for (let i = 0; i < rest.length; i++) {
+      const merged = unionRings(outline, rest[i].ring);
+      if (merged) { outline = merged; joined.push(rest[i]); rest.splice(i, 1); progress = true; break; }
+    }
+  }
+  if (rest.length) return { error: `有 ${rest.length} 個房間跟其他房間沒有共用邊，沒辦法合在一起` };
+  pushHistory();
+  const keeper = [...joined].sort((p, q) => Number(!!(q.locationCode || q.name)) - Number(!!(p.locationCode || p.name)) || roomArea(q) - roomArea(p))[0];
+  joined.forEach((r) => { if (r.auto) suppressed.push([...(r.anchor || interiorPoint(r.ring, r.holes || [])), 1]); });
+  const holes = joined.flatMap((r) => r.holes || []);
+  const merged = { ...keeper, ring: outline.map((q) => [round1(q[0]), round1(q[1])]), auto: false };
+  delete merged.anchor; delete merged.curve; delete merged.holes;
+  if (holes.length) merged.holes = holes;
+  const also = joined.filter((r) => r !== keeper && r.locationCode && r.locationCode !== keeper.locationCode).map((r) => ({ code: r.locationCode, name: r.name || "" }));
+  if (also.length) merged.also = [...(keeper.also || []), ...also];
+  const gone = new Set(joined.map((r) => r.id));
+  rooms = rooms.filter((r) => !gone.has(r.id));
+  rooms.push(merged);
+  selectedId = merged.id;
+  setSelection([merged.id], []);
+  changed(true, true);
+  return { room: merged, count: joined.length };
 }
 function finishPath() {
   if (!draft) return;
