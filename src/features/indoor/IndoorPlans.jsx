@@ -4,7 +4,7 @@ import { CapsuleSpinner } from "../../components/FeedbackCenter";
 import { AssetList } from "./AssetList";
 import { deleteSpace, importTracedFiles, saveSpace } from "./indoorData";
 import { useIndoorStore } from "./indoorStore";
-import { SPACE_TYPE_LABELS, heatFill, labelPoint, project, screenBounds, segmentsPath, spaceBounds, spacePath, spaceTitle, voidEdgeKinds } from "./geometry";
+import { SPACE_TYPE_LABELS, heatFill, labelPoint, project, ringPath, screenBounds, segmentsPath, spaceBounds, spacePath, spaceTitle, unproject, voidEdgeKinds, wallsPath } from "./geometry";
 import { buildPlanIndex, roomsOfCode, searchAssets } from "./planIndex";
 import { RoomEditorDialog } from "./RoomEditorDialog";
 
@@ -12,6 +12,7 @@ const SLAB = 120;               // thickness of the floor slab in the angled vie
 const MARGIN = 0.06;
 const DRAWER_PX = 408;          // the room panel (24rem) plus its gaps, used to keep a room clear of it
 const FLY_MS = 620;
+const TURN_MS = 780;
 const fmt = (number, digits = 0) => Number(number || 0).toLocaleString("zh-TW", { maximumFractionDigits: digits, minimumFractionDigits: digits });
 const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 const reduceMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -37,7 +38,8 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
   const [highlightAsset, setHighlightAsset] = useState(null);
   const [unlocated, setUnlocated] = useState(null);            // null = closed, "" = the list of codes, else one code
   const [term, setTerm] = useState("");
-  const [mode, setMode] = useState("iso");
+  const [mode, setMode] = useState("iso");              // what was asked for; `tilt` follows it a little at a time
+  const [tilt, setTilt] = useState(1);                  // 0 = plain top view, 1 = angled view
   const [colorBy, setColorBy] = useState("type");
   const [editingId, setEditingId] = useState(null);
   const [view, setView] = useState(null);
@@ -50,9 +52,11 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
   const dragRef = useRef(null);
   const workbenchRef = useRef(null);
   const viewRef = useRef(null);
+  const tiltRef = useRef(1);
   const animRef = useRef(0);
   const flyFresh = useRef(false);
   useEffect(() => { viewRef.current = view; }, [view]);
+  useEffect(() => { tiltRef.current = tilt; }, [tilt]);
 
   const floors = index?.floors || [];
   const buildings = useMemo(() => [...new Set(floors.map((floor) => floor.building))], [floors]);
@@ -118,11 +122,12 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
   const unlocatedAssets = shownCode ? index?.assetsByCode.get(shownCode) || [] : [];
 
   // ---- the view: fit the floor, zoom, pan, and slide to a room
-  const frame = useCallback(() => {
-    const [x0, y0, x1, y1] = screenBounds(spaces, mode, mode === "iso" ? SLAB : 0);
+  const frameAt = useCallback((angle) => {
+    const [x0, y0, x1, y1] = screenBounds(spaces, angle, SLAB * angle);
     const w = Math.max(x1 - x0, 1), h = Math.max(y1 - y0, 1), m = Math.max(w, h) * MARGIN;
     return { x: x0 - m, y: y0 - m, w: w + 2 * m, h: h + 2 * m, full: Math.max(w + 2 * m, h + 2 * m) };
-  }, [spaces, mode]);
+  }, [spaces]);
+  const frame = useCallback(() => frameAt(tiltRef.current), [frameAt]);
 
   /** Glide from where the plan is now (or from `from`) to `target`, zooming and panning together. */
   const animateView = useCallback((target, from = null, ms = FLY_MS) => {
@@ -143,7 +148,29 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
   useEffect(() => () => cancelAnimationFrame(animRef.current), []);
 
   const fit = useCallback(() => animateView(frame()), [animateView, frame]);
-  useEffect(() => { cancelAnimationFrame(animRef.current); setView(frame()); }, [spaces, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { cancelAnimationFrame(animRef.current); setView(frame()); }, [spaces]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Turning between the angled and the plain view: the angle changes a little each frame while the camera keeps looking at
+  // the same spot of the floor at the same zoom, so it reads as the camera moving rather than the drawing being swapped.
+  useEffect(() => {
+    const target = mode === "iso" ? 1 : 0;
+    const from = tiltRef.current, current = viewRef.current;
+    if (from === target) return undefined;
+    cancelAnimationFrame(animRef.current);
+    if (!current || reduceMotion()) { setTilt(target); setView(frameAt(target)); return undefined; }
+    const ratio = current.w / frameAt(from).w;
+    const spot = unproject([current.x + current.w / 2, current.y + current.h / 2], from);
+    const t0 = performance.now();
+    const step = (now) => {
+      const t = Math.min(1, (now - t0) / TURN_MS), k = from + (target - from) * ease(t);
+      const fit = frameAt(k), [cx, cy] = project(spot, k), w = fit.w * ratio, h = fit.h * ratio;
+      tiltRef.current = k; setTilt(k);
+      setView({ x: cx - w / 2, y: cy - h / 2, w, h, full: fit.full });
+      if (t < 1) animRef.current = requestAnimationFrame(step);
+    };
+    animRef.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(animRef.current);
+  }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** The view that shows a room, with the room kept in the part of the plan the panel does not cover. */
   const viewForRoom = useCallback((space) => {
@@ -151,13 +178,13 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
     const rect = svgRef.current?.getBoundingClientRect();
     const aspect = rect && rect.height ? rect.width / rect.height : 1.6;
     const covered = rect && wide() ? Math.min(DRAWER_PX, rect.width * 0.6) / rect.width : 0;
-    const [x0, y0, x1, y1] = spaceBounds(space, mode);
+    const [x0, y0, x1, y1] = spaceBounds(space, tiltRef.current);
     const size = Math.max(x1 - x0, y1 - y0) * 1.8;
     const fitW = Math.max(whole.w, whole.h * aspect);
     const w = Math.min(fitW, Math.max(size / (1 - covered), size * aspect, fitW / 7)), h = w / aspect;
     const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
     return { x: cx - (w * (1 - covered)) / 2, y: cy - h / 2, w, h, full: whole.full };
-  }, [frame, mode]);
+  }, [frame]);
   // after the floor has changed (the effect above ran first), slide to the room that was asked for
   useEffect(() => {
     if (!flyId) return;
@@ -165,21 +192,21 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
     if (space && space.floor_id === floorId) animateView(viewForRoom(space), flyFresh.current ? frame() : null);
     flyFresh.current = false;
     setFlyId(null);
-  }, [flyId, spaces, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [flyId, spaces]); // eslint-disable-line react-hooks/exhaustive-deps
   // a click on the plan only pans when the room would end up under the panel
   const keepClear = useCallback((space) => {
     const svg = svgRef.current, current = viewRef.current;
     if (!svg || !current || !wide()) return;
     const rect = svg.getBoundingClientRect(), ctm = svg.getScreenCTM();
     if (!ctm) return;
-    const [x0, y0, x1, y1] = spaceBounds(space, mode);
+    const [x0, y0, x1, y1] = spaceBounds(space, tiltRef.current);
     const point = svg.createSVGPoint(); point.x = (x0 + x1) / 2; point.y = (y0 + y1) / 2;
     const at = point.matrixTransform(ctm);
     const limit = rect.right - Math.min(DRAWER_PX, rect.width * 0.6);
     if (at.x < limit - 24) return;
     const dx = (at.x - (rect.left + (limit - rect.left) / 2)) / ctm.a;
     animateView({ ...current, x: current.x + dx });
-  }, [animateView, mode]);
+  }, [animateView]);
 
   const zoomAt = useCallback((factor, clientX, clientY) => {
     cancelAnimationFrame(animRef.current);
@@ -271,6 +298,7 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
   const solid = ordered.filter((space) => space.space_type !== "void");
   // a void is dashed where it sits among other rooms, and solid like any room where it reaches the edge of the floor
   const voidEdges = useMemo(() => voidEdgeKinds(spaces), [spaces]);
+  const lift = SLAB * tilt;
   const showLabels = view && view.full / view.w >= 2.4;
   const tag = selected || spaces.find((space) => space.id === hoverId) || null;
   const position = floorsHere.findIndex((item) => item.id === floorId);
@@ -378,11 +406,22 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
             <div className="indoor-stage">
               {view && (
                 <svg aria-label={`${floor?.building || ""}${floor?.label || ""}平面圖`} className="indoor-svg" onMouseDown={startDrag} preserveAspectRatio="xMidYMid meet" ref={svgRef} role="img" viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}>
-                  <g className="indoor-scene" key={`${floorId}-${mode}`}>
-                    {mode === "iso" && <g className="indoor-slab">{solid.map((space) => <path d={spacePath(space, mode, SLAB)} fillRule="evenodd" key={space.id} />)}</g>}
+                  <defs>
+                    {[...voidEdges].map(([id, edges]) => (edges.outer.length ? (
+                      // keeps only the outer half of a void's edge line, so it is as thick as the line of a room beside it
+                      <clipPath id={`indoor-void-${id}`} key={id}><path clipRule="evenodd" d={`M-1e7 -1e7H1e7V1e7H-1e7Z${ringPath(spaces.find((space) => space.id === id).ring, tilt)}`} /></clipPath>
+                    ) : null))}
+                  </defs>
+                  <g className="indoor-scene" key={floorId}>
+                    {tilt > 0.01 && (
+                      <g className="indoor-slab">
+                        {solid.map((space) => <path d={spacePath(space, tilt, lift)} fillRule="evenodd" key={space.id} />)}
+                        {[...voidEdges].map(([id, edges]) => (edges.outer.length ? <path d={wallsPath(edges.outer, tilt, lift)} key={id} /> : null))}
+                      </g>
+                    )}
                     <g className="indoor-edge">
-                      {solid.map((space) => <path d={spacePath(space, mode)} key={space.id} />)}
-                      {[...voidEdges].map(([id, edges]) => (edges.outer.length ? <path d={segmentsPath(edges.outer, mode)} key={id} /> : null))}
+                      {solid.map((space) => <path d={spacePath(space, tilt)} key={space.id} />)}
+                      {[...voidEdges].map(([id, edges]) => (edges.outer.length ? <path clipPath={`url(#indoor-void-${id})`} d={segmentsPath(edges.outer, tilt)} key={id} /> : null))}
                     </g>
                     <g className="indoor-rooms">
                       {ordered.map((space) => {
@@ -390,17 +429,18 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
                         return (
                           <path
                             className={`indoor-room is-${space.space_type} ${selectedId === space.id ? "is-selected" : ""} ${hoverId === space.id ? "is-hover" : ""} ${query && !matches(space) && !hitSpaces.has(space.id) ? "is-dim" : ""} ${hitSpaces.has(space.id) ? "is-hit" : ""}`}
-                            d={spacePath(space, mode)} fillRule="evenodd" key={space.id}
+                            d={spacePath(space, tilt)} fillRule="evenodd" key={space.id}
                             onClick={() => clickRoom(space.id)} onMouseEnter={() => setHoverId(space.id)} onMouseLeave={() => setHoverId(null)}
                             style={heat && selectedId !== space.id ? { fill: heat } : undefined}
                           />
                         );
                       })}
                     </g>
-                    <g className="indoor-void-dash">{[...voidEdges].map(([id, edges]) => (edges.inner.length ? <path d={segmentsPath(edges.inner, mode)} key={id} /> : null))}</g>
+                    <g className="indoor-void-dash">{[...voidEdges].map(([id, edges]) => (edges.inner.length ? <path d={segmentsPath(edges.inner, tilt)} key={id} /> : null))}</g>
+                    <g className="indoor-void-line">{[...voidEdges].map(([id, edges]) => (edges.outer.length ? <path d={segmentsPath(edges.outer, tilt)} key={id} /> : null))}</g>
                     <g className="indoor-labels">
                       {(showLabels ? spaces.filter((space) => space.space_type !== "void" && (space.name || space.usage)) : tag ? [tag] : []).map((space) => {
-                        const [x, y] = project(labelPoint(space), mode);
+                        const [x, y] = project(labelPoint(space), tilt);
                         return <text fontSize={view.w / (showLabels ? 70 : 52)} key={space.id} x={x} y={y}>{spaceTitle(space)}</text>;
                       })}
                     </g>

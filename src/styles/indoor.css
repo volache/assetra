@@ -26,6 +26,7 @@
 .indoor-room.is-room { fill: oklch(99% .004 35); }
 .indoor-room.is-public { fill: oklch(91% .02 35); }
 .indoor-room.is-void { fill: oklch(94% .012 35 / .5); stroke: none; }
+.indoor-void-line path { fill: none; pointer-events: none; stroke: oklch(72% .02 35); stroke-width: .8px; vector-effect: non-scaling-stroke; }
 .indoor-void-dash path { fill: none; pointer-events: none; stroke: oklch(52% .03 35 / .75); stroke-dasharray: 4 3; stroke-width: 1px; vector-effect: non-scaling-stroke; }
 .indoor-room.is-hover { stroke: var(--color-accent-deep); stroke-width: 2px; }
 .indoor-room.is-hit { stroke: var(--color-focus); stroke-width: 2.6px; }

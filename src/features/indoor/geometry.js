@@ -4,13 +4,22 @@
 const ISO_ANGLE = (22 * Math.PI) / 180;
 const ISO_SQUASH = 0.62;
 
-/** A drawing point on screen.  "iso" lays the plan down at an angle, "flat" is the plain top view. */
+/**
+ * A drawing point on screen.  `mode` is "flat" (the plain top view), "iso" (the plan laid down at an angle) or a number from
+ * 0 to 1 in between, which is what lets the view turn from one to the other.
+ */
 export function project([x, y], mode) {
-  if (mode === "flat") return [x, -y];
-  return [
-    x * Math.cos(ISO_ANGLE) - y * Math.sin(ISO_ANGLE),
-    -(x * Math.sin(ISO_ANGLE) + y * Math.cos(ISO_ANGLE)) * ISO_SQUASH,
-  ];
+  const t = mode === "iso" ? 1 : mode === "flat" ? 0 : mode;
+  const angle = ISO_ANGLE * t, squash = 1 - (1 - ISO_SQUASH) * t;
+  return [x * Math.cos(angle) - y * Math.sin(angle), -(x * Math.sin(angle) + y * Math.cos(angle)) * squash];
+}
+
+/** The drawing point that `project` puts at this place on screen. */
+export function unproject([sx, sy], mode) {
+  const t = mode === "iso" ? 1 : mode === "flat" ? 0 : mode;
+  const angle = ISO_ANGLE * t, squash = 1 - (1 - ISO_SQUASH) * t;
+  const u = -sy / squash;
+  return [sx * Math.cos(angle) + u * Math.sin(angle), -sx * Math.sin(angle) + u * Math.cos(angle)];
 }
 
 export function ringPath(ring, mode, lift = 0) {
@@ -175,6 +184,14 @@ export function voidEdgeKinds(spaces, tolerance = 4) {
     result.set(space.id, { inner, outer });
   }
   return result;
+}
+
+/** The side of the floor slab under loose segments: each segment and the same segment `lift` lower, as a closed shape. */
+export function wallsPath(segments, mode, lift) {
+  return segments.map(([a, b]) => {
+    const [ax, ay] = project(a, mode), [bx, by] = project(b, mode);
+    return `M${ax.toFixed(1)} ${ay.toFixed(1)}L${bx.toFixed(1)} ${by.toFixed(1)}L${bx.toFixed(1)} ${(by + lift).toFixed(1)}L${ax.toFixed(1)} ${(ay + lift).toFixed(1)}Z`;
+  }).join("");
 }
 
 /** Loose segments as one SVG path (each its own sub-path). */
