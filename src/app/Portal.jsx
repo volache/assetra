@@ -1,4 +1,5 @@
 import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { roleLabels } from "../lib/labels";
 import { applyOfficialPersonnelNames } from "../lib/personnel";
 
@@ -8,18 +9,16 @@ const Accounts = lazy(() =>
   })),
 );
 const GeographicAssets = lazy(() =>
-  import("../features/geography/GeographicAssets").then(
-    ({ GeographicAssets }) => ({ default: GeographicAssets }),
-  ),
+  import("../features/geography/GeographicAssets").then(({ GeographicAssets }) => ({
+    default: GeographicAssets,
+  })),
 );
 const IndoorPlans = lazy(() =>
   import("../features/indoor/IndoorPlans").then(({ IndoorPlans }) => ({
     default: IndoorPlans,
   })),
 );
-const Home = lazy(() =>
-  import("../features/home/Home").then(({ Home }) => ({ default: Home })),
-);
+const Home = lazy(() => import("../features/home/Home").then(({ Home }) => ({ default: Home })));
 const BatchHistory = lazy(() =>
   import("../features/imports/BatchHistory").then(({ BatchHistory }) => ({
     default: BatchHistory,
@@ -36,16 +35,20 @@ const AssetQuery = lazy(() =>
   })),
 );
 const CollaborationTasks = lazy(() =>
-  import("../features/collaboration/CollaborationTasks").then(
-    ({ CollaborationTasks }) => ({ default: CollaborationTasks }),
-  ),
+  import("../features/collaboration/CollaborationTasks").then(({ CollaborationTasks }) => ({
+    default: CollaborationTasks,
+  })),
 );
 const Organization = lazy(() =>
   import("../features/organization/Organization").then(({ Organization }) => ({
     default: Organization,
   })),
 );
-const PersonalSettings = lazy(() => import("../features/settings/PersonalSettings").then(({ PersonalSettings }) => ({ default: PersonalSettings })));
+const PersonalSettings = lazy(() =>
+  import("../features/settings/PersonalSettings").then(({ PersonalSettings }) => ({
+    default: PersonalSettings,
+  })),
+);
 
 export function Portal({
   entering,
@@ -107,9 +110,7 @@ export function Portal({
     { id: "settings", label: "個人設定" },
   ];
   return (
-    <div
-      className={`app-shell ${entering ? "is-entering" : ""} ${leaving ? "is-leaving" : ""}`}
-    >
+    <div className={`app-shell ${entering ? "is-entering" : ""} ${leaving ? "is-leaving" : ""}`}>
       <aside className="side-nav">
         <div className="brand">
           <span className="brand-dot" />
@@ -144,74 +145,70 @@ export function Portal({
             登出
           </button>
         </header>
-        <div
-          className={`page-transition ${isPageSwitch ? "is-switching" : ""}`}
-          key={page}
-        >
-          <Suspense
-            fallback={
-              <section className="page">
-                <p className="muted">正在載入功能頁面…</p>
-              </section>
-            }
-          >
-            {page === "home" && (
-              <Home
-                visible={visible}
-                user={user}
-                imports={store.imports}
-                setPage={setPage}
-                canAdmin={canAdmin}
-                canChief={canChief}
-              />
-            )}
-            {page === "query" && (
-              <AssetQuery
-                assets={visible}
-                user={user}
-                focusTask={taskFocus}
-                imports={store.imports}
-                onTaskFocusHandled={onTaskFocusHandled}
-                assetFocus={assetFocus}
-                onAssetFocusHandled={() => setAssetFocus(null)}
-                locationFocus={queryLocation}
-                onLocationFocusHandled={() => setQueryLocation(null)}
-                onShowOnPlan={showOnPlan}
-              />
-            )}
-            {page === "tasks" && <CollaborationTasks onOpenTask={onOpenTask} />}
-            {page === "import" && canAdmin && (
-              <ImportInventory store={store} onImported={refreshInventory} />
-            )}
-            {page === "batches" && canAdmin && (
-              <BatchHistory
-                imports={store.imports}
-                onDeleted={refreshInventory}
-              />
-            )}
-            {page === "geo" && canAdmin && <GeographicAssets />}
-            {page === "indoor" && (
-              <IndoorPlans
-                assets={visible}
-                canAdmin={canAdmin}
-                focus={indoorFocus}
-                onFocusHandled={() => setIndoorFocus(null)}
-                onOpenAsset={openAssetInQuery}
-                onOpenInQuery={openLocationInQuery}
-              />
-            )}
-            {page === "accounts" && canAdmin && (
-              <Accounts
-                store={{ ...store, assets: visible }}
-                setStore={setStore}
-                onUsersChanged={refreshUsers}
-              />
-            )}
-            {page === "organization" && canAdmin && (
-              <Organization store={store} setStore={setStore} />
-            )}
-            {page === "settings" && <PersonalSettings />}
-          </Suspense>
+        <div className={`page-transition ${isPageSwitch ? "is-switching" : ""}`} key={page}>
+          <ErrorBoundary>
+            <Suspense
+              fallback={
+                <section className="page">
+                  <p className="muted">正在載入功能頁面…</p>
+                </section>
+              }
+            >
+              {page === "home" && (
+                <Home
+                  visible={visible}
+                  user={user}
+                  imports={store.imports}
+                  setPage={setPage}
+                  canAdmin={canAdmin}
+                  canChief={canChief}
+                />
+              )}
+              {page === "query" && (
+                <AssetQuery
+                  assets={visible}
+                  user={user}
+                  focusTask={taskFocus}
+                  imports={store.imports}
+                  onTaskFocusHandled={onTaskFocusHandled}
+                  assetFocus={assetFocus}
+                  onAssetFocusHandled={() => setAssetFocus(null)}
+                  locationFocus={queryLocation}
+                  onLocationFocusHandled={() => setQueryLocation(null)}
+                  onShowOnPlan={showOnPlan}
+                />
+              )}
+              {page === "tasks" && <CollaborationTasks onOpenTask={onOpenTask} />}
+              {page === "import" && canAdmin && (
+                <ImportInventory store={store} onImported={refreshInventory} />
+              )}
+              {page === "batches" && canAdmin && (
+                <BatchHistory imports={store.imports} onDeleted={refreshInventory} />
+              )}
+              {page === "geo" && canAdmin && <GeographicAssets />}
+              {page === "indoor" && (
+                <IndoorPlans
+                  assets={visible}
+                  canAdmin={canAdmin}
+                  focus={indoorFocus}
+                  onFocusHandled={() => setIndoorFocus(null)}
+                  onOpenAsset={openAssetInQuery}
+                  onOpenInQuery={openLocationInQuery}
+                />
+              )}
+              {page === "accounts" && canAdmin && (
+                <Accounts
+                  store={{ ...store, assets: visible }}
+                  setStore={setStore}
+                  onUsersChanged={refreshUsers}
+                />
+              )}
+              {page === "organization" && canAdmin && (
+                <Organization store={store} setStore={setStore} />
+              )}
+              {page === "settings" && <PersonalSettings />}
+            </Suspense>
+          </ErrorBoundary>
         </div>
       </main>
     </div>
