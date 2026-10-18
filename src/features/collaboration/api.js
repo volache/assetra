@@ -1,27 +1,6 @@
-import { supabase } from "../../supabase";
+import { invokeFunction } from "../../lib/functions";
 
-export async function requestCollaboration(body) {
-  const { data, error } = await supabase.functions.invoke(
-    "manage-collaborations",
-    { body },
-  );
-  if (error) {
-    // Edge Function errors do not always carry a Fetch Response.  For example,
-    // a network failure can provide a plain context object instead.
-    let detail = null;
-    if (typeof error.context?.json === "function") {
-      try {
-        detail = await error.context.json();
-      } catch {
-        // Keep the original Supabase error when its response body is unreadable.
-      }
-    }
-    throw new Error(detail?.error || error.message);
-  }
-  if (data?.error) throw new Error(data.error);
-  return data || {};
-}
-
+export const requestCollaboration = (body) => invokeFunction("manage-collaborations", body);
 export const collaborationKindLabels = {
   note: "一般筆記",
   tag_missing: "標籤缺失",

@@ -16,3 +16,6 @@ dist/
 .pnpm-store/
 vite-server.*.log
 .vite.*.log
+
+# Design-tool working notes.
+.hallmark/

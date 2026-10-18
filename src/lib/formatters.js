@@ -69,3 +69,8 @@ export function assetMajorClass(assetNo) {
   if (number.startsWith("6")) return "非消耗品";
   return "—";
 }
+
+// Thousands-separated number for counts, areas and totals shown on screen.
+export function formatNumber(value) {
+  return Number(value).toLocaleString("zh-TW");
+}

@@ -23,7 +23,7 @@ Assetra 是財產與物品清冊管理前端，提供依角色授權的查詢、
 
 ## Supabase 部署
 
-先依序套用 `supabase/migrations/`，不要在既有資料庫重新執行 `supabase/schema.sql`。後者是完整 schema 參考檔。
+先依序套用 `supabase/migrations/`，不要在既有資料庫重新執行 `supabase/schema.sql`。後者只是核心資料表的參考快照（截至 2026-10-14），之後新增的內容以 migrations 為準。
 
 部署下列 Edge Functions：
 
@@ -42,7 +42,9 @@ semantic-asset-query
 ## 驗證
 
 ```powershell
-npm run check
+npm run lint    # 抓出寫錯的變數與未使用的程式（只有警告不會擋住）
+npm test        # 單元測試：格式化、搜尋規則、座標轉換等
+npm run check   # 匯入路徑與功能對應檢查
 npm run build
 ```
 

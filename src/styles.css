@@ -9,7 +9,13 @@
 @import "./styles/organization.css";
 @import "./styles/geography.css";
 @import "./styles/indoor.css";
-@import "./styles/collaboration.css";
+@import "./styles/collaboration/notes.css";
+@import "./styles/collaboration/drawer.css";
+@import "./styles/collaboration/floating-window.css";
+@import "./styles/collaboration/photo-hand.css";
+@import "./styles/collaboration/timeline.css";
+@import "./styles/collaboration/photo-browsing.css";
+@import "./styles/collaboration/location.css";
 @import "./styles/scrollbars.css";
 @import "./styles/feedback.css";
 @import "./styles/photo-picker.css";

@@ -2,7 +2,7 @@
 
 Isolated from the application: nothing under src/ or supabase/ is touched.
 
-    python prototypes/indoor-map/grid_rebuild.py \
+    python tools/indoor-map/grid_rebuild.py \
         data/private/floorplans/航廈三樓-修改.dxf \
         data/private/indoor-map/航廈三樓_檢查圖.png
 

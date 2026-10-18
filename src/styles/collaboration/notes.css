@@ -1,0 +1,271 @@
+/* Collaborative work is a ledger continuation: one restrained thread under the source facts. */
+.collaboration-notes {
+  border-top: 1px solid var(--color-rule);
+  margin: 0 var(--space-lg);
+  padding: var(--space-lg) 0;
+}
+.collaboration-notes > header {
+  align-items: start;
+  display: flex;
+  gap: var(--space-md);
+  justify-content: space-between;
+}
+.collaboration-notes h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  letter-spacing: -0.025em;
+  margin: 0;
+}
+.collaboration-notes header p:not(.eyebrow) {
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+  margin: 0.2rem 0 0;
+  max-width: 60ch;
+}
+.collaboration-load {
+  align-self: center;
+  min-height: 2.35rem;
+  padding: 0.4rem 0.8rem;
+}
+.collaboration-compose {
+  background: var(--color-paper);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-md);
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+  padding: var(--space-md);
+}
+.collaboration-compose label {
+  color: var(--color-ink-2);
+  font-size: var(--text-sm);
+}
+.collaboration-compose textarea {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--color-rule);
+  color: var(--color-ink);
+  font: inherit;
+  line-height: 1.55;
+  min-height: 5.5rem;
+  outline: 0;
+  padding: 0.35rem 0 0.6rem;
+  resize: vertical;
+  width: 100%;
+}
+.collaboration-compose textarea:focus {
+  border-color: var(--color-accent-deep);
+  box-shadow: none;
+}
+.collaboration-compose > div {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+.collaboration-compose small {
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.collaboration-compose .button {
+  min-height: 2.35rem;
+  padding: 0.4rem 0.9rem;
+}
+.collaboration-notes > .form-error {
+  margin-top: var(--space-sm);
+}
+.collaboration-timeline {
+  display: grid;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+.collaboration-entry {
+  background: var(--color-paper);
+  border: 1px solid var(--color-rule);
+  border-inline-start: 0.23rem solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  padding: var(--space-md);
+}
+.collaboration-entry.is-resolved {
+  border-inline-start-color: var(--color-muted);
+  opacity: 0.82;
+}
+.collaboration-entry > header {
+  align-items: center;
+  display: flex;
+  gap: var(--space-sm);
+  justify-content: space-between;
+}
+.collaboration-entry > header > div {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.collaboration-author {
+  color: var(--color-ink-2);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+.collaboration-status {
+  background: var(--color-panel-value);
+  border-radius: var(--radius-pill);
+  color: var(--color-ink-2);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  padding: 0.12rem 0.45rem;
+}
+.is-resolved .collaboration-status {
+  background: var(--color-paper-2);
+}
+.collaboration-entry time {
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 0.67rem;
+}
+.collaboration-issue {
+  background: var(--color-paper-2);
+  border-radius: var(--radius-sm);
+  margin-top: var(--space-sm);
+  padding: 0.65rem 0.75rem;
+}
+.collaboration-body {
+  color: var(--color-ink);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.collaboration-event {
+  border-top: 1px solid var(--color-rule);
+  display: grid;
+  gap: 0.25rem;
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
+}
+.collaboration-event-meta {
+  align-items: baseline;
+  display: flex;
+  gap: 0.45rem;
+  justify-content: space-between;
+}
+.collaboration-event strong {
+  font-size: var(--text-xs);
+}
+.collaboration-event time {
+  margin-inline-start: auto;
+}
+.collaboration-event p {
+  font-size: 14px;
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.collaboration-event span {
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+}
+.collaboration-resolve {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-md);
+}
+.collaboration-reply {
+  align-items: center;
+  display: grid;
+  gap: var(--space-sm);
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-top: var(--space-md);
+}
+.collaboration-reply input {
+  font-size: var(--text-sm);
+  min-height: 2.35rem;
+  padding-block: 0.4rem;
+  width: 100%;
+}
+.collaboration-reply .button {
+  font-size: 14px;
+  min-height: 2.35rem;
+  padding: 0.4rem 0.8rem;
+}
+.collaboration-empty {
+  border: 1px dashed var(--color-rule);
+  color: var(--color-muted);
+  margin-top: var(--space-md);
+  padding: var(--space-lg);
+  text-align: center;
+}
+.collaboration-empty strong {
+  color: var(--color-ink-2);
+  font-size: var(--text-sm);
+}
+.collaboration-empty p {
+  font-size: var(--text-xs);
+  margin: var(--space-xs) 0 0;
+}
+.collaboration-loading {
+  align-content: center;
+  color: var(--color-ink-2);
+  display: grid;
+  flex: 1;
+  gap: var(--space-sm);
+  justify-items: center;
+  min-height: 14rem;
+  padding: var(--space-xl);
+  text-align: center;
+}
+.collaboration-loading strong {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  letter-spacing: -0.025em;
+}
+.collaboration-loading p {
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+  margin: 0;
+}
+.collaboration-loading-pills {
+  align-items: center;
+  display: flex;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-xs);
+}
+.collaboration-loading-pills span {
+  border-radius: var(--radius-pill);
+  display: block;
+  height: 0.72rem;
+  width: 2.8rem;
+}
+.collaboration-loading-pills span:nth-child(1) {
+  background: var(--color-accent);
+}
+.collaboration-loading-pills span:nth-child(2) {
+  background: var(--color-asset);
+  width: 1.55rem;
+}
+.collaboration-loading-pills span:nth-child(3) {
+  background: var(--color-item);
+  width: 2.1rem;
+}
+.collaboration-loading-pills span {
+  animation: session-pill-cycle 1.05s var(--ease-out) infinite;
+}
+.collaboration-loading-pills span:nth-child(2) {
+  animation-delay: 120ms;
+}
+.collaboration-loading-pills span:nth-child(3) {
+  animation-delay: 240ms;
+}
+@media (max-width: 40rem) {
+  .collaboration-notes {
+    margin-inline: var(--space-md);
+  }
+  .collaboration-notes > header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .collaboration-load {
+    align-self: start;
+  }
+}
+

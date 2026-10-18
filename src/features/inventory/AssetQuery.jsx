@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { assetMajorClass, money, serviceLifeExpired, usedDuration } from "../../lib/formatters";
+import { assetMajorClass, money, serviceLifeExpired, usedDuration, formatNumber } from "../../lib/formatters";
 import { CollaborationDrawer } from "../collaboration/CollaborationDrawer";
 import { requestCollaboration } from "../collaboration/api";
 import { AssetPhotoPicker } from "../photos/AssetPhotoPicker";
 import { FilterCombo, HighlightText, SearchRuleMenu } from "./QueryControls";
 import { CapsuleSpinner, useFeedback } from "../../components/FeedbackCenter";
-import { supabase } from "../../supabase";
+import { fetchFunction } from "../../lib/functions";
 import {
   assetNumberCollator,
   collaborationFilterOptions,
@@ -20,10 +20,9 @@ import {
   highlightTermsFactory,
   looksLikeRuleSyntax,
   normalized,
-  searchFieldAliases,
   searchTermWarnings,
-  tokenizeSearch,
 } from "./search";
+import { AiAnswerPanels } from "./AiAnswerPanels";
 import { KeywordSearchBox } from "./KeywordSearchBox";
 import { LocationMap } from "../indoor/LocationMap";
 import { rememberSearch } from "./searchHistory";
@@ -428,7 +427,7 @@ export function AssetQuery({
             setRegisterExport({ format, fraction, label }),
         },
       );
-      notify(`已匯出 ${rows.length.toLocaleString()} 筆財產清冊：${fileName}`, "success");
+      notify(`已匯出 ${formatNumber(rows.length)} 筆財產清冊：${fileName}`, "success");
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError")
         notify("已取消匯出。");
@@ -520,13 +519,7 @@ export function AssetQuery({
     setAiClarification(null); setClarificationText(""); setAiAnalysis(result.analysis || null);
     setAiReport({ question: result.question || fallbackQuestion, modelVersion: result.modelVersion || null, summary: result.summary, explanation: result.explanation, analysisDescription: result.analysisDescription, conditionGroups: result.conditionGroups || [], scopeCount: result.scopeCount, trace: [...(result.trace || []), ...(asRules ? ["轉成可編輯的搜尋條件"] : [])] });
   }
-  async function callAiQuery(body) {
-    const { data: { session } } = await supabase.auth.getSession();
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/semantic-asset-query`, { method: "POST", headers: { Authorization: `Bearer ${session.access_token}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error);
-    return result;
-  }
+  const callAiQuery = (body) => fetchFunction("semantic-asset-query", { body });
   async function runAiSearch() {
     if (!term.trim()) return;
     // Already written as search rules: run them here, no AI call needed.
@@ -699,9 +692,16 @@ export function AssetQuery({
               ))}
             </ul>
           )}
-          {aiReport && <aside aria-live="polite" className="ai-search-report"><strong>智慧查詢結果</strong><span>提問：{aiReport.question}</span>{aiReport.modelVersion && <span>推理模型：{aiReport.modelVersion}</span>}<span>{aiReport.summary}</span>{aiReport.conditionGroups.some((group) => group.length) ? <span className="ai-report-conditions">查詢條件：<span className="ai-condition-chips">{aiReport.conditionGroups.map((group, groupIndex) => <React.Fragment key={`group-${groupIndex}`}>{groupIndex > 0 && <i className="ai-condition-or">或</i>}{group.map((rule) => <code className="ai-condition-chip" key={`${groupIndex}-${rule}`}>{rule}</code>)}</React.Fragment>)}</span></span> : <span>{aiReport.analysisDescription || aiReport.explanation}</span>}<span>{aiAnalysis ? `${typeof aiAnalysis.matchCount === "number" ? `符合分析條件共 ${aiAnalysis.matchCount.toLocaleString()} 筆資料；` : ""}分析範圍共 ${(aiReport.scopeCount ?? 0).toLocaleString()} 筆資料。` : `共找到 ${rows.length.toLocaleString()} 筆資料。`}{aiReport.trace.length ? ` 已執行：${aiReport.trace.join("、")}。` : ""}</span></aside>}
-          {aiAnalysis && <aside aria-live="polite" className="ai-analysis"><strong>分析摘要</strong><span>{aiAnalysis.title}</span><span>{aiAnalysis.summary}</span>{aiAnalysis.value ? <b className="ai-analysis-value">{aiAnalysis.value}{aiAnalysis.unit}</b> : <div className="ai-analysis-table-wrap"><table><thead><tr>{aiAnalysis.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{aiAnalysis.rows.map((row, index) => <tr key={`${row[0]}-${index}`}>{row.map((value, cellIndex) => <td key={cellIndex}>{value}</td>)}</tr>)}</tbody></table></div>}</aside>}
-          {aiClarification && <aside aria-live="polite" className="ai-clarification"><strong>想再確認一下</strong><span>{aiClarification.prompt}</span><div className="ai-clarification-options">{aiClarification.options.map((option) => <button className="button button-secondary" disabled={aiBusy} key={option.id} onClick={() => answerClarification(option.id)} type="button">{option.label}</button>)}</div><div className="ai-clarification-custom-row"><label className="ai-clarification-custom">或用自己的話說明<input disabled={aiBusy} onChange={(event) => setClarificationText(event.target.value)} placeholder="例如：放在消防班的財產" value={clarificationText} /></label><button className="button button-primary ai-clarification-submit" disabled={aiBusy || !clarificationText.trim()} onClick={() => answerClarification("custom")} type="button">依這個說明查詢</button></div></aside>}
+          <AiAnswerPanels
+            aiAnalysis={aiAnalysis}
+            aiBusy={aiBusy}
+            aiClarification={aiClarification}
+            aiReport={aiReport}
+            clarificationText={clarificationText}
+            onAnswerClarification={answerClarification}
+            onClarificationTextChange={setClarificationText}
+            rowCount={rows.length}
+          />
         </div>
         <fieldset>
           <legend>資料類型</legend>
@@ -732,7 +732,7 @@ export function AssetQuery({
       )}
       <div className="result-summary">
         <p className="result-count">
-          查詢結果：<strong>{rows.length.toLocaleString()}</strong> 筆
+          查詢結果：<strong>{formatNumber(rows.length)}</strong> 筆
         </p>
         {imports[0] && <p className="latest-data">資料更新：{imports[0].at}</p>}
         <div aria-label="匯出財產清冊" className="result-export" role="group">

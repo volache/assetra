@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { CapsuleSpinner, useFeedback } from "../../components/FeedbackCenter";
-import { supabase } from "../../supabase";
+import { changePassword } from "./api";
 
 export function Password() {
   const [oldPassword, setOld] = useState("");
@@ -16,11 +16,7 @@ export function Password() {
     setMessage("");
     try {
       await run(async () => {
-        const { error } = await supabase.auth.updateUser({
-          password: nextPassword,
-          current_password: oldPassword,
-        });
-        if (error) throw error;
+        await changePassword(oldPassword, nextPassword);
       }, {
         loading: "正在更新密碼…",
         success: "密碼已更新。",

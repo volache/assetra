@@ -5,6 +5,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { formatNumber } from "../../lib/formatters";
 import {
   clearSearchHistory,
   loadSearchHistory,
@@ -340,7 +341,7 @@ export const KeywordSearchBox = forwardRef(function KeywordSearchBox(
           )}
           {suggestionTotal > suggestions.length && (
             <span className="search-popover-note">
-              還有 {(suggestionTotal - suggestions.length).toLocaleString()} 筆，繼續輸入以縮小範圍
+              還有 {formatNumber(suggestionTotal - suggestions.length)} 筆，繼續輸入以縮小範圍
             </span>
           )}
         </span>

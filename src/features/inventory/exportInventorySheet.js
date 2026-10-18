@@ -14,7 +14,7 @@ const SIGNATURES = [
   "主辦會計人員",
   "機關首長",
 ];
-export const CLASS_ORDER = [
+const CLASS_ORDER = [
   "土地",
   "土地改良物",
   "房屋建築及設備",
@@ -315,7 +315,7 @@ function drawSignatures(doc, top) {
   });
 }
 
-export function inventorySheetFileName(unitName, custodianCode, custodianName) {
+function inventorySheetFileName(unitName, custodianCode, custodianName) {
   const clean = (value) => String(value || "").replace(/[\\/:*?"<>|\s]+/g, "");
   return [clean(unitName), clean(custodianCode), clean(custodianName)]
     .filter(Boolean)
@@ -324,7 +324,7 @@ export function inventorySheetFileName(unitName, custodianCode, custodianName) {
 }
 
 /** Builds one 財物盤點清冊 PDF (assets and items together) and returns its Blob. */
-export async function buildSheet(assets) {
+async function buildSheet(assets) {
   const base64 = await loadFontBase64();
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4", compress: true });
   doc.addFileToVFS(`${FONT}.ttf`, base64);
@@ -841,7 +841,7 @@ export function saveBlob(blob, fileName) {
 export const delay = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
 /** Builds the single 財物盤點清冊 of one custodian: [{ fileName, blob }] (empty when nothing is in use). */
-export async function buildCustodianSheets(assets, custodianCode) {
+async function buildCustodianSheets(assets, custodianCode) {
   const own = assets.filter(
     (asset) => asset.custodianCode === custodianCode && asset.status === IN_USE,
   );

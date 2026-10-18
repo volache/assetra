@@ -38,7 +38,7 @@ export function spacePath(space, mode, lift = 0) {
   return [space.ring, ...(space.holes || [])].map((ring) => ringPath(ring, mode, lift)).join("");
 }
 
-export function ringCentroid(ring) {
+function ringCentroid(ring) {
   let area = 0, cx = 0, cy = 0;
   for (let i = 0; i < ring.length; i += 1) {
     const [x1, y1] = ring[i], [x2, y2] = ring[(i + 1) % ring.length];
@@ -49,7 +49,7 @@ export function ringCentroid(ring) {
   return [cx / (3 * area), cy / (3 * area)];
 }
 
-export function pointInRing(ring, [x, y]) {
+function pointInRing(ring, [x, y]) {
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
     const [xi, yi] = ring[i], [xj, yj] = ring[j];
@@ -91,20 +91,6 @@ export function screenBounds(spaces, mode, extra = 0) {
 export const floorName = (floor) => (!floor ? "" : floor.building === floor.label ? floor.label : `${floor.building}｜${floor.label}`);
 
 export const SPACE_TYPE_LABELS = { room: "房間", public: "公共區域", void: "挑空／採光" };
-
-/** The kinds of room counted at the bottom of the plan, from what the room is called. */
-export const CATEGORIES = [
-  { id: "office", label: "辦公室", test: /辦公|櫃臺|櫃檯|服務臺|服務台|值日|會議|接待/ },
-  { id: "machine", label: "機房", test: /機房|機電|變電|水箱|配電|電氣|電信|空調|灑水|MCC|發電/ },
-  { id: "toilet", label: "廁所", test: /廁所|盥洗|親子廁|哺乳/ },
-  { id: "storage", label: "倉儲", test: /倉庫|儲藏|備品|工具間|器材|報廢|裝備室/ },
-];
-
-export function categoryOf(space) {
-  if (space.space_type === "void") return null;
-  const text = `${space.name || ""} ${space.usage || ""}`;
-  return CATEGORIES.find((category) => category.test.test(text))?.id || null;
-}
 
 /** A room's title: the matched name, else the note it was given, else its id in the tracing tool. */
 export const spaceTitle = (space) => space.name || space.usage || space.tool_id || "未命名空間";

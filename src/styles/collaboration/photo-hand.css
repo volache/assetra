@@ -1,0 +1,231 @@
+/* The card hand intentionally lives on the filtered page, not inside a second window. */
+.asset-photo-picker-backdrop {
+  align-items: stretch;
+  display: block;
+  padding: 0;
+}
+
+.asset-photo-picker-close {
+  background: oklch(98% 0.01 40 / 0.16);
+  border-color: oklch(98% 0.01 40 / 0.35);
+  color: white;
+  position: absolute;
+  right: var(--space-lg);
+  top: var(--space-lg);
+  z-index: 4;
+}
+
+.asset-photo-picker-caption {
+  color: oklch(98% 0.01 40 / 0.7);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  left: 50%;
+  margin: 0;
+  max-width: calc(100% - 10rem);
+  overflow: hidden;
+  position: absolute;
+  text-align: center;
+  text-overflow: ellipsis;
+  top: var(--space-xl);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.asset-photo-picker-message,
+.asset-photo-picker-empty {
+  left: 50%;
+  position: absolute;
+  top: 45%;
+  transform: translate(-50%, -50%);
+}
+
+.asset-photo-picker-empty {
+  background: oklch(98% 0.01 40 / 0.1);
+  border: 1px solid oklch(98% 0.01 40 / 0.18);
+  border-radius: var(--radius-md);
+  color: white;
+  min-height: auto;
+  padding: var(--space-lg);
+}
+.asset-photo-picker-empty p {
+  color: oklch(98% 0.01 40 / 0.68);
+}
+
+.asset-photo-selected {
+  align-items: center;
+  animation: asset-photo-card-reveal 320ms var(--ease-out);
+  display: grid;
+  height: calc(100dvh - 13.5rem);
+  inset: 3.4rem 0 auto;
+  justify-items: center;
+  margin: 0;
+  padding: var(--space-lg) max(8vw, var(--space-2xl)) 0;
+  pointer-events: auto;
+  position: absolute;
+}
+
+.asset-photo-selected img {
+  border: 1px solid oklch(98% 0.01 40 / 0.32);
+  border-radius: var(--radius-md);
+  box-shadow: 0 1.6rem 4rem oklch(15% 0.012 25 / 0.45);
+  height: 100%;
+  max-height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+  width: 100%;
+}
+
+.asset-photo-selected figcaption {
+  background: oklch(16% 0.012 25 / 0.72);
+  border-radius: var(--radius-pill);
+  bottom: var(--space-md);
+  color: oklch(98% 0.01 40 / 0.78);
+  font-size: var(--text-xs);
+  left: 50%;
+  padding: 0.35rem 0.65rem;
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.asset-photo-hand {
+  background: linear-gradient(to top, oklch(16% 0.012 25 / 0.86), transparent);
+  bottom: 0;
+  height: 11rem;
+  left: 50%;
+  max-width: min(92vw, 74rem);
+  overflow: visible;
+  padding: 0 0 var(--space-lg);
+  position: absolute;
+  transform: translateX(-50%);
+  width: 100%;
+}
+
+.asset-photo-hand > button:not(.asset-photo-hand-more) {
+  border-color: oklch(98% 0.01 40 / 0.62);
+  height: 8.7rem;
+  margin-left: calc(var(--photo-card-index) * -3.35rem);
+  transform: translateY(var(--photo-card-lift))
+    rotate(var(--photo-card-rotation));
+  transition:
+    margin 300ms var(--ease-out),
+    transform 320ms var(--ease-out),
+    box-shadow 300ms var(--ease-out),
+    filter 300ms var(--ease-out);
+  width: 6.25rem;
+}
+
+.asset-photo-hand > button:first-child {
+  margin-left: 0;
+}
+.asset-photo-hand > button:not(.asset-photo-hand-more):hover,
+.asset-photo-hand > button:not(.asset-photo-hand-more):focus-visible {
+  filter: brightness(1.1);
+  margin-inline: 0.35rem;
+  transform: translateY(-1.8rem) rotate(0);
+  z-index: 3;
+}
+.asset-photo-hand > button.is-selected {
+  box-shadow: 0 -0.8rem 1.65rem oklch(10% 0.01 25 / 0.45);
+  filter: brightness(1.1);
+  margin-inline: 0.5rem;
+  transform: translateY(-3rem) rotate(0) scale(1.04);
+  z-index: 4;
+}
+
+@keyframes asset-photo-card-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(0.9rem) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 40rem) {
+  .asset-photo-picker-close {
+    right: var(--space-md);
+    top: var(--space-md);
+  }
+  .asset-photo-picker-caption {
+    top: var(--space-md);
+  }
+  .asset-photo-selected {
+    height: calc(100dvh - 11rem);
+    padding: var(--space-lg) var(--space-md) 0;
+  }
+  .asset-photo-hand {
+    height: 8.1rem;
+    max-width: 100vw;
+  }
+  .asset-photo-hand > button:not(.asset-photo-hand-more) {
+    height: 6.25rem;
+    margin-left: calc(var(--photo-card-index) * -2.75rem);
+    width: 4.75rem;
+  }
+}
+
+/* A hand has one clean baseline: overlap is per neighbouring card, never cumulative. */
+.asset-photo-picker-backdrop {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.asset-photo-selected {
+  height: min(58dvh, 31rem);
+  inset: 4.2rem 0 auto;
+  padding: 0 max(12vw, var(--space-2xl));
+}
+.asset-photo-selected img {
+  max-height: 100%;
+}
+.asset-photo-hand {
+  height: 12rem;
+}
+.asset-photo-hand > button:not(.asset-photo-hand-more) {
+  height: 10rem;
+  margin-left: -3.6rem;
+  transform: translateY(0) rotate(0);
+  width: 7.25rem;
+}
+.asset-photo-hand > button:first-child {
+  margin-left: 0;
+}
+.asset-photo-hand > button:not(.asset-photo-hand-more):hover,
+.asset-photo-hand > button:not(.asset-photo-hand-more):focus-visible {
+  margin-inline: -3.6rem;
+  transform: translateY(-1rem) scale(1.04);
+}
+.asset-photo-hand > button.is-selected {
+  margin-inline: -3.6rem;
+  transform: translateY(-1.55rem) scale(1.07);
+}
+.asset-photo-picker-loading {
+  align-items: center;
+  color: white;
+  display: grid;
+  justify-items: center;
+  min-width: 13rem;
+}
+
+@media (max-width: 40rem) {
+  .asset-photo-selected {
+    height: min(52dvh, 26rem);
+    inset: 3.5rem 0 auto;
+    padding: 0 var(--space-md);
+  }
+  .asset-photo-hand {
+    height: 8.75rem;
+  }
+  .asset-photo-hand > button:not(.asset-photo-hand-more) {
+    height: 7.25rem;
+    margin-left: -2.8rem;
+    width: 5.3rem;
+  }
+  .asset-photo-hand > button:not(.asset-photo-hand-more):hover,
+  .asset-photo-hand > button.is-selected {
+    margin-inline: -2.8rem;
+  }
+}
+

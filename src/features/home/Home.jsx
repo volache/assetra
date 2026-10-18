@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { money } from "../../lib/formatters";
+import { money, formatNumber } from "../../lib/formatters";
 
 function useCountUp(target, duration = 900) {
   const [value, setValue] = useState(0);
@@ -54,8 +54,8 @@ function HomeMetrics({
       <div className="bento">
         <article className="bento-cell bento-wide">
           <p className="eyebrow">可查詢財物</p>
-          <strong aria-label={`${visible.length.toLocaleString()} 筆`}>
-            {assetCount.toLocaleString()} <small>筆</small>
+          <strong aria-label={`${formatNumber(visible.length)} 筆`}>
+            {formatNumber(assetCount)} <small>筆</small>
           </strong>
           <p>目前已匯入的全部清冊資料。</p>
         </article>
@@ -78,7 +78,7 @@ function HomeMetrics({
         </article>
         <article className="bento-cell bento-small">
           <p className="eyebrow">我保管的財物</p>
-          <strong>{ownCount.toLocaleString()}</strong>
+          <strong>{formatNumber(ownCount)}</strong>
           <p>筆資料</p>
         </article>
         <article className="bento-cell bento-import">
@@ -86,7 +86,7 @@ function HomeMetrics({
           <h2>{imports[0] ? imports[0].fileName : "尚未匯入"}</h2>
           <p>
             {imports[0]
-              ? `${imports[0].count.toLocaleString()} 筆 · ${imports[0].at}`
+              ? `${formatNumber(imports[0].count)} 筆 · ${imports[0].at}`
               : "請由系統管理員上傳 Excel。"}
           </p>
         </article>
@@ -134,7 +134,7 @@ export function Home({ visible, user, imports, setPage, canAdmin, canChief }) {
         <article className="bento-cell bento-wide">
           <p className="eyebrow">可查詢財物</p>
           <strong>
-            {visible.length.toLocaleString()} <small>筆</small>
+            {formatNumber(visible.length)} <small>筆</small>
           </strong>
           <p>
             {canAdmin
@@ -161,7 +161,7 @@ export function Home({ visible, user, imports, setPage, canAdmin, canChief }) {
         </article>
         <article className="bento-cell bento-small">
           <p className="eyebrow">我保管的財物</p>
-          <strong>{ownCount.toLocaleString()}</strong>
+          <strong>{formatNumber(ownCount)}</strong>
           <p>筆資料</p>
         </article>
         <article className="bento-cell bento-import">
@@ -169,7 +169,7 @@ export function Home({ visible, user, imports, setPage, canAdmin, canChief }) {
           <h2>{imports[0] ? imports[0].fileName : "尚未匯入"}</h2>
           <p>
             {imports[0]
-              ? `${imports[0].count.toLocaleString()} 筆 · ${imports[0].at}`
+              ? `${formatNumber(imports[0].count)} 筆 · ${imports[0].at}`
               : "請由系統管理員上傳 Excel。"}
           </p>
         </article>

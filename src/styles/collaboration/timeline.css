@@ -1,0 +1,481 @@
+/* A compact, Threads-inspired activity stream. Work state remains explicit,
+   while notes, replies and updates read as one continuous conversation. */
+.collaboration-drawer .collaboration-timeline {
+  display: block;
+  padding: 0.8rem 1rem 1.2rem;
+}
+.collaboration-drawer .collaboration-entry {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  margin: 0;
+  padding: 0.2rem 0 1.05rem 2.55rem;
+  position: relative;
+}
+.collaboration-drawer .collaboration-entry::before {
+  background: var(--color-paper);
+  border: 2px solid var(--color-ink-2);
+  border-radius: 50%;
+  content: "";
+  height: 0.7rem;
+  left: 0.58rem;
+  position: absolute;
+  top: 0.5rem;
+  width: 0.7rem;
+  z-index: 1;
+}
+.collaboration-drawer .collaboration-entry:not(:last-child)::after {
+  background: var(--color-rule);
+  bottom: -0.25rem;
+  content: "";
+  left: 0.89rem;
+  position: absolute;
+  top: 1.25rem;
+  width: 1px;
+}
+.collaboration-drawer .collaboration-entry.is-note::before {
+  border-color: var(--color-asset);
+}
+.collaboration-drawer .collaboration-entry.is-task::before {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+.collaboration-drawer .collaboration-entry > header {
+  gap: 0.55rem;
+}
+.collaboration-drawer .collaboration-entry-heading {
+  gap: 0.32rem;
+}
+.collaboration-drawer .collaboration-entry-heading > strong {
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+.collaboration-drawer .collaboration-record-kind {
+  background: transparent;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 0;
+}
+.collaboration-drawer .collaboration-entry.is-task .collaboration-record-kind,
+.collaboration-drawer .collaboration-entry.is-note .collaboration-record-kind {
+  background: transparent;
+  color: var(--color-muted);
+}
+.collaboration-drawer .collaboration-status {
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-paper));
+  color: var(--color-accent-deep);
+  font-size: 0.65rem;
+  padding: 0.14rem 0.38rem;
+}
+.collaboration-drawer .collaboration-author {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  margin-top: 0.18rem;
+}
+.collaboration-drawer .collaboration-issue {
+  border: 0;
+  margin-top: 0.4rem;
+  padding: 0;
+}
+.collaboration-drawer .collaboration-body {
+  font-size: 0.88rem;
+  font-weight: 500;
+  line-height: 1.6;
+}
+.collaboration-drawer .collaboration-entry.is-task .collaboration-issue {
+  background: color-mix(in srgb, var(--color-accent) 7%, var(--color-paper));
+  border-radius: var(--radius-sm);
+  margin-top: 0.5rem;
+  padding: 0.55rem 0.65rem;
+}
+.collaboration-drawer .collaboration-event {
+  border-left: 1px solid var(--color-rule);
+  border-top: 0;
+  margin: 0.6rem 0 0;
+  padding: 0.05rem 0 0.05rem 0.7rem;
+}
+.collaboration-drawer .collaboration-event-meta {
+  justify-content: flex-start;
+}
+.collaboration-drawer .collaboration-event time {
+  margin-inline-start: 0;
+}
+.collaboration-drawer .collaboration-resolve {
+  justify-content: flex-start;
+  margin-top: 0.55rem;
+}
+.collaboration-drawer .collaboration-reply {
+  border-top: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-top: 0.65rem;
+  padding: 0;
+}
+.collaboration-drawer .collaboration-reply input {
+  background: var(--color-paper-2);
+  border-radius: var(--radius-pill);
+  font-size: 0.78rem;
+  min-height: 2.1rem;
+  padding-inline: 0.7rem;
+}
+.collaboration-drawer .collaboration-reply .button {
+  border-radius: var(--radius-pill);
+  min-height: 2.1rem;
+  padding-inline: 0.7rem;
+}
+
+.collaboration-drawer .collaboration-start {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0.3rem 0 0 2.55rem;
+  position: relative;
+}
+.collaboration-drawer .collaboration-start::before {
+  background: var(--color-paper);
+  border: 2px dashed var(--color-rule);
+  border-radius: 50%;
+  content: "+";
+  color: var(--color-muted);
+  display: grid;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  height: 0.8rem;
+  left: 0.53rem;
+  line-height: 1;
+  place-items: center;
+  position: absolute;
+  top: 0.6rem;
+  width: 0.8rem;
+}
+.collaboration-drawer .collaboration-start h4 {
+  font-size: 1.1rem;
+  margin: 0.1rem 0;
+}
+.collaboration-drawer .collaboration-start > p:not(.eyebrow) {
+  line-height: 1.5;
+  margin-bottom: 0.7rem;
+}
+.collaboration-drawer .collaboration-start > div {
+  border-block: 1px solid var(--color-rule);
+  display: block;
+}
+.collaboration-drawer .collaboration-start-card {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  border-top: 1px solid var(--color-rule);
+  display: grid;
+  gap: 0.14rem;
+  grid-template-columns: 3.6rem minmax(0, 1fr);
+  min-height: 0;
+  padding: 0.7rem 0;
+  transform: none;
+  width: 100%;
+}
+.collaboration-drawer .collaboration-start-card:first-child {
+  border-top: 0;
+}
+.collaboration-drawer .collaboration-start-card:hover,
+.collaboration-drawer .collaboration-start-card:focus-visible {
+  border-color: var(--color-rule);
+  box-shadow: none;
+  transform: none;
+}
+.collaboration-drawer .collaboration-start-card > span {
+  grid-row: span 2;
+  padding-top: 0.12rem;
+}
+.collaboration-drawer .collaboration-start-card small {
+  grid-column: 2;
+}
+
+.collaboration-drawer .collaboration-primary-action {
+  background: var(--color-paper);
+  border-top: 1px solid var(--color-rule);
+  box-shadow: 0 -0.55rem 1.3rem
+    color-mix(in srgb, var(--color-paper) 88%, transparent);
+  padding: 0.65rem 0.9rem 0.8rem;
+}
+.collaboration-drawer .collaboration-primary-action .button {
+  border-radius: var(--radius-pill);
+  font-size: 0.8rem;
+  min-height: 2.3rem;
+}
+.collaboration-drawer .collaboration-compose {
+  background: var(--color-paper);
+  border-top: 1px solid var(--color-rule);
+  box-shadow: 0 -0.55rem 1.3rem
+    color-mix(in srgb, var(--color-paper) 88%, transparent);
+  padding: 0.8rem 0.95rem;
+}
+.collaboration-drawer .collaboration-compose:focus-within {
+  position: relative;
+  z-index: 6;
+}
+.collaboration-drawer .collaboration-record-type legend {
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+}
+.collaboration-drawer .collaboration-record-type p {
+  font-size: 0.72rem;
+}
+.collaboration-drawer .collaboration-compose textarea {
+  border-radius: 0.9rem;
+  font-size: 0.85rem;
+  min-height: 4.7rem;
+  padding: 0.65rem 0.75rem;
+}
+
+@media (min-width: 52.0625rem) {
+  /* Keep the existing drawer geometrically fixed. The compose surface lives
+     beside it, so its expansion never shifts the header or the timeline. */
+  .collaboration-drawer.is-composing {
+    box-shadow: none;
+    overflow: visible;
+  }
+  .collaboration-drawer.is-composing .collaboration-notes {
+    overflow: visible;
+    position: relative;
+  }
+  .collaboration-drawer.is-composing .collaboration-drawer-header {
+    position: relative;
+    z-index: 9;
+  }
+  .collaboration-drawer.is-composing .collaboration-drawer-header::before {
+    background: var(--color-paper);
+    border: 1px solid var(--color-rule);
+    border-bottom: 0;
+    border-inline-end: 0;
+    box-sizing: border-box;
+    content: "";
+    inset: -1px 100% 0 auto;
+    pointer-events: none;
+    position: absolute;
+    width: 20rem;
+  }
+  .collaboration-drawer.is-composing.is-dock-right
+    .collaboration-drawer-header::before {
+    animation: collaboration-workspace-expand-left 280ms
+      cubic-bezier(0.16, 1, 0.3, 1) both;
+    border-radius: var(--radius-lg) 0 0 0;
+    transform-origin: right center;
+  }
+  .collaboration-drawer.is-composing.is-dock-left
+    .collaboration-drawer-header::before {
+    animation: collaboration-workspace-expand-right 280ms
+      cubic-bezier(0.16, 1, 0.3, 1) both;
+    border-inline-end: 1px solid var(--color-rule);
+    border-inline-start: 0;
+    border-radius: 0 var(--radius-lg) 0 0;
+    inset: -1px auto 0 100%;
+    transform-origin: left center;
+  }
+  .collaboration-drawer.is-composing.is-composer-closing.is-dock-right
+    .collaboration-drawer-header::before {
+    animation-name: collaboration-workspace-collapse-left;
+  }
+  .collaboration-drawer.is-composing.is-composer-closing.is-dock-left
+    .collaboration-drawer-header::before {
+    animation-name: collaboration-workspace-collapse-right;
+  }
+  .collaboration-drawer .collaboration-drawer-title {
+    position: relative;
+    transition: transform 280ms cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 1;
+  }
+  .collaboration-drawer.is-composing.is-dock-right .collaboration-drawer-title {
+    transform: translateX(-20rem);
+  }
+  .collaboration-drawer.is-composer-closing.is-dock-right
+    .collaboration-drawer-title {
+    transform: translateX(0);
+  }
+  .collaboration-drawer.is-composing .collaboration-workspace {
+    align-content: start;
+    background: var(--color-paper-2);
+    border: 1px solid var(--color-rule);
+    border-radius: 0 0 0 var(--radius-lg);
+    box-shadow: none;
+    display: grid;
+    gap: var(--space-sm);
+    height: calc(100% + 2px);
+    margin: 0;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--space-lg);
+    position: absolute;
+    right: 100%;
+    top: -1px;
+    width: 20rem;
+    z-index: 8;
+  }
+  .collaboration-drawer.is-composing.is-dock-left .collaboration-workspace {
+    border-radius: 0 0 var(--radius-lg) 0;
+    left: 100%;
+    right: auto;
+  }
+  .collaboration-drawer.is-composing.is-dock-right .collaboration-workspace {
+    animation: collaboration-workspace-expand-left 280ms
+      cubic-bezier(0.16, 1, 0.3, 1) both;
+    transform-origin: right center;
+  }
+  .collaboration-drawer.is-composing.is-dock-left .collaboration-workspace {
+    animation: collaboration-workspace-expand-right 280ms
+      cubic-bezier(0.16, 1, 0.3, 1) both;
+    transform-origin: left center;
+  }
+  .collaboration-drawer.is-composing.is-dock-right
+    .collaboration-workspace.is-closing {
+    animation-name: collaboration-workspace-collapse-left;
+    pointer-events: none;
+  }
+  .collaboration-drawer.is-composing.is-dock-left
+    .collaboration-workspace.is-closing {
+    animation-name: collaboration-workspace-collapse-right;
+    pointer-events: none;
+  }
+  .collaboration-drawer.is-composing .collaboration-workspace textarea {
+    min-height: 13rem;
+    resize: vertical;
+  }
+  .collaboration-drawer.is-composing .collaboration-workspace .filter-combobox {
+    z-index: 7;
+  }
+}
+@keyframes collaboration-workspace-expand-left {
+  from {
+    clip-path: inset(0 0 0 100%);
+  }
+  to {
+    clip-path: inset(0);
+  }
+}
+@keyframes collaboration-workspace-expand-right {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0);
+  }
+}
+@keyframes collaboration-workspace-collapse-left {
+  from {
+    clip-path: inset(0);
+  }
+  to {
+    clip-path: inset(0 0 0 100%);
+  }
+}
+@keyframes collaboration-workspace-collapse-right {
+  from {
+    clip-path: inset(0);
+  }
+  to {
+    clip-path: inset(0 100% 0 0);
+  }
+}
+
+/* Clip each original surface locally so showing an external workspace never
+   changes the original window's rounded silhouette. */
+.collaboration-drawer .collaboration-drawer-header {
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+.collaboration-drawer .collaboration-notes {
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+.collaboration-drawer .collaboration-timeline,
+.collaboration-drawer .asset-photo-ledger,
+.collaboration-drawer .collaboration-primary-action {
+  border-bottom-left-radius: var(--radius-lg);
+  border-bottom-right-radius: var(--radius-lg);
+}
+.collaboration-drawer.is-minimized .collaboration-drawer-header {
+  border-radius: var(--radius-lg);
+}
+@media (min-width: 52.0625rem) {
+  /* The workspace uses a brisk 100ms reveal; window resizing stays at 130ms. */
+  .collaboration-drawer {
+    transition:
+      border-radius 100ms ease,
+      height 130ms cubic-bezier(0.16, 1, 0.3, 1),
+      width 130ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .collaboration-drawer .collaboration-drawer-header,
+  .collaboration-drawer .collaboration-notes,
+  .collaboration-drawer .collaboration-timeline {
+    transition: border-radius 100ms ease;
+  }
+  .collaboration-drawer.is-composing .collaboration-workspace,
+  .collaboration-drawer.is-composing .collaboration-drawer-header::before {
+    animation-duration: 100ms;
+  }
+  .collaboration-drawer .collaboration-drawer-title {
+    transition-duration: 100ms;
+  }
+  .collaboration-drawer .collaboration-drawer-controls {
+    position: relative;
+    transition: transform 100ms cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 1;
+  }
+  .collaboration-drawer.is-composing.is-dock-left
+    .collaboration-drawer-controls {
+    transform: translateX(20rem);
+  }
+  .collaboration-drawer.is-composer-closing.is-dock-left
+    .collaboration-drawer-controls {
+    transform: translateX(0);
+  }
+  .collaboration-drawer.is-composing:not(.is-composer-closing).is-dock-right {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+  }
+  .collaboration-drawer.is-composing:not(.is-composer-closing).is-dock-right
+    .collaboration-drawer-header {
+    border-top-left-radius: 0;
+  }
+  .collaboration-drawer.is-composing:not(.is-composer-closing).is-dock-right
+    .collaboration-notes,
+  .collaboration-drawer.is-composing:not(.is-composer-closing).is-dock-right
+    .collaboration-timeline {
+    border-bottom-left-radius: 0;
+  }
+  .collaboration-drawer.is-composing:not(.is-composer-closing).is-dock-left {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  .collaboration-drawer.is-composing:not(.is-composer-closing).is-dock-left
+    .collaboration-drawer-header {
+    border-top-right-radius: 0;
+  }
+  .collaboration-drawer.is-composing:not(.is-composer-closing).is-dock-left
+    .collaboration-notes,
+  .collaboration-drawer.is-composing:not(.is-composer-closing).is-dock-left
+    .collaboration-timeline {
+    border-bottom-right-radius: 0;
+  }
+  .collaboration-drawer.is-composing.is-dock-right
+    .collaboration-drawer-header::before {
+    right: 100%;
+    width: 20rem;
+  }
+  .collaboration-drawer.is-composing.is-dock-left
+    .collaboration-drawer-header::before {
+    left: 100%;
+    width: 20rem;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .collaboration-drawer .collaboration-workspace,
+  .collaboration-drawer .collaboration-drawer-header::before {
+    animation-duration: 1ms !important;
+  }
+  .collaboration-drawer .collaboration-drawer-title,
+  .collaboration-drawer .collaboration-drawer-controls {
+    transition: none;
+  }
+}
+

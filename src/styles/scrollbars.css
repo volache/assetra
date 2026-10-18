@@ -1,57 +1,227 @@
 /* Shared scrollbar chrome: matches the organization tree canvas in every scrollable region. */
-* { scrollbar-color: var(--color-accent) transparent; scrollbar-width: thin; }
-*::-webkit-scrollbar { height: .7rem; width: .7rem; }
-*::-webkit-scrollbar-track, *::-webkit-scrollbar-corner { background: transparent; }
-*::-webkit-scrollbar-thumb { background: var(--color-accent); border: .2rem solid var(--color-paper-2); border-radius: var(--radius-pill); }
-@media (hover: hover) { *::-webkit-scrollbar-thumb:hover { background: var(--color-accent-deep); } }
+* {
+  scrollbar-color: var(--color-accent) transparent;
+  scrollbar-width: thin;
+}
+*::-webkit-scrollbar {
+  height: 0.7rem;
+  width: 0.7rem;
+}
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-accent);
+  border: 0.2rem solid var(--color-paper-2);
+  border-radius: var(--radius-pill);
+}
+@media (hover: hover) {
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--color-accent-deep);
+  }
+}
 
 /* Neutral browser-default scrollbar treatment for every scrollable region. */
-* { scrollbar-color: #8b8b8b #f1f1f1 !important; scrollbar-width: auto !important; }
-*::-webkit-scrollbar { height: .85rem !important; width: .85rem !important; }
-*::-webkit-scrollbar-track, *::-webkit-scrollbar-corner { background: #f1f1f1 !important; }
-*::-webkit-scrollbar-thumb { background: #8b8b8b !important; border: 2px solid #f1f1f1 !important; border-radius: .7rem !important; }
-@media (hover: hover) { *::-webkit-scrollbar-thumb:hover { background: #6f6f6f !important; } }
+* {
+  scrollbar-color: #8b8b8b #f1f1f1 !important;
+  scrollbar-width: auto !important;
+}
+*::-webkit-scrollbar {
+  height: 0.85rem !important;
+  width: 0.85rem !important;
+}
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: #f1f1f1 !important;
+}
+*::-webkit-scrollbar-thumb {
+  background: #8b8b8b !important;
+  border: 2px solid #f1f1f1 !important;
+  border-radius: 0.7rem !important;
+}
+@media (hover: hover) {
+  *::-webkit-scrollbar-thumb:hover {
+    background: #6f6f6f !important;
+  }
+}
 
 /* Dropdown menus keep a narrow inner scrollbar so it does not cover their rounded edge. */
-.combo-menu { scrollbar-color: #8b8b8b transparent !important; scrollbar-width: thin !important; }
-.combo-menu::-webkit-scrollbar { width: .45rem !important; }
-.combo-menu::-webkit-scrollbar-track { background: transparent !important; margin: .35rem 0; }
-.combo-menu::-webkit-scrollbar-thumb { background: #8b8b8b !important; background-clip: content-box; border: 1px solid transparent !important; border-radius: var(--radius-pill) !important; }
+.combo-menu {
+  scrollbar-color: #8b8b8b transparent !important;
+  scrollbar-width: thin !important;
+}
+.combo-menu::-webkit-scrollbar {
+  width: 0.45rem !important;
+}
+.combo-menu::-webkit-scrollbar-track {
+  background: transparent !important;
+  margin: 0.35rem 0;
+}
+.combo-menu::-webkit-scrollbar-thumb {
+  background: #8b8b8b !important;
+  background-clip: content-box;
+  border: 1px solid transparent !important;
+  border-radius: var(--radius-pill) !important;
+}
 
 /* Dense data views use the same narrow scrollbar without changing page-level chrome. */
-.asset-table-wrap, .geo-table-wrap, .geo-list-scroll, .organization-chart, .org-scroll-canvas, .collaboration-drawer .collaboration-timeline, .collaboration-drawer .collaboration-workspace { scrollbar-color: #8b8b8b transparent !important; scrollbar-width: thin !important; }
-.asset-table-wrap::-webkit-scrollbar, .geo-table-wrap::-webkit-scrollbar, .geo-list-scroll::-webkit-scrollbar, .organization-chart::-webkit-scrollbar, .org-scroll-canvas::-webkit-scrollbar, .collaboration-drawer .collaboration-timeline::-webkit-scrollbar, .collaboration-drawer .collaboration-workspace::-webkit-scrollbar { height: .45rem !important; width: .45rem !important; }
-.asset-table-wrap::-webkit-scrollbar-track, .geo-table-wrap::-webkit-scrollbar-track, .geo-list-scroll::-webkit-scrollbar-track, .organization-chart::-webkit-scrollbar-track, .org-scroll-canvas::-webkit-scrollbar-track, .collaboration-drawer .collaboration-timeline::-webkit-scrollbar-track, .collaboration-drawer .collaboration-workspace::-webkit-scrollbar-track { background: transparent !important; margin: .35rem 0; }
-.asset-table-wrap::-webkit-scrollbar-thumb, .geo-table-wrap::-webkit-scrollbar-thumb, .geo-list-scroll::-webkit-scrollbar-thumb, .organization-chart::-webkit-scrollbar-thumb, .org-scroll-canvas::-webkit-scrollbar-thumb, .collaboration-drawer .collaboration-timeline::-webkit-scrollbar-thumb, .collaboration-drawer .collaboration-workspace::-webkit-scrollbar-thumb { background: #8b8b8b !important; background-clip: content-box; border: 1px solid transparent !important; border-radius: var(--radius-pill) !important; }
+.asset-table-wrap,
+.geo-table-wrap,
+.geo-list-scroll,
+.organization-chart,
+.org-scroll-canvas,
+.collaboration-drawer .collaboration-timeline,
+.collaboration-drawer .collaboration-workspace {
+  scrollbar-color: #8b8b8b transparent !important;
+  scrollbar-width: thin !important;
+}
+.asset-table-wrap::-webkit-scrollbar,
+.geo-table-wrap::-webkit-scrollbar,
+.geo-list-scroll::-webkit-scrollbar,
+.organization-chart::-webkit-scrollbar,
+.org-scroll-canvas::-webkit-scrollbar,
+.collaboration-drawer .collaboration-timeline::-webkit-scrollbar,
+.collaboration-drawer .collaboration-workspace::-webkit-scrollbar {
+  height: 0.45rem !important;
+  width: 0.45rem !important;
+}
+.asset-table-wrap::-webkit-scrollbar-track,
+.geo-table-wrap::-webkit-scrollbar-track,
+.geo-list-scroll::-webkit-scrollbar-track,
+.organization-chart::-webkit-scrollbar-track,
+.org-scroll-canvas::-webkit-scrollbar-track,
+.collaboration-drawer .collaboration-timeline::-webkit-scrollbar-track,
+.collaboration-drawer .collaboration-workspace::-webkit-scrollbar-track {
+  background: transparent !important;
+  margin: 0.35rem 0;
+}
+.asset-table-wrap::-webkit-scrollbar-thumb,
+.geo-table-wrap::-webkit-scrollbar-thumb,
+.geo-list-scroll::-webkit-scrollbar-thumb,
+.organization-chart::-webkit-scrollbar-thumb,
+.org-scroll-canvas::-webkit-scrollbar-thumb,
+.collaboration-drawer .collaboration-timeline::-webkit-scrollbar-thumb,
+.collaboration-drawer .collaboration-workspace::-webkit-scrollbar-thumb {
+  background: #8b8b8b !important;
+  background-clip: content-box;
+  border: 1px solid transparent !important;
+  border-radius: var(--radius-pill) !important;
+}
 
 @media (min-width: 52.0625rem) {
-  .geographic-page { display: flex; flex-direction: column; height: 100dvh; max-height: 100dvh; overflow: hidden; }
-  .geographic-page.is-list-view { display: block; height: auto; max-height: none; overflow: visible; }
-  .geographic-page > .page-heading { flex: 0 0 auto; margin-bottom: var(--space-lg); }
-  .geographic-page .geo-workbench, .geographic-page .geo-table-panel { flex: 1 1 auto; min-height: 0; }
-  .geographic-page.is-list-view .geo-table-panel { display: block; min-height: auto; overflow: visible; }
-  .geographic-page.is-list-view .geo-table-panel > header { position: sticky; top: 0; z-index: 10; }
-  .geographic-page.is-list-view .geo-table-wrap { min-height: auto; overflow-x: auto; overflow-y: visible; }
-  .geographic-page.is-list-view .geo-table-wrap th { position: static; }
-  .geographic-page .geo-map-stage, .geographic-page .geo-mapbox, .geographic-page .geo-map-config { min-height: 0; }
+  .geographic-page {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+  }
+  .geographic-page.is-list-view {
+    display: block;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+  .geographic-page > .page-heading {
+    flex: 0 0 auto;
+    margin-bottom: var(--space-lg);
+  }
+  .geographic-page .geo-workbench,
+  .geographic-page .geo-table-panel {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .geographic-page.is-list-view .geo-table-panel {
+    display: block;
+    min-height: auto;
+    overflow: visible;
+  }
+  .geographic-page.is-list-view .geo-table-panel > header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .geographic-page.is-list-view .geo-table-wrap {
+    min-height: auto;
+    overflow-x: auto;
+    overflow-y: visible;
+  }
+  .geographic-page.is-list-view .geo-table-wrap th {
+    position: static;
+  }
+  .geographic-page .geo-map-stage,
+  .geographic-page .geo-mapbox,
+  .geographic-page .geo-map-config {
+    min-height: 0;
+  }
 }
 
 @media (max-width: 52rem) {
-  .organization-chart { overflow: visible; }
-  .organization-chart > .org-scroll-canvas { display: none; }
-  .org-zoom-status { display: none; }
-  .org-mobile-tree, .org-mobile-tree ul { display: grid; gap: var(--space-md); list-style: none; margin: 0; padding: 0; }
-  .org-mobile-node { margin-inline-start: calc(var(--org-depth) * var(--space-lg)); min-width: 0; position: relative; }
-  .org-mobile-node::before { background: var(--color-accent); content: ''; height: 1px; left: calc(var(--space-lg) * -1 + .8rem); position: absolute; top: 1.65rem; width: calc(var(--space-lg) - .8rem); }
-  .org-mobile-node:first-child::before { display: none; }
-  .org-mobile-node > .org-unit-card { min-width: 0; width: 100%; }
-  .org-mobile-node > ul { border-left: 1px solid var(--color-accent); margin: var(--space-md) 0 0 .8rem; padding-left: calc(var(--space-lg) - .8rem); }
-  .geo-workbench { grid-template-columns: 1fr; }
-  .geo-list-panel { max-height: 27rem; }
-  .geo-map-panel { min-height: 31rem; }
-  .geo-table-panel { min-height: 31rem; }
-  .geo-table-panel > header { align-items: stretch; flex-direction: column; }
-  .geo-table-panel .geo-search { flex-basis: auto; }
-  .geo-building-note { margin-inline-start: 0; width: 100%; }
+  .organization-chart {
+    overflow: visible;
+  }
+  .organization-chart > .org-scroll-canvas {
+    display: none;
+  }
+  .org-zoom-status {
+    display: none;
+  }
+  .org-mobile-tree,
+  .org-mobile-tree ul {
+    display: grid;
+    gap: var(--space-md);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .org-mobile-node {
+    margin-inline-start: calc(var(--org-depth) * var(--space-lg));
+    min-width: 0;
+    position: relative;
+  }
+  .org-mobile-node::before {
+    background: var(--color-accent);
+    content: "";
+    height: 1px;
+    left: calc(var(--space-lg) * -1 + 0.8rem);
+    position: absolute;
+    top: 1.65rem;
+    width: calc(var(--space-lg) - 0.8rem);
+  }
+  .org-mobile-node:first-child::before {
+    display: none;
+  }
+  .org-mobile-node > .org-unit-card {
+    min-width: 0;
+    width: 100%;
+  }
+  .org-mobile-node > ul {
+    border-left: 1px solid var(--color-accent);
+    margin: var(--space-md) 0 0 0.8rem;
+    padding-left: calc(var(--space-lg) - 0.8rem);
+  }
+  .geo-workbench {
+    grid-template-columns: 1fr;
+  }
+  .geo-list-panel {
+    max-height: 27rem;
+  }
+  .geo-map-panel {
+    min-height: 31rem;
+  }
+  .geo-table-panel {
+    min-height: 31rem;
+  }
+  .geo-table-panel > header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .geo-table-panel .geo-search {
+    flex-basis: auto;
+  }
+  .geo-building-note {
+    margin-inline-start: 0;
+    width: 100%;
+  }
 }
-

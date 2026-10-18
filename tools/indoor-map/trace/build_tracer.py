@@ -2,7 +2,7 @@
 
 Isolated from the application: nothing under src/ or supabase/ is touched.
 
-    python prototypes/indoor-map/trace/build_tracer.py \
+    python tools/indoor-map/trace/build_tracer.py \
         data/private/floorplans/航廈三樓-修改.dxf \
         data/private/indoor-map/航廈三樓_描圖.html --title 航廈三樓
 

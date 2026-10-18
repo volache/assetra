@@ -1,8 +1,17 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { DatePicker } from "../../components/DatePicker";
+import { CapsuleSpinner } from "../../components/FeedbackCenter";
 import { rocDateTime } from "../../lib/formatters";
 import { FilterCombo } from "../inventory/QueryControls";
 import { collaborationKindLabels, collaborationStatusLabel, requestCollaboration } from "./api";
+
+const resolutionTemplates = {
+  tag_missing: "已補印標籤。",
+  disposal_candidate: "已完成報廢評估。",
+  custodian_change: "已於舊系統完成保管人異動。",
+  location_change: "已於舊系統完成存置地點異動。",
+  other: "已處理完成。",
+};
 
 const statusFilters = [
   ["all", "全部"],
@@ -51,12 +60,23 @@ export function CollaborationTasks({ onOpenTask }) {
   const [noteCategory, setNoteCategory] = useState("all");
   const [noteUnit, setNoteUnit] = useState("");
   const [notesLoading, setNotesLoading] = useState(false);
+  const [actor, setActor] = useState(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [busyId, setBusyId] = useState(null);
+  const [resolvingId, setResolvingId] = useState(null);
+  const [resultDraft, setResultDraft] = useState("");
+  const [actionError, setActionError] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
+  const [pageSize, setPageSize] = useState(25);
+  const [currentPage, setCurrentPage] = useState(1);
+  const isAdmin = Boolean(actor?.isAdmin);
   const load = async () => {
     setLoading(true);
     setError("");
     try {
       const data = await requestCollaboration({ action: "list_tasks", status: "all" });
       setTasks(data.tasks || []);
+      setActor(data.actor || null);
     } catch (requestError) {
       setError(requestError.message || "無法載入協作追蹤。");
     } finally {
@@ -129,7 +149,45 @@ export function CollaborationTasks({ onOpenTask }) {
     });
   }, [creator, dateFrom, dateTo, scope, sortBy, status, tasks, unitName]);
   const hasFilters = Boolean(creator || unitName || dateFrom || dateTo || status !== "all" || scope !== "all");
+  const extraFilterCount = [creator, unitName, dateFrom, dateTo].filter(Boolean).length + Number(scope !== "all") + Number(sortBy !== "updated_desc");
   const sortLabel = sortOptions.find(([value]) => value === sortBy)?.[1] || "最近更新";
+  // The administrator handles a request right on this page; the record is
+  // patched from the server's reply so the list does not reload or flicker.
+  async function act(task, action, body) {
+    if (busyId) return;
+    setBusyId(task.id);
+    setActionError(null);
+    try {
+      const data = await requestCollaboration({ action, identityId: task.asset.identityId, collaborationId: task.id, body });
+      const updated = (data.collaborations || []).find((entry) => entry.id === task.id);
+      if (updated) {
+        setTasks((current) => current.map((item) => item.id === task.id
+          ? { ...item, status: updated.status, updated_at: updated.updated_at, resolution: updated.details?.resolution ?? null }
+          : item));
+      }
+      setResolvingId(null);
+      setResultDraft("");
+    } catch (requestError) {
+      setActionError({ id: task.id, message: requestError.message || "無法儲存處理進度。" });
+    } finally {
+      setBusyId(null);
+    }
+  }
+  function startResolving(task) {
+    setResolvingId(task.id);
+    setResultDraft("");
+    setActionError(null);
+  }
+  function toggleExpanded(taskId) {
+    setExpandedId((current) => (current === taskId ? null : taskId));
+    setResolvingId(null);
+    setResultDraft("");
+    setActionError(null);
+  }
+  const totalPages = Math.max(1, Math.ceil(visibleTasks.length / pageSize));
+  const page = Math.min(currentPage, totalPages);
+  const pageRows = visibleTasks.slice((page - 1) * pageSize, page * pageSize);
+  useEffect(() => { setCurrentPage(1); setExpandedId(null); }, [creator, dateFrom, dateTo, scope, sortBy, status, unitName]);
   function clearFilters() {
     setStatus("all");
     setCreator("");
@@ -222,10 +280,11 @@ export function CollaborationTasks({ onOpenTask }) {
             </div>
             <div className="collaboration-filter-actions">
               {hasFilters && <button className="button button-secondary filter-reset" onClick={clearFilters} type="button">清除篩選</button>}
+              <button aria-expanded={filtersOpen} className="button button-secondary" onClick={() => setFiltersOpen((open) => !open)} type="button">{filtersOpen ? "收合篩選" : `更多篩選${extraFilterCount ? `（${extraFilterCount}）` : ""}`}</button>
               <button className="button button-secondary" disabled={loading} onClick={() => load()} type="button">重新整理</button>
             </div>
           </div>
-          <div className="filter-grid collaboration-filter-grid">
+          {filtersOpen && <div className="filter-grid collaboration-filter-grid">
             <FilterCombo
               id="task-creator"
               label="提出人"
@@ -255,14 +314,14 @@ export function CollaborationTasks({ onOpenTask }) {
               options={sortOptions.map(([, label]) => label)}
               value={sortLabel}
             />
-          </div>
-          <fieldset className="collaboration-status-filter">
+          </div>}
+          {filtersOpen && <fieldset className="collaboration-status-filter">
             <legend>範圍</legend>
             <div className="segmented-controls" aria-label="範圍">
               <button className={scope === "all" ? "active" : ""} onClick={() => setScope("all")} type="button">全部可見</button>
               <button className={scope === "mine" ? "active" : ""} onClick={() => setScope("mine")} type="button">我提出的</button>
             </div>
-          </fieldset>
+          </fieldset>}
           <fieldset className="collaboration-status-filter">
             <legend>處理狀態</legend>
             <div className="segmented-controls" aria-label="處理狀態">
@@ -274,38 +333,105 @@ export function CollaborationTasks({ onOpenTask }) {
             </div>
           </fieldset>
         </section>
-        {!loading && <div className="result-summary collaboration-result-summary"><p className="result-count">查詢結果：<strong>{visibleTasks.length}</strong> 筆</p><p>共 {tasks.length} 筆協作追蹤</p></div>}
+        {!loading && <div className="result-summary collaboration-result-summary"><p className="result-count">查詢結果：<strong>{visibleTasks.length}</strong> 筆</p><p>共 {tasks.length} 筆協作追蹤</p>{visibleTasks.length > pageSize && (
+          <label className="page-size">每頁
+            <select aria-label="每頁顯示筆數" onChange={(event) => { setPageSize(Number(event.target.value)); setCurrentPage(1); }} value={pageSize}>
+              <option value="25">25 筆</option>
+              <option value="50">50 筆</option>
+              <option value="100">100 筆</option>
+            </select>
+          </label>
+        )}</div>}
         {error && <p className="form-error" role="alert">{error}</p>}
         {loading ? (
           <p className="muted collaboration-task-loading">正在載入協作追蹤…</p>
         ) : visibleTasks.length ? (
-          <div className="collaboration-task-list">
-            {visibleTasks.map((task) => (
-              <article className="collaboration-task" key={task.id}>
-                <div className="collaboration-task-main">
-                  <div className="collaboration-task-meta">
-                    <span className={`collaboration-status is-${task.status}`}>
-                      {collaborationStatusLabel(task.status)}
-                    </span>
-                    <span className="collaboration-kind">{collaborationKindLabels[task.kind] || "其他"}</span>
-                    <span>{task.created_by_name || "系統"}</span>
-                    <time dateTime={task.created_at}>提出於 {rocDateTime(task.created_at)}</time>
-                  </div>
-                  <h2>{task.asset?.name || "未命名財物"}</h2>
-                  <p className="collaboration-task-asset">
-                    {[task.asset?.assetNo, task.asset?.serialNo].filter(Boolean).join("-") || "—"}
-                    {task.asset?.unitName && ` · 保管單位：${task.asset.unitName}`}
-                  </p>
-                  <p className="collaboration-task-body">{task.body}</p>
-                  {task.resolution && <p className="collaboration-task-resolution"><strong>處理結果</strong>{task.resolution}</p>}
-                  <small>最後更新：{rocDateTime(task.updated_at)}</small>
-                </div>
-                <button className="button button-secondary" onClick={() => onOpenTask?.(task)} type="button">
-                  定位財物
-                </button>
-              </article>
-            ))}
-          </div>
+          <>
+            <div className="asset-table-wrap collaboration-task-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>狀態</th>
+                    <th>財物</th>
+                    <th>類型</th>
+                    <th>提出人</th>
+                    <th>說明</th>
+                    <th>最後更新</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageRows.map((task) => {
+                    const open = expandedId === task.id;
+                    const active = task.status === "open" || task.status === "in_progress";
+                    return (
+                      <React.Fragment key={task.id}>
+                        <tr>
+                          <td><span className={`collaboration-status is-${task.status}`}>{collaborationStatusLabel(task.status)}</span></td>
+                          <td>
+                            {task.asset?.name || "未命名財物"}
+                            <small>{[task.asset?.assetNo, task.asset?.serialNo].filter(Boolean).join("-") || "—"}</small>
+                          </td>
+                          <td><span className="collaboration-kind">{collaborationKindLabels[task.kind] || "其他"}</span></td>
+                          <td>
+                            {task.created_by_name || "系統"}
+                            {task.asset?.unitName && <small>{task.asset.unitName}</small>}
+                          </td>
+                          <td className="collaboration-task-summary" title={task.body}>{task.body}</td>
+                          <td className="mono"><time dateTime={task.updated_at}>{rocDateTime(task.updated_at)}</time></td>
+                          <td>
+                            <div className="asset-row-actions">
+                              <button aria-controls={`task-detail-${task.id}`} aria-expanded={open} className="row-action" onClick={() => toggleExpanded(task.id)} type="button">{open ? "收合" : "展開"}</button>
+                              <button className="row-action" onClick={() => onOpenTask?.(task)} type="button">定位財物</button>
+                            </div>
+                          </td>
+                        </tr>
+                        <tr className="asset-detail-row">
+                          <td colSpan="7">
+                            <div className={`asset-detail ${open ? "open" : ""}`} id={`task-detail-${task.id}`}>
+                              <div>
+                                <div className="collaboration-task-detail">
+                                  <p className="collaboration-task-detail-meta">{task.created_by_name || "系統"} 提出於 <time dateTime={task.created_at}>{rocDateTime(task.created_at)}</time></p>
+                                  <p className="collaboration-task-body">{task.body}</p>
+                                  {task.resolution && <p className="collaboration-task-resolution"><strong>處理結果</strong>{task.resolution}</p>}
+                                  {isAdmin && active && (resolvingId === task.id ? (
+                                    <form className="collaboration-task-resolve" onSubmit={(event) => { event.preventDefault(); if (resultDraft.trim()) act(task, "resolve", resultDraft); }}>
+                                      <label>處理結果
+                                        <textarea autoFocus disabled={busyId === task.id} maxLength="2000" onChange={(event) => setResultDraft(event.target.value)} placeholder="說明如何處理，提出者會看到這段文字。" value={resultDraft} />
+                                      </label>
+                                      <div>
+                                        <button className="text-button" disabled={busyId === task.id} onClick={() => setResultDraft(resolutionTemplates[task.kind] || resolutionTemplates.other)} type="button">帶入範本</button>
+                                        <span />
+                                        <button className="text-button" disabled={busyId === task.id} onClick={() => { setResolvingId(null); setResultDraft(""); }} type="button">取消</button>
+                                        <button className="button button-primary" disabled={busyId === task.id || !resultDraft.trim()} type="submit">{busyId === task.id && <CapsuleSpinner compact />}確認完成</button>
+                                      </div>
+                                    </form>
+                                  ) : (
+                                    <div className="collaboration-task-actions">
+                                      {task.status === "open" && <button className="button button-secondary" disabled={Boolean(busyId)} onClick={() => act(task, "start")} type="button">{busyId === task.id && <CapsuleSpinner compact />}開始處理</button>}
+                                      <button className="button button-primary" disabled={Boolean(busyId)} onClick={() => startResolving(task)} type="button">完成處理</button>
+                                    </div>
+                                  ))}
+                                  {actionError?.id === task.id && <p className="form-error" role="alert">{actionError.message}</p>}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {totalPages > 1 && (
+              <nav aria-label="協作追蹤分頁" className="pagination">
+                <button className="button button-secondary" disabled={page === 1} onClick={() => setCurrentPage(page - 1)} type="button">上一頁</button>
+                <span>第 {page}／{totalPages} 頁</span>
+                <button className="button button-secondary" disabled={page === totalPages} onClick={() => setCurrentPage(page + 1)} type="button">下一頁</button>
+              </nav>
+            )}
+          </>
         ) : (
           <div className="empty-state collaboration-task-empty">
             <h2>{hasFilters ? "沒有符合篩選的協作追蹤" : "目前沒有協作追蹤"}</h2>

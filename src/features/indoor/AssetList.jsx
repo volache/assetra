@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { money } from "../../lib/formatters";
+import { money, formatNumber } from "../../lib/formatters";
 
 const STEP = 120;
 const assetNumber = (asset) => [asset.assetNo, asset.serialNo].filter(Boolean).join("-");
@@ -42,7 +42,7 @@ export function AssetList({ assets, highlightId, onOpenAsset, empty = "這裡沒
         {rows.length > shown && <li><button className="indoor-more" onClick={() => setShown((count) => count + STEP)} type="button">再顯示 {Math.min(STEP, rows.length - shown)} 筆（尚有 {rows.length - shown} 筆）</button></li>}
         {!rows.length && <li className="indoor-empty">沒有符合的財物。</li>}
       </ul>
-      <footer className="indoor-assets-total"><span>{rows.length.toLocaleString()} 筆</span><span>帳面價值合計 NT$ {money(total)}</span></footer>
+      <footer className="indoor-assets-total"><span>{formatNumber(rows.length)} 筆</span><span>帳面價值合計 NT$ {money(total)}</span></footer>
     </div>
   );
 }

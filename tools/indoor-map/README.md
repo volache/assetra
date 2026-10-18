@@ -13,7 +13,7 @@
 - **直接描房間**：用矩形、多邊形、半圓、圓直接描出房間外形。
 
 ```bash
-python prototypes/indoor-map/trace/build_tracer.py \
+python tools/indoor-map/trace/build_tracer.py \
   "data/private/floorplans/航廈三樓-修改.dxf" \
   "data/private/indoor-map/航廈三樓_描圖.html" --title 航廈三樓 \
   --locations data/private/indoor-map/locations.json
@@ -24,8 +24,8 @@ python prototypes/indoor-map/trace/build_tracer.py \
 一個 DXF 若畫了好幾層或好幾個視圖（例如宿舍一、二樓同一個檔案、消防站是含圖框的圖紙），可以用 `--crop x0,y0,x1,y1`（圖面座標）只留下其中一個範圍，`--regions` 會列出檔案裡各自獨立的圖形範圍與座標，方便決定怎麼裁切：
 
 ```bash
-python prototypes/indoor-map/trace/build_tracer.py "data/private/floorplans/宿舍一樓及二樓.dxf" /dev/null --regions
-python prototypes/indoor-map/trace/build_tracer.py "data/private/floorplans/宿舍一樓及二樓.dxf"   "data/private/indoor-map/floors/宿舍一樓_描圖.html" --title 宿舍一樓 --crop 600,2000,9550,10600   --locations data/private/indoor-map/locations.json
+python tools/indoor-map/trace/build_tracer.py "data/private/floorplans/宿舍一樓及二樓.dxf" /dev/null --regions
+python tools/indoor-map/trace/build_tracer.py "data/private/floorplans/宿舍一樓及二樓.dxf"   "data/private/indoor-map/floors/宿舍一樓_描圖.html" --title 宿舍一樓 --crop 600,2000,9550,10600   --locations data/private/indoor-map/locations.json
 ```
 
 ### 套用其他樓層的形狀（對位）
@@ -33,7 +33,7 @@ python prototypes/indoor-map/trace/build_tracer.py "data/private/floorplans/宿�
 各樓層外牆大致相同，但不同 DXF 的座標原點不一樣，直接匯入其他樓層的 JSON 會落在很遠的地方。建置時加上 `--align 其他樓層.dxf`（可重複），會用長牆線做 FFT 比對算出平移量（`trace/align_floors.py` 也可單獨執行）；比對不夠明確（分數 < 0.4 或和第二名差不到 10%）就不採用。
 
 ```bash
-python prototypes/indoor-map/trace/build_tracer.py "data/private/floorplans/航廈二樓不含外部.dxf" "data/private/indoor-map/floors/航廈二樓_描圖.html" --title 航廈二樓 --locations data/private/indoor-map/locations.json --align "data/private/floorplans/航廈三樓-修改.dxf"
+python tools/indoor-map/trace/build_tracer.py "data/private/floorplans/航廈二樓不含外部.dxf" "data/private/indoor-map/floors/航廈二樓_描圖.html" --title 航廈二樓 --locations data/private/indoor-map/locations.json --align "data/private/floorplans/航廈三樓-修改.dxf"
 ```
 
 匯入來自其他底圖的 JSON 時，會自動平移對位，並詢問要保留還是清空存置地點代碼與名稱；位置有偏差，可用 Ctrl+A（或「全選」）選取全部，再用右側的移動面板微調，或用「對齊到底圖」（先點選取範圍上的頂點，再點底圖的端點或邊線）貼齊。
@@ -92,7 +92,7 @@ python prototypes/indoor-map/trace/build_tracer.py "data/private/floorplans/航�
 用描好的房間做出一個獨立的檢視頁（玻璃卡片風格，參考設計圖）：
 
 ```bash
-python prototypes/indoor-map/view/build_viewer.py   data/private/indoor-map/航廈三樓_等角檢視.html   --floor "3F|航廈三樓=data/private/indoor-map/航廈三樓.rooms.json"   --stats data/private/indoor-map/location-stats.json
+python tools/indoor-map/view/build_viewer.py   data/private/indoor-map/航廈三樓_等角檢視.html   --floor "3F|航廈三樓=data/private/indoor-map/航廈三樓.rooms.json"   --stats data/private/indoor-map/location-stats.json
 ```
 
 - `--floor "標籤|名稱=檔案"` 每一層給一次，多層時會出現上一層、下一層與圓點分頁。
@@ -113,7 +113,7 @@ python prototypes/indoor-map/view/build_viewer.py   data/private/indoor-map/航�
 `grid_rebuild.py`：把牆線整理成乾淨的格線再取房間，輸出靜態檢查圖。小房間效果不錯，但牆線沒有封閉的開放空間會併成一個區域，已不再使用，僅保留作為參考。
 
 ```bash
-python prototypes/indoor-map/grid_rebuild.py "data/private/floorplans/航廈三樓-修改.dxf" "data/private/indoor-map/航廈三樓_檢查圖.png" --title 航廈三樓
+python tools/indoor-map/grid_rebuild.py "data/private/floorplans/航廈三樓-修改.dxf" "data/private/indoor-map/航廈三樓_檢查圖.png" --title 航廈三樓
 ```
 
 ### 魔術棒與拆分房間
@@ -128,7 +128,7 @@ python prototypes/indoor-map/grid_rebuild.py "data/private/floorplans/航廈三�
 
 ### 一棟樓一個頁面（多樓層）與存檔
 
-- `trace/build_building.py 設定檔1.json 設定檔2.json … --title 標題 --output 輸出.html` 會把所有建築物（每個設定檔一棟）的所有樓層內嵌進同一個 HTML（全部約 14 MB），頁面上方先選建築物、再切換樓層（也可按 `[` `]`）。目前的組合：`build_building.py data/private/indoor-map/buildings/*.json --title 花蓮航空站平面圖製作工具 --key 航廈平面圖製作工具 --output data/private/indoor-map/花蓮航空站平面圖製作工具.html`。設定檔格式見該檔案的開頭說明：樓層由低到高列出、`reference` 指定對位的基準樓層、`crop` 裁切同一個 DXF 裡的不同樓層、設定檔放在 `data/private/indoor-map/buildings/`。
+- `trace/build_building.py 設定檔1.json 設定檔2.json … --title 標題 --output 輸出.html` 會把所有建築物（每個設定檔一棟）的所有樓層內嵌進同一個 HTML（全部約 14 MB），頁面上方先選建築物、再切換樓層（也可按 `[` `]`）。目前的組合：`build_building.py data/private/indoor-map/buildings/*.json --title 花蓮航空站平面圖製作工具 --key 航廈平面圖製作工具 --output data/private/indoor-map/buildings/花蓮航空站平面圖製作工具.html`。設定檔格式見該檔案的開頭說明：樓層由低到高列出、`reference` 指定對位的基準樓層、`crop` 裁切同一個 DXF 裡的不同樓層、設定檔放在 `data/private/indoor-map/buildings/`。
 - 建置時會自動比對各樓層的外牆（FFT），算出各層相對基準樓層的平移量；比對不明確的樓層會顯示警告，該層不做自動對位（匯入其他樓層的形狀時會提示位置可能對不上）。匯入別層的 JSON 時，會依各層的對位量自動平移。
 - 單層建置仍可用 `build_tracer.py`（`--align` 已移除，多層請用 `build_building.py`）。
 - **存檔**：變動後約 0.7 秒自動寫進瀏覽器的 IndexedDB（每個樓層一份，換樓層不會互相覆蓋，重新整理會回到上次的樓層）。在 Chrome 或 Edge 可按上方「選擇專案資料夾」選一個資料夾，之後每次變動也會自動寫成 `<樓層名稱>.rooms.json`，這份才是正本；資料夾裡有比瀏覽器更新的檔案時，開啟或選擇資料夾會詢問是否載入。瀏覽器重開後需要點一次「資料夾需要重新授權」。其他瀏覽器只存在瀏覽器裡，請定期按「匯出 JSON」。

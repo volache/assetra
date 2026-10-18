@@ -8,7 +8,7 @@ let inflight = null;
 const listeners = new Set();
 const publish = (next) => { snapshot = next; listeners.forEach((listener) => listener(snapshot)); };
 
-export function loadIndoorStore(client = supabase, force = false) {
+function loadIndoorStore(client = supabase, force = false) {
   if (!client) { publish({ status: "error", error: "尚未設定 Supabase 連線。", data: null }); return Promise.resolve(); }
   if (inflight && !force) return inflight;
   publish({ ...snapshot, status: snapshot.data ? "ready" : "loading" });

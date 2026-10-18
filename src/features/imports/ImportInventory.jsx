@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import * as XLSX from "xlsx";
-import { supabase } from "../../supabase";
-import { rocDate } from "../../lib/formatters";
+import { requestImportInventory } from "./api";
+import { rocDate, formatNumber } from "../../lib/formatters";
 import { sourceLabels } from "../../lib/labels";
 import { CapsuleSpinner } from "../../components/FeedbackCenter";
 
@@ -81,9 +81,6 @@ function normalizeRows(rows, sourceType) {
         status: String(get("status") || ""),
       };
     });
-}
-function toRocDate(value) {
-  return rocDate(value);
 }
 
 function readWorksheetRows(sheet) {
@@ -166,7 +163,6 @@ export function ImportInventory({ store, onImported }) {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState(null);
-  const [batchChanges, setBatchChanges] = useState(null);
   async function preparePreview(e) {
     e.preventDefault();
     if (!file) return setMessage("請先選擇 Excel 檔案。");
@@ -179,21 +175,12 @@ export function ImportInventory({ store, onImported }) {
       const result = inspectImportRows(readWorksheetRows(first), sourceType);
       if (!result.total) throw new Error("找不到有效的資料列。");
       if (!result.errors.length && result.records.length) {
-        const { data, error } = await supabase.functions.invoke(
-          "import-inventory",
-          {
-            body: {
-              mode: "preview",
-              sourceType,
-              fileName: file.name,
-              records: result.records,
-            },
-          },
-        );
-        if (error) {
-          const detail = await error.context?.json().catch(() => null);
-          throw new Error(detail?.error || error.message);
-        }
+        const data = await requestImportInventory({
+          mode: "preview",
+          sourceType,
+          fileName: file.name,
+          records: result.records,
+        });
         result.databaseSummary = data?.summary;
       }
       setPreview(result);
@@ -209,19 +196,15 @@ export function ImportInventory({ store, onImported }) {
     setBusy(true);
     setMessage("");
     try {
-      const { data, error } = await supabase.functions.invoke(
-        "import-inventory",
-        { body: { sourceType, fileName: file.name, records: preview.records } },
-      );
-      if (error) {
-        const detail = await error.context?.json().catch(() => null);
-        throw new Error(detail?.error || error.message);
-      }
-      if (data?.error) throw new Error(data.error);
+      const data = await requestImportInventory({
+        sourceType,
+        fileName: file.name,
+        records: preview.records,
+      });
       await onImported();
       const deleted = Number(data?.retention?.deletedImports || 0);
       setMessage(
-        `已完成匯入 ${Number(data?.recordCount || preview.records.length).toLocaleString()} 筆資料，並已寫入雲端清冊。${deleted ? ` 已依保留規則清除 ${deleted} 筆較早批次。` : ""}`,
+        `已完成匯入 ${formatNumber(data?.recordCount || preview.records.length)} 筆資料，並已寫入雲端清冊。${deleted ? ` 已依保留規則清除 ${deleted} 筆較早批次。` : ""}`,
       );
       setPreview(null);
     } catch (error) {
@@ -234,24 +217,6 @@ export function ImportInventory({ store, onImported }) {
     setFile(nextFile);
     setPreview(null);
     setMessage("");
-  }
-  async function viewChanges(entry) {
-    setBusy(true);
-    try {
-      const { data, error } = await supabase.functions.invoke(
-        "import-inventory",
-        { body: { mode: "changes", importId: entry.id } },
-      );
-      if (error) {
-        const detail = await error.context?.json().catch(() => null);
-        throw new Error(detail?.error || error.message);
-      }
-      setBatchChanges({ entry, rows: data?.changes || [] });
-    } catch (error) {
-      setMessage(error.message || "無法讀取批次差異。");
-    } finally {
-      setBusy(false);
-    }
   }
   return (
     <section className="page">
@@ -322,22 +287,22 @@ export function ImportInventory({ store, onImported }) {
               <p className="eyebrow">IMPORT PREVIEW</p>
               <h2>匯入預覽</h2>
             </div>
-            <strong>{preview.records.length.toLocaleString()} 筆可匯入</strong>
+            <strong>{formatNumber(preview.records.length)} 筆可匯入</strong>
           </header>
           <div className="preview-summary">
             <p>
-              Excel 資料列：<strong>{preview.total.toLocaleString()}</strong>
+              Excel 資料列：<strong>{formatNumber(preview.total)}</strong>
             </p>
             <p>
               錯誤：
               <strong className={preview.errors.length ? "is-error" : ""}>
-                {preview.errors.length.toLocaleString()}
+                {formatNumber(preview.errors.length)}
               </strong>
             </p>
             <p>
               重複主鍵：
               <strong className={preview.duplicates.length ? "is-warning" : ""}>
-                {preview.duplicates.length.toLocaleString()}
+                {formatNumber(preview.duplicates.length)}
               </strong>
             </p>
           </div>
@@ -348,19 +313,19 @@ export function ImportInventory({ store, onImported }) {
                 <p>
                   新增：
                   <strong>
-                    {preview.databaseSummary.added.toLocaleString()}
+                    {formatNumber(preview.databaseSummary.added)}
                   </strong>
                 </p>
                 <p>
                   更新：
                   <strong>
-                    {preview.databaseSummary.changed.toLocaleString()}
+                    {formatNumber(preview.databaseSummary.changed)}
                   </strong>
                 </p>
                 <p>
                   未變更：
                   <strong>
-                    {preview.databaseSummary.unchanged.toLocaleString()}
+                    {formatNumber(preview.databaseSummary.unchanged)}
                   </strong>
                 </p>
               </div>
@@ -433,7 +398,7 @@ export function ImportInventory({ store, onImported }) {
               {busy && <CapsuleSpinner compact />}
               {busy
                 ? "正在寫入…"
-                : `確認匯入 ${preview.records.length.toLocaleString()} 筆`}
+                : `確認匯入 ${formatNumber(preview.records.length)} 筆`}
             </button>
           </div>
         </section>
@@ -448,7 +413,7 @@ export function ImportInventory({ store, onImported }) {
                   {sourceLabels[entry.sourceType]}
                 </span>
                 <strong>{entry.fileName}</strong>
-                <span>{entry.count.toLocaleString()} 筆</span>
+                <span>{formatNumber(entry.count)} 筆</span>
                 <time>{entry.at}</time>
               </li>
             ))}

@@ -366,7 +366,7 @@ const serialKey = (value) => String(value).padStart(7, "0");
 // Rows are ordered by 財產編號 then 流水號, so 財產編號-流水號 (fixed width)
 // compared character by character gives the same order as the table.  A
 // bound written without a 流水號 stands for the whole 財產編號.
-export function parseAssetNumberToken(token) {
+function parseAssetNumberToken(token) {
   const text = String(token || "");
   let match = text.match(serialRangePattern);
   if (match)
@@ -543,7 +543,7 @@ const comparableFields = new Set([
   "usedDuration",
 ]);
 const aliasesHiddenFromSuggestions = new Set(["已過年限", "已過使用年限"]);
-export const searchFieldLabels = Object.keys(searchFieldAliases).filter(
+const searchFieldLabels = Object.keys(searchFieldAliases).filter(
   (label) => !aliasesHiddenFromSuggestions.has(label),
 );
 
@@ -566,7 +566,7 @@ const quoteIfNeeded = (value) =>
 
 // Suggestions for the token at the caret: field names while a plain word is
 // being typed, then real values of the chosen field after the colon.
-export const suggestionLimit = 100;
+const suggestionLimit = 100;
 export function suggestionsForToken(raw, distinctValues) {
   const none = { items: [], total: 0 };
   const helper = comparisonHelper(raw);

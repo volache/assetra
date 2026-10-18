@@ -1,650 +1,31 @@
 import React, {
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import mapboxgl from "mapbox-gl";
-import { money } from "../../lib/formatters";
+import { money, formatNumber } from "../../lib/formatters";
 import { supabase } from "../../supabase";
 import { requestOwnershipDocument } from "../ownership/api";
-import { FilterCombo } from "../inventory/QueryControls";
 import { normalized } from "../inventory/search";
 import { CapsuleSpinner } from "../../components/FeedbackCenter";
 import { LandEditorDialog } from "./LandEditorDialog";
 
-const emptyFeatureCollection = { type: "FeatureCollection", features: [] };
-
-function OwnershipDeleteDialog({ document, onCancel, onConfirm }) {
-  if (!document) return null;
-  return (
-    <dialog aria-labelledby="ownership-delete-title" className="detail-dialog batch-delete-dialog ownership-delete-dialog" onCancel={(event) => { event.preventDefault(); onCancel(); }} open>
-      <div>
-        <header><h2 id="ownership-delete-title">刪除權狀文件？</h2></header>
-        <p>將刪除「{document.original_filename}」及其 R2 私有檔案。</p>
-        <p className="batch-delete-warning">此操作無法復原。</p>
-        <footer className="batch-delete-actions">
-          <button className="button button-secondary" onClick={onCancel} type="button">取消</button>
-          <button className="button button-danger" onClick={onConfirm} type="button">確認刪除</button>
-        </footer>
-      </div>
-    </dialog>
-  );
-}
-
-function landAssetNumberParts(value) {
-  const parts = String(value || "")
-    .split("-")
-    .filter(Boolean);
-  if (parts.length >= 3)
-    return { primary: parts.slice(-3, -1).join("-"), serial: parts.at(-1) };
-  return { primary: String(value || "—"), serial: "" };
-}
-
-function parcelLabel(section, landNumber) {
-  return [section, landNumber].filter(Boolean).join(" ") || "—";
-}
-
-function GeoListViewContent({
-  activeFilterCount,
-  appliedTerm,
-  clearFilters,
-  compactFilters,
-  compactFiltersOpen,
-  currentPage,
-  filters,
-  filtered,
-  geoFilterSentinelRef,
-  onCompactFiltersOpenChange,
-  onCreateLand,
-  onEditLand,
-  onOpenMap,
-  onOpenOwnership,
-  onDeleteOwnership,
-  onReplaceOwnership,
-  onUploadOwnership,
-  onOwnershipUploadChange,
-  onPageChange,
-  onPageSizeChange,
-  onSearch,
-  onTermChange,
-  onViewMap,
-  pageRows,
-  pageSize,
-  ownershipDocumentsByLandId,
-  ownershipUploadInputRef,
-  isUploadingOwnershipDocuments,
-  term,
-  totalArea,
-  totalPages,
-  totalValue,
-  viewTransition,
-}) {
-  return (
-    <section
-      className={`page geographic-page is-list-view ${viewTransition ? "geo-view-transition" : ""}`}
-    >
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">GEOSPATIAL ASSET DIRECTORY</p>
-          <h1>地理圖資</h1>
-          <p>
-            以 Mapbox
-            底圖與地籍範圍檢視花蓮航空站土地財產，並與財產編號、面積及帳面價值交叉核對。
-          </p>
-        </div>
-        <div className="geo-page-actions">
-          <button className="button button-secondary" onClick={onCreateLand} type="button">新增土地</button>
-          <button className="button button-primary" onClick={onViewMap} type="button">地圖檢視</button>
-        </div>
-      </div>
-      <div
-        aria-hidden="true"
-        className="filter-sentinel"
-        ref={geoFilterSentinelRef}
-      />
-      {compactFilters && (
-        <div className="compact-filter-bar compact-filter-bar-fixed">
-          <button
-            aria-expanded={compactFiltersOpen}
-            className="compact-filter-trigger"
-            onClick={() => onCompactFiltersOpenChange((open) => !open)}
-            type="button"
-          >
-            篩選條件{activeFilterCount ? <b>{activeFilterCount}</b> : null}
-          </button>
-          <label className="compact-search">
-            <span className="sr-only">全局關鍵字搜尋</span>
-            <input
-              onChange={(event) => onTermChange(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") onSearch();
-              }}
-              placeholder="輸入後按 Enter 搜尋…"
-              value={term}
-            />
-          </label>
-          <button
-            className="compact-clear"
-            disabled={!activeFilterCount}
-            onClick={clearFilters}
-            type="button"
-          >
-            清除
-          </button>
-          {compactFiltersOpen && (
-            <div className="compact-filter-popover">{filters("compact-")}</div>
-          )}
-        </div>
-      )}
-      <section aria-label="篩選條件" className="search-panel geo-filter-panel">
-        <div className="filter-panel-heading">
-          <div>
-            <h2>篩選條件</h2>
-            <p>可直接輸入文字，或由土地資料中的選項挑選。</p>
-          </div>
-          <button
-            className="button button-secondary filter-reset"
-            onClick={clearFilters}
-            type="button"
-          >
-            清除篩選
-          </button>
-        </div>
-        {filters("geo-")}
-        <div className="advanced-search">
-          <label className="search-field">
-            全局關鍵字搜尋
-            <input
-              onChange={(event) => onTermChange(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") onSearch();
-              }}
-              placeholder="輸入地段、地號、財產名稱或編號"
-              value={term}
-            />
-          </label>
-          <div className="advanced-search-actions">
-            <button
-              className={`button button-primary search-submit ${term !== appliedTerm ? "pending" : ""}`}
-              onClick={onSearch}
-              type="button"
-            >
-              搜尋
-            </button>
-          </div>
-        </div>
-      </section>
-      <section className="geo-table-panel">
-        <div className="result-summary geo-result-summary">
-          <p className="result-count">
-            查詢結果：<strong>{filtered.length.toLocaleString()}</strong> 筆
-          </p>
-          <p>土地總面積：{totalArea.toLocaleString()} m²</p>
-          <p>帳面價值：NT$ {money(totalValue)}</p>
-          <label className="page-size">
-            每頁顯示
-            <select
-              aria-label="每頁顯示土地筆數"
-              onChange={(event) => onPageSizeChange(Number(event.target.value))}
-              value={pageSize}
-            >
-              <option value="25">25 筆</option>
-              <option value="50">50 筆</option>
-              <option value="100">100 筆</option>
-            </select>
-          </label>
-          <p>
-            第 {currentPage}／{totalPages} 頁
-          </p>
-        </div>
-        <div className="geo-table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>段小段</th>
-                <th>地號</th>
-                <th>面積 (M²)</th>
-                <th>使用資訊</th>
-                <th>公告土地現值</th>
-                <th>公告地價</th>
-                <th>財產編號</th>
-                <th>財產名稱</th>
-                <th>財產價值 (元)</th>
-                <th>關聯建號</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pageRows.map((land) => {
-                const [number, serial] = String(land.assetNumber).split("\n");
-                return (
-                  <tr key={land.id}>
-                    <td>
-                      {land.section}
-                      <small>{land.sectionCode}</small>
-                    </td>
-                    <td>{land.landNumber}</td>
-                    <td className="money">{land.area.toLocaleString()}</td>
-                    <td>
-                      <strong>{land.zoningLabel}</strong>
-                      <small>{land.landUseType}</small>
-                    </td>
-                    <td className="money">
-                      {land.announcedLandValue.toLocaleString()}
-                    </td>
-                    <td className="money">
-                      {land.announcedLandPrice.toLocaleString()}
-                    </td>
-                    <td className="mono">
-                      <strong>{number}</strong>
-                      {serial && <small>{serial}</small>}
-                    </td>
-                    <td>
-                      <strong>{land.name}</strong>
-                      <small>
-                        {land.section}
-                        {land.landNumber}
-                      </small>
-                    </td>
-                    <td className="money">{money(land.price)}</td>
-                    <td>{land.relatedBuildingNumbers}</td>
-                    <td>
-                      <button
-                        className="row-action"
-                        onClick={() => onOpenMap(land)}
-                        type="button"
-                      >
-                        查看地圖
-                      </button>
-                      <button className="row-action" onClick={() => onEditLand(land)} type="button">編輯土地</button>
-                      {ownershipDocumentsByLandId[land.documentLandParcelId]?.[0] ? (
-                        <>
-                          <button className="row-action" onClick={() => onOpenOwnership(ownershipDocumentsByLandId[land.documentLandParcelId][0])} type="button">查看權狀</button>
-                          <button className="row-action" disabled={isUploadingOwnershipDocuments} onClick={() => onReplaceOwnership(land, ownershipDocumentsByLandId[land.documentLandParcelId][0])} type="button">更新權狀</button>
-                          <button className="row-action" onClick={() => onDeleteOwnership(ownershipDocumentsByLandId[land.documentLandParcelId][0])} type="button">刪除權狀</button>
-                        </>
-                      ) : (
-                        <button className="row-action" disabled={isUploadingOwnershipDocuments} onClick={() => onUploadOwnership(land)} type="button">上傳權狀</button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <input accept="application/pdf,.pdf" className="sr-only" onChange={onOwnershipUploadChange} ref={ownershipUploadInputRef} type="file" />
-        {totalPages > 1 && (
-          <nav aria-label="土地列表分頁" className="pagination">
-            <button
-              className="button button-secondary"
-              disabled={currentPage === 1}
-              onClick={() => onPageChange(currentPage - 1)}
-              type="button"
-            >
-              上一頁
-            </button>
-            <span>
-              第 {currentPage}／{totalPages} 頁
-            </span>
-            <button
-              className="button button-secondary"
-              disabled={currentPage === totalPages}
-              onClick={() => onPageChange(currentPage + 1)}
-              type="button"
-            >
-              下一頁
-            </button>
-          </nav>
-        )}
-      </section>
-    </section>
-  );
-}
-
-function GeoListView({
-  activeFilterCount,
-  appliedTerm,
-  clearFilters,
-  compactFilters,
-  compactFiltersOpen,
-  currentPage,
-  filtered,
-  geoFilterSentinelRef,
-  landFilters,
-  landUseTypes,
-  onCompactFiltersOpenChange,
-  onCreateLand,
-  onEditLand,
-  onFilterChange,
-  onOpenFilterChange,
-  onOpenMap,
-  onOpenOwnership,
-  onDeleteOwnership,
-  onReplaceOwnership,
-  onUploadOwnership,
-  onOwnershipUploadChange,
-  onPageChange,
-  onPageSizeChange,
-  onSearch,
-  onTermChange,
-  onViewMap,
-  openFilterId,
-  pageRows,
-  pageSize,
-  ownershipDocumentsByLandId,
-  ownershipUploadInputRef,
-  isUploadingOwnershipDocuments,
-  sections,
-  term,
-  totalArea,
-  totalPages,
-  totalValue,
-  viewTransition,
-  zonings,
-}) {
-  const filterFields = [
-    ["section", "地段", sections],
-    ["zoning", "使用分區", zonings],
-    ["landUseType", "使用地類別", landUseTypes],
-  ];
-  const filters = (prefix = "") => (
-    <div className="filter-grid">
-      {filterFields.map(([key, label, options]) => (
-        <FilterCombo
-          id={`${prefix}${key}`}
-          key={key}
-          label={label}
-          onChange={(value) => onFilterChange(key, value)}
-          onOpenChange={onOpenFilterChange}
-          open={openFilterId === `${prefix}${key}`}
-          options={options}
-          value={landFilters[key]}
-        />
-      ))}
-    </div>
-  );
-  return (
-    <GeoListViewContent
-      activeFilterCount={activeFilterCount}
-      appliedTerm={appliedTerm}
-      clearFilters={clearFilters}
-      compactFilters={compactFilters}
-      compactFiltersOpen={compactFiltersOpen}
-      currentPage={currentPage}
-      filters={filters}
-      filtered={filtered}
-      geoFilterSentinelRef={geoFilterSentinelRef}
-      onCompactFiltersOpenChange={onCompactFiltersOpenChange}
-      onCreateLand={onCreateLand}
-      onEditLand={onEditLand}
-      onOpenMap={onOpenMap}
-      onOpenOwnership={onOpenOwnership}
-      onDeleteOwnership={onDeleteOwnership}
-      onReplaceOwnership={onReplaceOwnership}
-      onUploadOwnership={onUploadOwnership}
-      onOwnershipUploadChange={onOwnershipUploadChange}
-      onPageChange={onPageChange}
-      onPageSizeChange={onPageSizeChange}
-      onSearch={onSearch}
-      onTermChange={onTermChange}
-      onViewMap={onViewMap}
-      pageRows={pageRows}
-      pageSize={pageSize}
-      ownershipDocumentsByLandId={ownershipDocumentsByLandId}
-      ownershipUploadInputRef={ownershipUploadInputRef}
-      isUploadingOwnershipDocuments={isUploadingOwnershipDocuments}
-      term={term}
-      totalArea={totalArea}
-      totalPages={totalPages}
-      totalValue={totalValue}
-      viewTransition={viewTransition}
-    />
-  );
-  return (
-    <section className="page geographic-page is-list-view">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">GEOSPATIAL ASSET DIRECTORY</p>
-          <h1>地理圖資</h1>
-          <p>
-            以 Mapbox
-            底圖與地籍範圍檢視花蓮航空站土地財產，並與財產編號、面積及帳面價值交叉核對。
-          </p>
-        </div>
-        <button
-          className="button button-primary"
-          onClick={onViewMap}
-          type="button"
-        >
-          地圖檢視
-        </button>
-      </div>
-      <div
-        aria-hidden="true"
-        className="filter-sentinel"
-        ref={geoFilterSentinelRef}
-      />
-      {compactFilters && (
-        <div className="compact-filter-bar compact-filter-bar-fixed">
-          <button
-            aria-expanded={compactFiltersOpen}
-            className="compact-filter-trigger"
-            onClick={() => onCompactFiltersOpenChange((open) => !open)}
-            type="button"
-          >
-            篩選條件{activeFilterCount ? <b>{activeFilterCount}</b> : null}
-          </button>
-          <label className="compact-search">
-            <span className="sr-only">全局關鍵字搜尋</span>
-            <input
-              onChange={(event) => onTermChange(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") onSearch();
-              }}
-              placeholder="輸入後按 Enter 搜尋…"
-              value={term}
-            />
-          </label>
-          <button
-            className="compact-clear"
-            disabled={!activeFilterCount}
-            onClick={clearFilters}
-            type="button"
-          >
-            清除
-          </button>
-          {compactFiltersOpen && (
-            <div className="compact-filter-popover">{filters("compact-")}</div>
-          )}
-        </div>
-      )}
-      <section aria-label="篩選條件" className="search-panel geo-filter-panel">
-        <div className="filter-panel-heading">
-          <div>
-            <h2>篩選條件</h2>
-            <p>可直接輸入文字，或由土地資料中的選項挑選。</p>
-          </div>
-          <button
-            className="button button-secondary filter-reset"
-            onClick={clearFilters}
-            type="button"
-          >
-            清除篩選
-          </button>
-        </div>
-        {filters("geo-")}
-        <div className="advanced-search">
-          <label className="search-field">
-            全局關鍵字搜尋
-            <input
-              onChange={(event) => onTermChange(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") onSearch();
-              }}
-              placeholder="輸入地段、地號、財產名稱或編號"
-              value={term}
-            />
-          </label>
-          <div className="advanced-search-actions">
-            <button
-              className={`button button-primary search-submit ${term !== appliedTerm ? "pending" : ""}`}
-              onClick={onSearch}
-              type="button"
-            >
-              搜尋
-            </button>
-          </div>
-        </div>
-      </section>
-      <section className="geo-table-panel">
-        <div className="result-summary">
-          <p className="result-count">
-            查詢結果：<strong>{filtered.length.toLocaleString()}</strong> 筆
-          </p>
-          <p>土地總面積：{totalArea.toLocaleString()} m²</p>
-          <p>帳面價值：NT$ {money(totalValue)}</p>
-        </div>
-        <div className="geo-table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>段小段</th>
-                <th>地號</th>
-                <th>面積 (M²)</th>
-                <th>使用資訊</th>
-                <th>公告土地現值</th>
-                <th>公告地價</th>
-                <th>財產編號</th>
-                <th>財產名稱</th>
-                <th>財產價值 (元)</th>
-                <th>關聯建號</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((land) => {
-                const [number, serial] = String(land.assetNumber).split("\n");
-                return (
-                  <tr key={land.id}>
-                    <td>
-                      {land.section}
-                      <small>{land.sectionCode}</small>
-                    </td>
-                    <td>{land.landNumber}</td>
-                    <td className="money">{land.area.toLocaleString()}</td>
-                    <td>
-                      <strong>{land.zoningLabel}</strong>
-                      <small>{land.landUseType}</small>
-                    </td>
-                    <td className="money">
-                      {land.announcedLandValue.toLocaleString()}
-                    </td>
-                    <td className="money">
-                      {land.announcedLandPrice.toLocaleString()}
-                    </td>
-                    <td className="mono">
-                      <strong>{number}</strong>
-                      {serial && <small>{serial}</small>}
-                    </td>
-                    <td>
-                      <strong>{land.name}</strong>
-                      <small>
-                        {land.section}
-                        {land.landNumber}
-                      </small>
-                    </td>
-                    <td className="money">{money(land.price)}</td>
-                    <td>{land.relatedBuildingNumbers}</td>
-                    <td>
-                      <button
-                        className="row-action"
-                        onClick={() => onOpenMap(land)}
-                        type="button"
-                      >
-                        查看地圖
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </section>
-  );
-}
-
-// Adds the land source and its two layers (or refreshes them when they exist).
-// A basemap switch wipes custom layers, so this runs again after style.load.
-function addLandLayers(map, data) {
-  const source = map.getSource("land-properties");
-  if (source) source.setData(data);
-  else map.addSource("land-properties", { data, type: "geojson" });
-  if (!map.getLayer("land-fill"))
-    map.addLayer({
-      id: "land-fill",
-      paint: { "fill-color": "#16a36b", "fill-opacity": 0.32 },
-      source: "land-properties",
-      type: "fill",
-    });
-  if (!map.getLayer("land-outline"))
-    map.addLayer({
-      id: "land-outline",
-      paint: { "line-color": "#087a4a", "line-width": 2 },
-      source: "land-properties",
-      type: "line",
-    });
-}
+import { GeoListView } from "./GeoListView";
+import { parcelLabel } from "./landLabels";
+import { useLandParcels } from "./useLandParcels";
+import { addLandLayers } from "./mapLayers";
+import { OwnershipDeleteDialog } from "./OwnershipDeleteDialog";
 
 export function GeographicAssets() {
-  const [landProperties, setLandProperties] = useState(emptyFeatureCollection);
-  const [isLoadingLandProperties, setIsLoadingLandProperties] = useState(true);
-  const [landPropertiesError, setLandPropertiesError] = useState("");
+  const {
+    lands,
+    isLoading: isLoadingLandProperties,
+    error: landPropertiesError,
+    reload: reloadLands,
+  } = useLandParcels();
   const [landEditorTarget, setLandEditorTarget] = useState(undefined);
-  const [landReloadKey, setLandReloadKey] = useState(0);
-  const lands = useMemo(
-    () =>
-      landProperties.features.map((feature, index) => {
-        const basic = feature.properties?.basic_info || {};
-        const property = feature.properties?.property_info || {};
-        const propertyNumber =
-          property.property_number ||
-          `${basic.section_code}-${basic.land_number}-${index}`;
-        const number = landAssetNumberParts(propertyNumber);
-        return {
-          announcedLandPrice: Number(basic.announced_land_price) || 0,
-          announcedLandValue: Number(basic.announced_land_value) || 0,
-          area: Number(basic.area) || 0,
-          feature,
-          documentLandParcelId: feature.properties?.land_parcel_id || null,
-          // Identity of the parcel on the map and in the lists.  The 財產編號 is
-          // not unique here: 120-1040103-0001-0000004 and 200-1040103-0001-0000004
-          // both shorten to the same displayed number.
-          id:
-            feature.properties?.land_parcel_id ||
-            `${basic.section_code}-${basic.land_number}`,
-          assetNumber: number.serial
-            ? `${number.primary}\n${number.serial}`
-            : number.primary,
-          propertyNumber: String(property.property_number || ""),
-          landNumber: basic.land_number || "—",
-          landUseType: basic.land_use_type || "—",
-          name: property.property_name || "未命名土地",
-          price: Number(property.property_value) || 0,
-          relatedBuildingNumbers:
-            feature.properties?.related_building_numbers?.join("、") || "—",
-          section: basic.section_name || "未分類段",
-          sectionCode: basic.section_code || "—",
-          zoning: `${basic.zoning || "未分類"}\n${basic.land_use_type || "—"}`,
-          zoningLabel: basic.zoning || "未分類",
-        };
-      }),
-    [landProperties],
-  );
   const [term, setTerm] = useState("");
   const [appliedTerm, setAppliedTerm] = useState("");
   const [landFilters, setLandFilters] = useState({
@@ -685,49 +66,6 @@ export function GeographicAssets() {
     const timer = window.setTimeout(() => setOwnershipUploadSummary(""), 3500);
     return () => window.clearTimeout(timer);
   }, [ownershipUploadSummary]);
-  useEffect(() => {
-    let isCurrent = true;
-
-    async function loadLandProperties() {
-      if (!supabase) {
-        if (isCurrent) {
-          setLandPropertiesError("尚未設定 Supabase 連線，無法讀取地籍資料。");
-          setIsLoadingLandProperties(false);
-        }
-        return;
-      }
-
-      setIsLoadingLandProperties(true);
-      setLandPropertiesError("");
-      const { data, error } = await supabase
-        .from("land_parcel_features")
-        .select("id, feature")
-        .order("parcel_key");
-
-      if (!isCurrent) return;
-      if (error) {
-        setLandPropertiesError("地籍資料讀取失敗，請重新整理後再試。");
-        setLandProperties(emptyFeatureCollection);
-      } else {
-        setLandProperties({
-          type: "FeatureCollection",
-          features: (data || []).flatMap((row) => {
-            if (!row.feature) return [];
-            return [{
-              ...row.feature,
-              properties: { ...row.feature.properties, land_parcel_id: row.id },
-            }];
-          }),
-        });
-      }
-      setIsLoadingLandProperties(false);
-    }
-
-    loadLandProperties();
-    return () => {
-      isCurrent = false;
-    };
-  }, [landReloadKey]);
   useEffect(() => {
     if (lands.length && !lands.some((land) => land.id === selectedId))
       setSelectedId(lands[0].id);
@@ -797,7 +135,7 @@ export function GeographicAssets() {
           return result;
         }, {});
         if (isCurrent) setOwnershipDocumentsByLandId(grouped);
-      } catch (error) {
+      } catch {
         if (isCurrent) setOwnershipDocumentsByLandId({});
       }
     }
@@ -1294,186 +632,11 @@ export function GeographicAssets() {
       <LandEditorDialog
         land={landEditorTarget}
         onClose={() => setLandEditorTarget(undefined)}
-        onSaved={() => { setLandEditorTarget(undefined); setLandReloadKey((key) => key + 1); }}
+        onSaved={() => { setLandEditorTarget(undefined); reloadLands(); }}
         supabase={supabase}
       />
       <OwnershipDeleteDialog document={ownershipDeleteTarget} onCancel={() => setOwnershipDeleteTarget(null)} onConfirm={confirmOwnershipDeletion} />
       </>
-    );
-  if (viewMode === "list")
-    return (
-      <section className="page geographic-page is-list-view">
-        <div className="page-heading">
-          <div>
-            <p className="eyebrow">GEOSPATIAL ASSET DIRECTORY</p>
-            <h1>地理圖資</h1>
-            <p>
-              以 Mapbox
-              底圖與地籍範圍檢視花蓮航空站土地財產，並與財產編號、面積及帳面價值交叉核對。
-            </p>
-          </div>
-          <button
-            className="button button-primary"
-            onClick={() => setViewMode("map")}
-            type="button"
-          >
-            地圖檢視
-          </button>
-        </div>
-        <section className="geo-table-panel">
-          <section
-            aria-label="篩選條件"
-            className="search-panel geo-filter-panel"
-          >
-            <div className="filter-panel-heading">
-              <div>
-                <h2>篩選條件</h2>
-                <p>可依土地標示、使用資訊或財產資料篩選。</p>
-              </div>
-              <button
-                className="button button-secondary filter-reset"
-                onClick={clearLandFilters}
-                type="button"
-              >
-                清除篩選
-              </button>
-            </div>
-            <div className="filter-grid">
-              <label className="filter-field">
-                地段
-                <select
-                  onChange={(event) =>
-                    setLandFilter("section", event.target.value)
-                  }
-                  value={landFilters.section}
-                >
-                  <option value="">全部地段</option>
-                  {sections.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="filter-field">
-                使用分區
-                <select
-                  onChange={(event) =>
-                    setLandFilter("zoning", event.target.value)
-                  }
-                  value={landFilters.zoning}
-                >
-                  <option value="">全部使用分區</option>
-                  {zonings.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="filter-field">
-                使用地類別
-                <select
-                  onChange={(event) =>
-                    setLandFilter("landUseType", event.target.value)
-                  }
-                  value={landFilters.landUseType}
-                >
-                  <option value="">全部使用地類別</option>
-                  {landUseTypes.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <div className="advanced-search">
-              <label className="search-field">
-                全局關鍵字搜尋
-                <input
-                  onChange={(event) => setTerm(event.target.value)}
-                  placeholder="輸入地段、地號、財產名稱或編號"
-                  value={term}
-                />
-              </label>
-            </div>
-          </section>
-          <div className="result-summary">
-            <p className="result-count">
-              查詢結果：<strong>{filtered.length.toLocaleString()}</strong> 筆
-            </p>
-            <p>土地總面積：{totalArea.toLocaleString()} m²</p>
-            <p>帳面價值：NT$ {money(totalValue)}</p>
-          </div>
-          <div className="geo-table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>段小段</th>
-                  <th>地號</th>
-                  <th>面積 (M²)</th>
-                  <th>使用資訊</th>
-                  <th>公告土地現值</th>
-                  <th>公告地價</th>
-                  <th>財產編號</th>
-                  <th>財產名稱</th>
-                  <th>財產價值 (元)</th>
-                  <th>關聯建號</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((land) => {
-                  const [number, serial] = String(land.assetNumber).split("\n");
-                  return (
-                    <tr key={land.id}>
-                      <td>
-                        {land.section}
-                        <small>{land.sectionCode}</small>
-                      </td>
-                      <td>{land.landNumber}</td>
-                      <td className="money">{land.area.toLocaleString()}</td>
-                      <td>
-                        <strong>{land.zoningLabel}</strong>
-                        <small>{land.landUseType}</small>
-                      </td>
-                      <td className="money">
-                        {land.announcedLandValue.toLocaleString()}
-                      </td>
-                      <td className="money">
-                        {land.announcedLandPrice.toLocaleString()}
-                      </td>
-                      <td className="mono">
-                        <strong>{number}</strong>
-                        {serial && <small>{serial}</small>}
-                      </td>
-                      <td>
-                        <strong>{land.name}</strong>
-                        <small>
-                          {land.section}
-                          {land.landNumber}
-                        </small>
-                      </td>
-                      <td className="money">{money(land.price)}</td>
-                      <td>{land.relatedBuildingNumbers}</td>
-                      <td>
-                        <button
-                          className="row-action"
-                          onClick={() => openMapForLand(land)}
-                          type="button"
-                        >
-                          查看地圖
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </section>
     );
   return (
     <section
@@ -1549,7 +712,7 @@ export function GeographicAssets() {
                       </strong>
                       <small>{land.assetNumber}</small>
                     </div>
-                    <em>{land.area.toLocaleString()} m²</em>
+                    <em>{formatNumber(land.area)} m²</em>
                   </button>
                 ))
               ) : (
@@ -1563,7 +726,7 @@ export function GeographicAssets() {
               </div>
               <div>
                 <span>土地總面積</span>
-                <strong>{totalArea.toLocaleString()} m²</strong>
+                <strong>{formatNumber(totalArea)} m²</strong>
               </div>
               <div>
                 <span>帳面價值</span>
@@ -1665,7 +828,7 @@ export function GeographicAssets() {
                   <dl>
                     <div>
                       <dt>面積</dt>
-                      <dd>{selected.area.toLocaleString()} m²</dd>
+                      <dd>{formatNumber(selected.area)} m²</dd>
                     </div>
                     <div>
                       <dt>帳面價值</dt>
@@ -1780,14 +943,14 @@ export function GeographicAssets() {
                       <small>{land.sectionCode}</small>
                     </td>
                     <td>{land.landNumber}</td>
-                    <td className="money">{land.area.toLocaleString()}</td>
+                    <td className="money">{formatNumber(land.area)}</td>
                     <td>{land.zoning}</td>
                     <td>{land.landUseType}</td>
                     <td className="money">
-                      {land.announcedLandValue.toLocaleString()}
+                      {formatNumber(land.announcedLandValue)}
                     </td>
                     <td className="money">
-                      {land.announcedLandPrice.toLocaleString()}
+                      {formatNumber(land.announcedLandPrice)}
                     </td>
                     <td className="mono">{land.assetNumber}</td>
                     <td>{land.name}</td>
@@ -1828,7 +991,7 @@ export function GeographicAssets() {
       <LandEditorDialog
         land={landEditorTarget}
         onClose={() => setLandEditorTarget(undefined)}
-        onSaved={() => { setLandEditorTarget(undefined); setLandReloadKey((key) => key + 1); }}
+        onSaved={() => { setLandEditorTarget(undefined); reloadLands(); }}
         supabase={supabase}
       />
     </section>
