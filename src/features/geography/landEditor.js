@@ -88,3 +88,16 @@ export async function saveLandParcel(client, draft) {
   if (error) throw error;
   return data;
 }
+
+// Up to 8 current inventory records whose asset number contains the typed text,
+// offered while filling in a parcel's 財產編號.  Returns [] when the lookup fails.
+export async function findInventoryCandidates(client, term) {
+  const { data, error } = await client
+    .from("asset_records")
+    .select("asset_no,serial_no,category_type_code,category_name,name,acquired_at,net_value")
+    .eq("is_current", true)
+    .ilike("asset_no", `%${term}%`)
+    .order("asset_no")
+    .limit(8);
+  return error ? [] : data || [];
+}

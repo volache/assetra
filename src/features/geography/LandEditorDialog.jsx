@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { CapsuleSpinner } from "../../components/FeedbackCenter";
 import { DatePicker } from "../../components/DatePicker";
-import { blankLandDraft, landToDraft, saveLandParcel } from "./landEditor";
+import { blankLandDraft, findInventoryCandidates, landToDraft, saveLandParcel } from "./landEditor";
 
 function Field({ draft, field, label, onChange, required = false, type = "text" }) {
   return <label>{label}<input min={type === "number" ? "0" : undefined} onChange={(event) => onChange(field, event.target.value)} required={required} type={type} value={draft[field]} /></label>;
@@ -26,11 +26,9 @@ function InventoryNumberField({ draft, onChange, supabase }) {
     const timer = window.setTimeout(async () => {
       const request = ++requestRef.current;
       setLoading(true);
-      const { data, error } = await supabase.from("asset_records")
-        .select("asset_no,serial_no,category_type_code,category_name,name,acquired_at,net_value")
-        .eq("is_current", true).ilike("asset_no", `%${term}%`).order("asset_no").limit(8);
+      const found = await findInventoryCandidates(supabase, term);
       if (request !== requestRef.current) return;
-      setLoading(false); setCandidates(error ? [] : data || []); setOpen(!error && (data || []).length > 0);
+      setLoading(false); setCandidates(found); setOpen(found.length > 0);
     }, 220);
     return () => window.clearTimeout(timer);
   }, [draft.propertyNumber, supabase]);
