@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>室內地圖</title>
+<style>
+  :root {
+    --ink: #ffffff;
+    --ink-2: rgba(255, 255, 255, 0.78);
+    --ink-3: rgba(255, 255, 255, 0.55);
+    --glass: rgba(255, 255, 255, 0.13);
+    --glass-edge: rgba(255, 255, 255, 0.30);
+    --teal: #1fc7b6;
+    --teal-deep: #14a99a;
+    --gap: #34456b;
+    --tile: #f6f9ff;
+    --tile-unlinked: #c3cee3;
+    --tile-public: #566892;
+    --tile-hover: #ffe3b8;
+    --tile-selected: #ffc684;
+    --tile-dim: #aab4cc;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: linear-gradient(158deg, #19175a 0%, #3e4d8f 48%, #7ea0c0 100%);
+    color: var(--ink);
+    font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+  .scene { align-items: center; display: grid; height: 100vh; justify-items: center; padding: 3.5vh 5vw 2.5vh; }
+  .deck { height: min(86vh, 860px); position: relative; width: min(1120px, 92vw); }
+  .peek { background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.22); border-radius: 26px; height: 76%; position: absolute; top: 12%; width: 95%; }
+  .peek.left { left: -4.4%; }
+  .peek.right { right: -4.4%; }
+  .card {
+    -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px);
+    background: var(--glass); border: 1px solid var(--glass-edge); border-radius: 28px;
+    display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; height: 100%; inset: 0; overflow: hidden; position: absolute;
+  }
+  .nav { align-items: center; background: transparent; border: 0; color: var(--ink-2); cursor: pointer; display: grid; height: 56px; justify-items: center; position: absolute; top: calc(50% - 28px); width: 40px; z-index: 5; }
+  .nav.prev { left: -56px; }
+  .nav.next { right: -56px; }
+  .nav:hover:not(:disabled) { color: var(--ink); }
+  .nav:disabled { cursor: default; opacity: 0.28; }
+  .nav svg { height: 26px; width: 26px; }
+  header { align-items: center; display: flex; gap: 14px; padding: 22px 30px 4px; }
+  header h1 { font-size: 22px; font-weight: 700; letter-spacing: 0.03em; margin: 0; }
+  header .sub { color: var(--ink-3); font-size: 13px; }
+  .spacer { flex: 1; }
+  .search { position: relative; }
+  .search input { background: rgba(255, 255, 255, 0.14); border: 1px solid var(--glass-edge); border-radius: 999px; color: var(--ink); font: inherit; font-size: 13px; padding: 7px 14px; width: 230px; }
+  .search input::placeholder { color: var(--ink-3); }
+  .search ul { background: rgba(28, 33, 82, 0.96); border: 1px solid var(--glass-edge); border-radius: 14px; list-style: none; margin: 6px 0 0; max-height: 260px; overflow: auto; padding: 4px; position: absolute; right: 0; width: 300px; z-index: 6; }
+  .search li button { background: transparent; border: 0; border-radius: 10px; color: var(--ink); cursor: pointer; display: block; font: inherit; font-size: 13px; padding: 7px 10px; text-align: left; width: 100%; }
+  .search li button:hover { background: rgba(255, 255, 255, 0.14); }
+  .search li small { color: var(--ink-3); display: block; font-size: 11px; }
+  .stage { min-height: 0; position: relative; touch-action: none; }
+  .stage svg { display: block; height: 100%; position: absolute; width: 100%; }
+  .stage .overlay { pointer-events: none; }
+  .stage { cursor: grab; }
+  .stage.dragging { cursor: grabbing; }
+  .stage.rotating { cursor: ew-resize; }
+  .plan { transform-origin: 0 0; transition: transform 0.75s cubic-bezier(0.2, 0.75, 0.2, 1); }
+  .fade { opacity: 0; transition: opacity 0.22s; }
+  .outline { fill: none; stroke: var(--teal); stroke-linejoin: round; stroke-width: 2.6; vector-effect: non-scaling-stroke; }
+  .base { fill: var(--gap); stroke: none; }
+  .tile { cursor: pointer; fill: var(--tile); outline: none; paint-order: stroke; stroke: var(--gap); stroke-linejoin: round; stroke-width: 3.2; transition: fill 0.15s; vector-effect: non-scaling-stroke; }
+  .tile.unlinked { fill: var(--tile-unlinked); }
+  .tile.public { fill: var(--tile-public); }
+  .tile.void { cursor: default; fill: rgba(255, 255, 255, 0.04); paint-order: normal; stroke: rgba(255, 255, 255, 0.55); stroke-dasharray: 6 5; stroke-width: 1.3; }
+  .tile:hover:not(.void), .tile:focus-visible { fill: var(--tile-hover); }
+  .tile.dim { fill: var(--tile-dim); }
+  .tile.dim.public { fill: #4a5a80; }
+  .tile.selected { fill: var(--tile-selected); }
+  .tile.matched { fill: var(--tile-selected); }
+  .label { fill: #17204a; font-size: 11.5px; paint-order: stroke; pointer-events: none; stroke: rgba(255, 255, 255, 0.85); stroke-linejoin: round; stroke-width: 3px; text-anchor: middle; transition: opacity 0.2s; }
+  .label.on-dark { fill: #fff; stroke: rgba(52, 69, 107, 0.9); }
+  .label.on-void { fill: rgba(255, 255, 255, 0.9); stroke: rgba(30, 38, 90, 0.7); }
+  .stage.labels-off .label, .stage.moving .label { opacity: 0; }
+  .tip { background: rgba(20, 25, 70, 0.92); border: 1px solid var(--glass-edge); border-radius: 10px; font-size: 12px; opacity: 0; padding: 6px 10px; pointer-events: none; position: absolute; transition: opacity 0.1s; white-space: nowrap; z-index: 4; }
+  .stage svg.compass { height: 56px; left: 24px; top: 8px; width: 56px; }
+  .compass .arrow { transform-origin: 28px 28px; }
+  .tools { display: flex; gap: 8px; position: absolute; right: 22px; top: 6px; z-index: 3; }
+  .pill { background: rgba(255, 255, 255, 0.14); border: 1px solid var(--glass-edge); border-radius: 999px; color: var(--ink); cursor: pointer; font: inherit; font-size: 12px; padding: 5px 12px; }
+  .pill[aria-pressed="true"] { background: #fff; color: #1b2255; font-weight: 700; }
+  .hint { bottom: 8px; color: var(--ink-3); font-size: 12px; left: 28px; position: absolute; }
+  .legend { align-items: center; bottom: 8px; color: var(--ink-2); display: flex; font-size: 12px; gap: 14px; position: absolute; right: 24px; }
+  .legend i { border-radius: 3px; display: inline-block; height: 11px; margin-right: 5px; vertical-align: -1px; width: 16px; }
+  .detail { background: rgba(23, 28, 78, 0.9); border: 1px solid var(--glass-edge); border-radius: 18px; font-size: 13px; max-height: calc(100% - 54px); overflow: auto; padding: 16px 18px; position: absolute; right: 22px; top: 44px; width: 292px; z-index: 4; }
+  .detail h2 { font-size: 17px; margin: 0 0 2px; padding-right: 22px; }
+  .detail .code { color: var(--ink-3); font-size: 12px; }
+  .detail dl { display: grid; gap: 5px 12px; grid-template-columns: auto 1fr; margin: 12px 0 8px; }
+  .detail dt { color: var(--ink-3); }
+  .detail dd { margin: 0; text-align: right; }
+  .detail .close { background: transparent; border: 0; color: var(--ink-2); cursor: pointer; font-size: 18px; position: absolute; right: 12px; top: 8px; }
+  .bar { align-items: center; display: grid; font-size: 12px; gap: 4px 8px; grid-template-columns: 5.5em 1fr 2.4em; margin-top: 6px; }
+  .bar span:last-child { text-align: right; }
+  .bar b { background: linear-gradient(90deg, var(--teal), #8feee3); border-radius: 99px; display: block; height: 7px; }
+  .note { color: var(--ink-2); line-height: 1.5; }
+  .info { align-items: center; border-top: 1px solid rgba(255, 255, 255, 0.14); display: grid; gap: 18px 30px; grid-template-columns: minmax(220px, 300px) 1px minmax(0, 1fr); margin: 0 30px; padding: 16px 0 14px; }
+  .info .rule { align-self: stretch; background: rgba(255, 255, 255, 0.22); }
+  .facts { display: grid; font-size: 14px; gap: 5px 14px; grid-template-columns: auto 1fr; margin: 0; }
+  .facts dt { color: var(--ink-2); }
+  .facts dd { font-weight: 700; margin: 0; }
+  .cats { display: flex; flex-wrap: wrap; gap: 8px 4px; justify-content: space-around; }
+  .cat { align-items: center; background: transparent; border: 0; border-radius: 16px; color: var(--ink-2); cursor: pointer; display: grid; font: inherit; font-size: 13px; gap: 3px; justify-items: center; padding: 6px 12px; text-align: center; }
+  .cat:hover { background: rgba(255, 255, 255, 0.08); }
+  .cat[aria-pressed="true"] { background: rgba(255, 255, 255, 0.2); color: #fff; }
+  .cat .n { color: #fff; font-size: 15px; font-weight: 700; }
+  .cat svg { fill: none; height: 30px; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; width: 30px; }
+  .actions { align-items: center; display: flex; gap: 10px; padding: 0 30px 22px; }
+  .btn { background: #fff; border: 0; border-radius: 9px; color: #1b2255; cursor: pointer; font: inherit; font-size: 13px; padding: 9px 20px; }
+  .btn.primary { background: var(--teal-deep); color: #fff; }
+  .btn:disabled { cursor: default; opacity: 0.4; }
+  .btn svg { height: 12px; margin: -2px 5px; stroke: currentColor; width: 12px; }
+  .dots { bottom: -34px; display: flex; gap: 10px; justify-content: center; left: 0; position: absolute; right: 0; }
+  .dots button { background: rgba(255, 255, 255, 0.4); border: 0; border-radius: 50%; cursor: pointer; height: 9px; padding: 0; width: 9px; }
+  .dots button[aria-current="true"] { background: var(--teal); }
+  @media (max-width: 880px) {
+    .nav { display: none; }
+    .info { grid-template-columns: 1fr; }
+    .info .rule { display: none; }
+    .detail { left: 12px; right: 12px; top: auto; bottom: 8px; width: auto; max-height: 45%; }
+  }
+  @media (prefers-reduced-motion: reduce) { .plan { transition: none; } }
+</style>
+</head>
+<body>
+<div class="scene">
+  <div class="deck">
+    <div class="peek left" aria-hidden="true"></div>
+    <div class="peek right" aria-hidden="true"></div>
+    <button class="nav prev" id="nav-prev" type="button" aria-label="上一層"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <button class="nav next" id="nav-next" type="button" aria-label="下一層"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button>
+
+    <section class="card" aria-label="樓層平面">
+      <header>
+        <h1 id="title"></h1>
+        <span class="sub" id="subtitle"></span>
+        <span class="spacer"></span>
+        <div class="search">
+          <input id="search" type="search" placeholder="搜尋存置地點代碼或名稱" aria-label="搜尋存置地點" autocomplete="off" />
+          <ul id="results" hidden></ul>
+        </div>
+      </header>
+
+      <div class="stage" id="stage">
+        <svg id="plan" role="img" aria-label="樓層等角圖"></svg>
+        <svg id="overlay" class="overlay" aria-hidden="true"></svg>
+        <svg class="compass" viewBox="0 0 56 56" aria-hidden="true">
+          <circle cx="28" cy="28" r="23" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.6)" />
+          <g class="arrow" id="arrow"><path d="M28 7 L35 31 L28 27 L21 31 Z" fill="#fff" /></g>
+          <text x="28" y="52" text-anchor="middle" font-size="8" fill="rgba(255,255,255,0.8)">圖面上方</text>
+        </svg>
+        <div class="tools" role="group" aria-label="檢視">
+          <button class="pill" id="mode-iso" type="button" aria-pressed="true">等角</button>
+          <button class="pill" id="mode-flat" type="button" aria-pressed="false">平面</button>
+          <button class="pill" id="toggle-heat" type="button" aria-pressed="false" title="依財物筆數上色">財物分布</button>
+          <button class="pill" id="toggle-labels" type="button" aria-pressed="true">名稱</button>
+        </div>
+        <div class="tip" id="tip"></div>
+        <aside class="detail" id="detail" hidden></aside>
+        <div class="hint" id="hint">滾輪縮放 · 左鍵拖曳平移 · 右鍵拖曳旋轉（或按 Q／E）</div>
+        <div class="legend" id="legend"></div>
+      </div>
+
+      <div class="info">
+        <dl class="facts" id="facts"></dl>
+        <div class="rule"></div>
+        <div class="cats" id="cats" role="group" aria-label="房間類別"></div>
+      </div>
+
+      <div class="actions">
+        <button class="btn" id="reset" type="button">重設視圖</button>
+        <span class="spacer"></span>
+        <button class="btn" id="prev" type="button"><svg viewBox="0 0 12 12" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2L4 6l4 4"/></svg>上一層</button>
+        <button class="btn primary" id="next" type="button">下一層<svg viewBox="0 0 12 12" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg></button>
+      </div>
+    </section>
+    <div class="dots" id="dots" role="tablist" aria-label="樓層"></div>
+  </div>
+</div>
+
+<script>
+const DATA = /*__VIEW_DATA__*/null;
+
+// ---- configuration ------------------------------------------------------------------
+const ISO_BASE_ANGLE = -24;     // degrees the plan is turned to get the isometric look
+const ISO_SQUASH = 0.6;         // vertical squash of the isometric view
+const LABEL_MIN_AREA = 2400;    // px^2 a tile needs on screen before its name is drawn
+const PADDING = 34;
+const ROTATE_PER_PIXEL = 0.35;
+
+const SVGNS = "http://www.w3.org/2000/svg";
+const $ = (id) => document.getElementById(id);
+const make = (name, attrs = {}, parent) => {
+  const node = document.createElementNS(SVGNS, name);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  if (parent) parent.append(node);
+  return node;
+};
+const fmt = (n, digits = 0) => Number(n).toLocaleString("zh-TW", { maximumFractionDigits: digits });
+
+// ---- room categories (shown as the icon row, like the design reference) ---------------
+const ICONS = {
+  office: '<rect x="6" y="3.5" width="18" height="23" rx="2"/><path d="M10.5 8.5h3M16.5 8.5h3M10.5 13h3M16.5 13h3M10.5 17.5h3M16.5 17.5h3M12.5 26.5v-4h5v4"/>',
+  meeting: '<path d="M4.5 6.5h13a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H11l-4.5 3.5v-3.5h-2a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z"/><path d="M21.5 11.5h2a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-1.5v3L18 22.5h-5"/>',
+  archive: '<rect x="4.5" y="6" width="21" height="6" rx="1.5"/><path d="M6.5 12v12.5a1.5 1.5 0 0 0 1.5 1.5h14a1.5 1.5 0 0 0 1.5-1.5V12M12 17h6"/>',
+  restroom: '<circle cx="9.5" cy="6.5" r="2.3"/><path d="M5.5 25.5v-8.5l-1.3-4.5a1.6 1.6 0 0 1 1.5-2h7.6a1.6 1.6 0 0 1 1.5 2L13.5 17v8.5M9.5 17v8.5"/><circle cx="21.5" cy="6.5" r="2.3"/><path d="M21.5 11v14.5M17.8 25.5l3.7-8.5 3.7 8.5M17.5 17.2l4-1.7 4 1.7"/>',
+  server: '<rect x="4.5" y="5" width="21" height="7" rx="1.5"/><rect x="4.5" y="14" width="21" height="7" rx="1.5"/><path d="M8.5 8.5h.01M8.5 17.5h.01M13 8.5h8M13 17.5h8M15 21v4.5M10 25.5h10"/>',
+  common: '<path d="M4.5 26.5v-12L15 5l10.5 9.5v12M4.5 26.5h21M11.5 26.5v-8h7v8"/>',
+  other: '<rect x="5" y="5" width="20" height="20" rx="3"/><path d="M10 15h10M15 10v10"/>',
+};
+const CATEGORIES = [
+  { key: "office", label: "辦公空間", test: (r) => /辦公室|中控室|資訊室|管制室|值日室|組$|護理|應變/.test(r.name) },
+  { key: "meeting", label: "會議・接待", test: (r) => /會議|接待|文康|閱覽/.test(r.name) },
+  { key: "archive", label: "檔案・倉庫", test: (r) => /檔案|圖檔|倉庫|備品|報廢/.test(r.name) },
+  { key: "restroom", label: "廁所・茶水間", test: (r) => /廁|茶水|哺乳/.test(r.name) },
+  { key: "server", label: "機房", test: (r) => /機房/.test(r.name) },
+  { key: "common", label: "公共區域", test: (r) => r.type === "public" || /走廊|大廳/.test(r.name) },
+];
+function categoryOf(room) {
+  if (room.type === "void") return null;
+  return CATEGORIES.find((c) => c.test(room))?.key || (room.code ? "other" : null);
+}
+
+// ---- state ---------------------------------------------------------------------------------
+let fi = 0;
+let mode = "iso";
+let yaw = 0;
+let showLabels = true;
+let heat = false;
+let category = null;
+let selectedId = null;
+let view = { z: 1, tx: 0, ty: 0 };
+let size = { w: 1000, h: 600 };
+let rooms = [];
+let tiles = new Map();
+let labelNodes = [];
+let gesture = null, moved = false;
+
+const stage = $("stage");
+const planSvg = $("plan");
+const overlay = $("overlay");
+let viewGroup, planGroup;
+
+const floor = () => DATA.floors[fi];
+const statsOf = (room) => (room.code ? DATA.stats[room.code] : null);
+const toRoom = (r) => ({ ...r, rings: [r.outer, ...r.holes], stat: DATA.stats[r.code] || null });
+
+// ---- geometry --------------------------------------------------------------------------------
+const toPath = (ring) => "M" + ring.map((p) => p[0] + " " + p[1]).join("L") + "Z";
+function linear(m) {
+  const squash = m === "iso" ? ISO_SQUASH : 1;
+  const theta = ((m === "iso" ? ISO_BASE_ANGLE : 0) + yaw) * Math.PI / 180;
+  const cos = Math.cos(theta), sin = Math.sin(theta);
+  return { a: cos, b: squash * sin, c: -sin, d: squash * cos };
+}
+function matrixFor(m) {
+  const { a, b, c, d } = linear(m);
+  // Fit the real outline, not its bounding box: once turned, the box's empty corners would shrink the plan.
+  const pts = floor().outline.flat().map(([x, y]) => [a * x + c * y, b * x + d * y]);
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  const wx = Math.max(...xs) - Math.min(...xs), wy = Math.max(...ys) - Math.min(...ys);
+  const s = Math.min((size.w - PADDING * 2) / wx, (size.h - PADDING * 2) / wy);
+  const e = size.w / 2 - s * (Math.min(...xs) + Math.max(...xs)) / 2;
+  const f = size.h / 2 - s * (Math.min(...ys) + Math.max(...ys)) / 2;
+  return { a: s * a, b: s * b, c: s * c, d: s * d, e, f };
+}
+const cssMatrix = (m) => `matrix(${m.a},${m.b},${m.c},${m.d},${m.e},${m.f})`;
+const project = (m, x, y) => [m.a * x + m.c * y + m.e, m.b * x + m.d * y + m.f];
+
+// ---- scene -------------------------------------------------------------------------------------
+function heatColor(count, max) {
+  if (!count) return "#dfe6f4";
+  const t = Math.sqrt(count / max);
+  const from = [223, 243, 241], to = [15, 157, 143];
+  return "rgb(" + from.map((v, i) => Math.round(v + (to[i] - v) * t)).join(",") + ")";
+}
+function tileClass(room) {
+  if (room.type === "void") return "tile void";
+  if (room.type === "public") return "tile public";
+  return "tile" + (room.code ? "" : " unlinked");
+}
+function build() {
+  rooms = floor().rooms.map(toRoom);
+  planSvg.replaceChildren();
+  tiles.clear();
+  viewGroup = make("g", {}, planSvg);
+  planGroup = make("g", { class: "plan" }, viewGroup);
+  for (const ring of floor().outline) make("path", { class: "base", d: toPath(ring) }, planGroup);
+  const maxCount = Math.max(1, ...rooms.map((r) => r.stat?.count || 0));
+  // big areas first so small rooms sit on top
+  [...rooms].sort((p, q) => q.area - p.area).forEach((room) => {
+    const node = make("path", {
+      class: tileClass(room), d: room.rings.map(toPath).join(""), "fill-rule": "evenodd", "data-id": room.id,
+      tabindex: room.type === "void" ? -1 : 0, role: room.type === "void" ? "presentation" : "button",
+      "aria-label": (room.name || "未對應的空間") + "，約 " + room.area + " 平方公尺",
+    }, planGroup);
+    if (heat && room.type === "room" && room.code) node.style.fill = heatColor(room.stat?.count || 0, maxCount);
+    tiles.set(room.id, node);
+  });
+  for (const ring of floor().outline) make("path", { class: "outline", d: toPath(ring) }, planGroup);
+  overlay.replaceChildren();
+  labelNodes = rooms.filter((r) => r.name).map((room) => {
+    const dark = room.type === "public";
+    const text = make("text", { class: "label" + (dark ? " on-dark" : room.type === "void" ? " on-void" : "") }, overlay);
+    text.textContent = shortName(room.name);
+    return { room, text };
+  });
+  paint();
+}
+const shortName = (name) => name.replace(/^宿舍|^消防班/, "").replace(/^[0-9B]+F/, "").replace(/\(.*\)$/, "") || name;
+
+function paint() {
+  const matched = category ? new Set(rooms.filter((r) => categoryOf(r) === category).map((r) => r.id)) : null;
+  for (const [id, node] of tiles) {
+    node.classList.toggle("selected", id === selectedId);
+    node.classList.toggle("matched", !!matched && matched.has(id) && id !== selectedId);
+    node.classList.toggle("dim", !!matched && !matched.has(id) && !node.classList.contains("void"));
+  }
+}
+
+function applyTransform(animate = false) {
+  const still = !animate;
+  if (still) planGroup.style.transition = "none";
+  const m = matrixFor(mode);
+  viewGroup.style.transformOrigin = "0 0";
+  viewGroup.style.transform = `translate(${view.tx}px,${view.ty}px) scale(${view.z})`;
+  planGroup.style.transform = cssMatrix(m);
+  const lin = linear(mode);
+  $("arrow").style.transform = `rotate(${Math.atan2(-lin.c, lin.d) * 180 / Math.PI}deg)`;
+  placeLabels(m);
+  if (still) { planGroup.getBoundingClientRect(); planGroup.style.transition = ""; }
+}
+function placeLabels(m = matrixFor(mode)) {
+  const det = Math.abs(m.a * m.d - m.b * m.c);
+  const placed = [];
+  const order = labelNodes.map((_, i) => i).sort((p, q) => labelNodes[p].room.area - labelNodes[q].room.area);
+  for (const i of order) {
+    const { room, text } = labelNodes[i];
+    const [x, y] = project(m, room.anchor[0], room.anchor[1]);
+    const sx = view.tx + view.z * x, sy = view.ty + view.z * y + 4;
+    const screenArea = (room.area / (floor().unitToMeters ** 2)) * det * view.z * view.z;
+    const width = text.textContent.length * 12;
+    const box = [sx - width / 2, sy - 11, sx + width / 2, sy + 3];
+    const clash = placed.some((b) => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1]);
+    const show = screenArea >= LABEL_MIN_AREA && !clash;
+    text.setAttribute("x", sx); text.setAttribute("y", sy);
+    text.style.display = show ? "" : "none";
+    if (show) placed.push(box);
+  }
+}
+function resize() {
+  const box = stage.getBoundingClientRect();
+  size = { w: box.width, h: box.height };
+  for (const s of [planSvg, overlay]) s.setAttribute("viewBox", `0 0 ${size.w} ${size.h}`);
+  applyTransform();
+}
+function setMode(next) {
+  if (next === mode) return;
+  mode = next;
+  $("mode-iso").setAttribute("aria-pressed", String(mode === "iso"));
+  $("mode-flat").setAttribute("aria-pressed", String(mode === "flat"));
+  stage.classList.add("moving");
+  applyTransform(true);
+  setTimeout(() => { stage.classList.remove("moving"); placeLabels(); }, 780);
+}
+
+// ---- information below the plan ---------------------------------------------------------------
+function renderInfo() {
+  const f = floor();
+  $("title").textContent = f.title;
+  $("subtitle").textContent = (f.label ? f.label + " · " : "") + "等角視角";
+  document.title = f.title + " 室內地圖";
+  const solid = rooms.filter((r) => r.type !== "void");
+  const linked = solid.filter((r) => r.code);
+  const codeSet = new Set(linked.map((r) => r.code));
+  const assets = [...codeSet].reduce((s, code) => s + (DATA.stats[code]?.count || 0), 0);   // a location split over several rooms counts once
+  const total = solid.reduce((s, r) => s + r.area, 0);
+  const codes = new Set(linked.map((r) => r.code));
+  $("facts").innerHTML =
+    `<dt>樓板面積</dt><dd>${fmt(total)} m²</dd>` +
+    `<dt>房間數</dt><dd>${solid.length}</dd>` +
+    `<dt>已對應存置地點</dt><dd>${codes.size} 處（${linked.length}/${solid.length} 間）</dd>` +
+    `<dt>已對應財物</dt><dd>${fmt(assets)} 筆</dd>`;
+  const counts = new Map(CATEGORIES.map((c) => [c.key, 0]));
+  counts.set("other", 0);
+  for (const room of rooms) { const k = categoryOf(room); if (k) counts.set(k, counts.get(k) + 1); }
+  const cats = $("cats");
+  cats.replaceChildren();
+  const list = [...CATEGORIES.map((c) => [c.key, c.label]), ["other", "其他"]].filter(([k]) => counts.get(k));
+  for (const [key, label] of list) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "cat"; b.dataset.key = key;
+    b.setAttribute("aria-pressed", String(category === key));
+    b.innerHTML = `<svg viewBox="0 0 30 30" aria-hidden="true">${ICONS[key]}</svg><span class="n">${counts.get(key)}</span><span>${label}</span>`;
+    cats.append(b);
+  }
+  $("legend").innerHTML = heat
+    ? `<span><i style="background:#dfe6f4"></i>無財物</span><span><i style="background:linear-gradient(90deg,#dff3f1,#0f9d8f)"></i>財物筆數少 → 多</span>`
+    : `<span><i style="background:var(--tile)"></i>已對應</span><span><i style="background:var(--tile-unlinked)"></i>尚未對應</span><span><i style="background:var(--tile-public)"></i>公共區域</span>`;
+  $("nav-prev").disabled = $("prev").disabled = fi === 0;
+  $("nav-next").disabled = $("next").disabled = fi === DATA.floors.length - 1;
+  const dots = $("dots");
+  dots.replaceChildren();
+  DATA.floors.forEach((fl, i) => {
+    const d = document.createElement("button");
+    d.type = "button"; d.setAttribute("aria-label", fl.title);
+    if (i === fi) d.setAttribute("aria-current", "true");
+    d.addEventListener("click", () => goFloor(i));
+    dots.append(d);
+  });
+  dots.hidden = DATA.floors.length < 2;
+}
+
+function renderDetail() {
+  const box = $("detail");
+  const room = rooms.find((r) => r.id === selectedId);
+  if (!room) { box.hidden = true; return; }
+  box.hidden = false;
+  const st = room.stat;
+  const classes = st ? Object.entries(st.classes || {}).sort((a, b) => b[1] - a[1]) : [];
+  const top = classes[0]?.[1] || 1;
+  box.innerHTML =
+    `<button class="close" type="button" aria-label="關閉">×</button>` +
+    `<h2>${room.name || (room.type === "void" ? "挑空／採光" : "尚未命名的空間")}</h2>` +
+    `<div class="code">${room.code ? "存置地點代碼 " + room.code : room.type === "public" ? "公共區域" : "尚未對應存置地點"}</div>` +
+    `<dl><dt>面積</dt><dd>約 ${fmt(room.area, 1)} m²</dd>` +
+    (st ? `<dt>財物筆數</dt><dd>${fmt(st.count)} 筆</dd><dt>原值合計</dt><dd>${fmt(st.original)}</dd><dt>淨值合計</dt><dd>${fmt(st.net)}</dd>` : "") +
+    `</dl>` +
+    (classes.length ? `<div class="note">財產大類</div>` + classes.map(([k, n]) => `<div class="bar"><span>${k}</span><b style="width:${Math.max(6, (n / top) * 100)}%"></b><span>${n}</span></div>`).join("") : "") +
+    (!room.code && room.type !== "void" ? `<div class="note">這個空間還沒有設定存置地點代碼，所以沒有財物資料。</div>` : "");
+  box.querySelector(".close").addEventListener("click", () => select(null));
+}
+
+function select(id, focus = false) {
+  selectedId = id;
+  paint();
+  renderDetail();
+  if (focus && id) {
+    const r = rooms.find((x) => x.id === id);
+    const m = matrixFor(mode);
+    const [x, y] = project(m, r.anchor[0], r.anchor[1]);
+    const det = Math.abs(m.a * m.d - m.b * m.c);
+    const want = Math.sqrt(52000 / Math.max(1, (r.area / (floor().unitToMeters ** 2)) * det));
+    view.z = Math.min(8, Math.max(1.2, want));
+    view.tx = size.w / 2 - view.z * x; view.ty = size.h / 2 - view.z * y;
+    stage.classList.add("moving");
+    applyTransform();
+    setTimeout(() => { stage.classList.remove("moving"); placeLabels(); }, 200);
+  }
+}
+
+function goFloor(next) {
+  if (next < 0 || next >= DATA.floors.length || next === fi) return;
+  planGroup.classList.add("fade");
+  setTimeout(() => {
+    fi = next; selectedId = null; category = null; view = { z: 1, tx: 0, ty: 0 }; yaw = 0;
+    build(); renderInfo(); renderDetail(); applyTransform();
+    requestAnimationFrame(() => planGroup.classList.remove("fade"));
+  }, 220);
+}
+
+// ---- interaction ----------------------------------------------------------------------------------
+const tip = $("tip");
+stage.addEventListener("pointerover", (e) => {
+  const id = e.target.dataset?.id;
+  const room = id && rooms.find((r) => r.id === id);
+  if (!room || room.type === "void") return;
+  tip.textContent = `${room.name || "未對應的空間"}${room.stat ? "　" + fmt(room.stat.count) + " 筆財物" : ""}`;
+  tip.style.opacity = 1;
+});
+stage.addEventListener("pointermove", (e) => {
+  const box = stage.getBoundingClientRect();
+  tip.style.left = e.clientX - box.left + 14 + "px";
+  tip.style.top = e.clientY - box.top + 14 + "px";
+});
+stage.addEventListener("pointerout", (e) => { if (e.target.dataset?.id) tip.style.opacity = 0; });
+stage.addEventListener("contextmenu", (e) => e.preventDefault());
+stage.addEventListener("pointerdown", (e) => {
+  if (e.target.closest(".detail, .tools")) return;
+  moved = false;
+  if (e.button === 2) { gesture = { type: "rotate", x: e.clientX, yaw }; stage.classList.add("rotating"); e.preventDefault(); }
+  else if (e.button === 0) gesture = { type: "pan", x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty };
+});
+window.addEventListener("pointermove", (e) => {
+  if (!gesture) return;
+  if (gesture.type === "rotate") { yaw = gesture.yaw + (e.clientX - gesture.x) * ROTATE_PER_PIXEL; moved = true; applyTransform(); return; }
+  const dx = e.clientX - gesture.x, dy = e.clientY - gesture.y;
+  if (Math.abs(dx) + Math.abs(dy) > 4) { moved = true; stage.classList.add("dragging"); }
+  if (!moved) return;
+  view.tx = gesture.tx + dx; view.ty = gesture.ty + dy;
+  applyTransform();
+});
+window.addEventListener("pointerup", (e) => {
+  const done = gesture;
+  gesture = null;
+  stage.classList.remove("dragging", "rotating");
+  if (!done || done.type !== "pan" || moved || e.button !== 0) return;
+  const target = document.elementFromPoint(e.clientX, e.clientY);
+  if (!target || !stage.contains(target) || target.closest(".detail, .tools")) return;
+  const id = target.dataset?.id;
+  const room = id && rooms.find((r) => r.id === id);
+  select(room && room.type !== "void" ? id : null);
+});
+stage.addEventListener("keydown", (e) => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.dataset?.id) { e.preventDefault(); select(e.target.dataset.id); }
+});
+stage.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const box = stage.getBoundingClientRect();
+  const px = e.clientX - box.left, py = e.clientY - box.top;
+  const z = Math.min(12, Math.max(0.6, view.z * Math.exp(-e.deltaY * 0.0016)));
+  const k = z / view.z;
+  view.tx = px - k * (px - view.tx); view.ty = py - k * (py - view.ty); view.z = z;
+  applyTransform();
+}, { passive: false });
+window.addEventListener("keydown", (e) => {
+  if (e.target instanceof HTMLInputElement) return;
+  if (e.key === "q" || e.key === "Q") { yaw -= 5; applyTransform(); }
+  else if (e.key === "e" || e.key === "E") { yaw += 5; applyTransform(); }
+  else if (e.key === "Escape") { select(null); category = null; paint(); renderInfo(); }
+  else if (e.key === "ArrowLeft") goFloor(fi - 1);
+  else if (e.key === "ArrowRight") goFloor(fi + 1);
+});
+$("mode-iso").addEventListener("click", () => setMode("iso"));
+$("mode-flat").addEventListener("click", () => setMode("flat"));
+$("toggle-labels").addEventListener("click", (e) => {
+  showLabels = !showLabels;
+  e.currentTarget.setAttribute("aria-pressed", String(showLabels));
+  stage.classList.toggle("labels-off", !showLabels);
+});
+$("toggle-heat").addEventListener("click", (e) => {
+  heat = !heat;
+  e.currentTarget.setAttribute("aria-pressed", String(heat));
+  build(); renderInfo(); applyTransform();
+});
+$("cats").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-key]");
+  if (!b) return;
+  category = category === b.dataset.key ? null : b.dataset.key;
+  paint(); renderInfo();
+});
+$("reset").addEventListener("click", () => { view = { z: 1, tx: 0, ty: 0 }; yaw = 0; select(null); category = null; paint(); renderInfo(); applyTransform(); });
+for (const id of ["prev", "nav-prev"]) $(id).addEventListener("click", () => goFloor(fi - 1));
+for (const id of ["next", "nav-next"]) $(id).addEventListener("click", () => goFloor(fi + 1));
+
+const search = $("search"), results = $("results");
+search.addEventListener("input", () => {
+  const q = search.value.trim().toLowerCase();
+  results.replaceChildren();
+  if (!q) { results.hidden = true; return; }
+  const hits = rooms.filter((r) => r.type !== "void" && (r.name + " " + r.code).toLowerCase().includes(q)).slice(0, 8);
+  for (const r of hits) {
+    const li = document.createElement("li");
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = r.name || "未命名的空間";
+    const s = document.createElement("small");
+    s.textContent = [r.code, `約 ${fmt(r.area, 1)} m²`].filter(Boolean).join(" · ");
+    b.append(s);
+    b.addEventListener("click", () => { results.hidden = true; search.value = ""; select(r.id, true); });
+    li.append(b); results.append(li);
+  }
+  if (!hits.length) { const li = document.createElement("li"); li.textContent = "找不到符合的存置地點"; li.style.padding = "8px 10px"; results.append(li); }
+  results.hidden = false;
+});
+document.addEventListener("click", (e) => { if (!e.target.closest(".search")) results.hidden = true; });
+new ResizeObserver(resize).observe(stage);
+
+// ---- start ------------------------------------------------------------------------------------------------
+build();
+renderInfo();
+renderDetail();
+resize();
+</script>
+</body>
+</html>
