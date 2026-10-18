@@ -1260,7 +1260,9 @@ function renderOverlay() {
     const text = room.name || room.locationCode || room.usage;
     if (!text) continue;
     const [sx, sy] = toScreen(room.anchor || centroid(room.ring));
-    make("text", { class: "label" + (!room.name && !room.locationCode ? " usage" : ""), x: sx, y: sy + 4 }, overlay).textContent = text;
+    const named = !!(room.name || room.locationCode), both = named && room.usage;
+    make("text", { class: "label" + (named ? "" : " usage"), x: sx, y: sy + (both ? -3 : 4) }, overlay).textContent = text;
+    if (both) make("text", { class: "label usage", x: sx, y: sy + 11 }, overlay).textContent = room.usage;   // the 空間用途 note under the matched name
   }
   if (tool === "select") {
     const handles = roomById(selectedId)?.ring || wallById(selectedWallId)?.pts || [];
