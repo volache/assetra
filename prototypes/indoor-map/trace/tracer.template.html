@@ -1426,6 +1426,14 @@ function renderSelbar() {
   stepInput.addEventListener("input", () => { const v = Number(stepInput.value); if (v > 0) stepCm = v; });
   step.append(stepInput, document.createTextNode(" 公分"));
   bar.append(keys, step, domEl("span", undefined, { className: "sep" }));
+  if (items.rooms.length >= 1 && rooms.length >= 2) {
+    const carve = domEl("button", "扣掉重疊", { type: "button", className: "btn", title: "把所選房間的範圍從和它重疊的其他房間裡挖掉，其他房間的邊界就不會穿過所選房間" });
+    carve.addEventListener("click", () => {
+      const n = carveOutOverlaps(items.rooms);
+      showToast(n ? `已從 ${n} 個房間扣掉重疊的部分` : "所選房間沒有和其他房間重疊", n ? { undo: true } : {});
+    });
+    bar.append(carve);
+  }
   if (items.rooms.length >= 2) {
     const mergeButton = domEl("button", "合併房間", { type: "button", className: "btn", title: "把相鄰的所選房間合成一個（名稱與存置地點取自有設定的那一間；其他代碼會變成「其他代碼」）" });
     mergeButton.addEventListener("click", () => {
@@ -2114,6 +2122,79 @@ function mergeRooms(ids) {
   setSelection([merged.id], []);
   changed(true, true);
   return { room: merged, count: joined.length };
+}
+/**
+ * Take the area of the given rooms out of every other room they overlap.  A room that lies wholly inside another becomes a
+ * hole in it; one that only overlaps leaves a notch (or splits the other room in two when it cuts all the way through).
+ * The rooms that lose area become hand-drawn.  Returns how many rooms were changed.
+ */
+function carveOutOverlaps(cutterIds) {
+  const cutters = cutterIds.map(roomById).filter(Boolean);
+  if (!cutters.length) return 0;
+  const touched = [];
+  const plan = [];
+  for (const target of rooms) {
+    if (cutters.includes(target)) continue;
+    let ring = [target.ring], current = target, holes = [...(target.holes || [])];
+    for (const cutter of cutters) {
+      const next = [];
+      for (const piece of ring) {
+        const outside = pieceMinus(piece, cutter.ring);
+        if (outside === null) next.push(piece); else next.push(...outside);
+      }
+      ring = next;
+    }
+    const total = ring.reduce((sum, r) => sum + area(r), 0);
+    if (Math.abs(total - area(target.ring)) < 1) {
+      // no edge crossing: either apart, wholly covered, or a cutter sitting inside as a hole
+      const inside = cutters.filter((c) => c.ring.every((q) => inRing(target.ring, q)) && !holes.some((h) => h.length === c.ring.length && h.every((q, i) => dist(q, c.ring[i]) < 0.6)));
+      const trueInside = inside.filter((c) => !c.ring.some((q) => target.ring.some((v, i) => dist(q, closestOnSegment(q, v, target.ring[(i + 1) % target.ring.length]).point) < 0.6)));
+      if (!trueInside.length) continue;
+      plan.push({ target, pieces: [target.ring], extraHoles: trueInside.map((c) => c.ring) });
+      continue;
+    }
+    if (total < 1) continue;                      // covered completely
+    plan.push({ target, pieces: ring, extraHoles: [] });
+  }
+  if (!plan.length) return 0;
+  pushHistory();
+  for (const { target, pieces, extraHoles } of plan) {
+    if (target.auto) suppressed.push([...(target.anchor || interiorPoint(target.ring, target.holes || [])), 1]);
+    const all = [...(target.holes || []), ...extraHoles];
+    pieces.sort((a, b) => area(b) - area(a));
+    const made = pieces.map((ring, i) => {
+      const clean = ring.map((q) => [round1(q[0]), round1(q[1])]);
+      const base = i === 0
+        ? { ...target, ring: clean, auto: false }
+        : { id: newId("T"), uid: newUid(), name: "", locationCode: "", type: target.type, ring: clean };
+      delete base.anchor; delete base.curve; delete base.holes;
+      const mine = all.filter((h) => inRing(clean, interiorPoint(h)));
+      if (mine.length) base.holes = mine;
+      return base;
+    });
+    const at = rooms.indexOf(target);
+    rooms.splice(at, 1, ...made);
+    touched.push(target.id);
+  }
+  changed(true, true);
+  return touched.length;
+}
+/** The parts of `ring` that lie outside `cutter`: null when their outlines never cross, otherwise a list of rings. */
+function pieceMinus(ring, cutter) {
+  const edgesOf = (r) => r.map((p, i) => [p, r[(i + 1) % r.length]]);
+  const crosses = edgesOf(ring).some(([a, b]) => edgesOf(cutter).some(([c, d]) => {
+    const den = (b[0] - a[0]) * (d[1] - c[1]) - (b[1] - a[1]) * (d[0] - c[0]);
+    if (Math.abs(den) < 1e-9) return false;
+    const s = ((c[0] - a[0]) * (d[1] - c[1]) - (c[1] - a[1]) * (d[0] - c[0])) / den;
+    const u = ((c[0] - a[0]) * (b[1] - a[1]) - (c[1] - a[1]) * (b[0] - a[0])) / den;
+    return s > 1e-4 && s < 1 - 1e-4 && u > 1e-4 && u < 1 - 1e-4;
+  }));
+  if (!crosses) {
+    const covered = ring.every((q) => inRing(cutter, q) || cutter.some((v, i) => dist(q, closestOnSegment(q, v, cutter[(i + 1) % cutter.length]).point) < 0.6));
+    return covered ? [] : null;
+  }
+  return wallFaces([...edgesOf(ring), ...edgesOf(cutter)], 500)
+    .filter((f) => { const c = interiorPoint(f); return inRing(ring, c) && !inRing(cutter, c); });
 }
 function finishPath() {
   if (!draft) return;
