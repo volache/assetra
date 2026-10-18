@@ -12,6 +12,11 @@ const GeographicAssets = lazy(() =>
     ({ GeographicAssets }) => ({ default: GeographicAssets }),
   ),
 );
+const IndoorPlans = lazy(() =>
+  import("../features/indoor/IndoorPlans").then(({ IndoorPlans }) => ({
+    default: IndoorPlans,
+  })),
+);
 const Home = lazy(() =>
   import("../features/home/Home").then(({ Home }) => ({ default: Home })),
 );
@@ -72,6 +77,7 @@ export function Portal({
     { id: "home", label: "總覽" },
     { id: "query", label: "財物查詢" },
     { id: "tasks", label: "協作追蹤" },
+    { id: "indoor", label: "室內平面圖" },
     ...(canAdmin
       ? [
           { id: "import", label: "匯入清冊" },
@@ -162,6 +168,7 @@ export function Portal({
               />
             )}
             {page === "geo" && canAdmin && <GeographicAssets />}
+            {page === "indoor" && <IndoorPlans canAdmin={canAdmin} />}
             {page === "accounts" && canAdmin && (
               <Accounts
                 store={{ ...store, assets: visible }}
