@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { CollaborationNotebook } from "../inventory/CollaborationNotebook";
+import { CollaborationNotebook } from "./CollaborationNotebook";
 
 function WindowIcon({ name }) {
   const paths = {
