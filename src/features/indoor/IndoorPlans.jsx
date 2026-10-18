@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../supabase";
 import { CapsuleSpinner } from "../../components/FeedbackCenter";
 import { AssetList } from "./AssetList";
@@ -10,11 +10,16 @@ import { RoomEditorDialog } from "./RoomEditorDialog";
 
 const SLAB = 120;               // thickness of the floor slab in the angled view, in drawing units
 const MARGIN = 0.06;
+const DRAWER_PX = 408;          // the room panel (24rem) plus its gaps, used to keep a room clear of it
+const FLY_MS = 620;
 const fmt = (number, digits = 0) => Number(number || 0).toLocaleString("zh-TW", { maximumFractionDigits: digits, minimumFractionDigits: digits });
+const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+const reduceMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+const wide = () => window.matchMedia?.("(min-width: 52.0625rem)").matches;
 
 /**
- * 室內平面圖.  The whole page fits one screen height like 地理圖資: a room list on the left (it scrolls inside), the plan in the
- * middle, and, once a room is picked, its assets in a column on the right (that scrolls inside too).
+ * 室內平面圖.  The whole page fits one screen height like 地理圖資: a room list on the left (it scrolls inside) and the plan
+ * filling the rest.  Picking a room slides the plan to it and opens its assets in a panel over the right edge.
  *
  * assets            the inventory this person may see (the same list 財物查詢 uses)
  * focus             { code, assetId, requestId }: open on the room(s) of a 存置地點 code, from 財物查詢
@@ -33,7 +38,7 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
   const [unlocated, setUnlocated] = useState(null);            // null = closed, "" = the list of codes, else one code
   const [term, setTerm] = useState("");
   const [mode, setMode] = useState("iso");
-  const [colorBy, setColorBy] = useState("assets");
+  const [colorBy, setColorBy] = useState("type");
   const [editingId, setEditingId] = useState(null);
   const [view, setView] = useState(null);
   const [flyId, setFlyId] = useState(null);
@@ -44,6 +49,10 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
   const fileRef = useRef(null);
   const dragRef = useRef(null);
   const workbenchRef = useRef(null);
+  const viewRef = useRef(null);
+  const animRef = useRef(0);
+  const flyFresh = useRef(false);
+  useEffect(() => { viewRef.current = view; }, [view]);
 
   const floors = index?.floors || [];
   const buildings = useMemo(() => [...new Set(floors.map((floor) => floor.building))], [floors]);
@@ -97,34 +106,83 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
 
   const selected = selectedId ? index?.spaceById.get(selectedId) || null : null;
   const editing = editingId ? index?.spaceById.get(editingId) || null : null;
-  const selectedAssets = useMemo(() => (selected ? index.assetsOfSpace(selected.id) : []), [index, selected]);
-  const selectedLinks = selected ? index.linksBySpace.get(selected.id) || [] : [];
+  const drawerOpen = Boolean(selected) || unlocated !== null;
 
-  // ---- the view: fit the floor, zoom, pan, fly to a room
+  // The panel keeps showing the last thing while it slides out, instead of emptying first.
+  const [shown, setShown] = useState({ selectedId: null, unlocated: null });
+  useLayoutEffect(() => { if (drawerOpen) setShown({ selectedId, unlocated }); }, [drawerOpen, selectedId, unlocated]);
+  const shownRoom = shown.selectedId ? index?.spaceById.get(shown.selectedId) || null : null;
+  const shownCode = shown.unlocated;
+  const shownAssets = useMemo(() => (shownRoom ? index.assetsOfSpace(shownRoom.id) : []), [index, shownRoom]);
+  const shownLinks = shownRoom ? index.linksBySpace.get(shownRoom.id) || [] : [];
+  const unlocatedAssets = shownCode ? index?.assetsByCode.get(shownCode) || [] : [];
+
+  // ---- the view: fit the floor, zoom, pan, and slide to a room
   const frame = useCallback(() => {
     const [x0, y0, x1, y1] = screenBounds(spaces, mode, mode === "iso" ? SLAB : 0);
     const w = Math.max(x1 - x0, 1), h = Math.max(y1 - y0, 1), m = Math.max(w, h) * MARGIN;
     return { x: x0 - m, y: y0 - m, w: w + 2 * m, h: h + 2 * m, full: Math.max(w + 2 * m, h + 2 * m) };
   }, [spaces, mode]);
-  const fit = useCallback(() => setView(frame()), [frame]);
-  useEffect(() => { fit(); }, [spaces, mode]); // eslint-disable-line react-hooks/exhaustive-deps
-  // after the floor has changed (the effect above ran first), zoom to the room that was asked for
+
+  /** Glide from where the plan is now (or from `from`) to `target`, zooming and panning together. */
+  const animateView = useCallback((target, from = null, ms = FLY_MS) => {
+    cancelAnimationFrame(animRef.current);
+    const start = from || viewRef.current;
+    if (!start || ms <= 0 || reduceMotion()) { setView(target); return; }
+    const c0 = [start.x + start.w / 2, start.y + start.h / 2], c1 = [target.x + target.w / 2, target.y + target.h / 2];
+    const t0 = performance.now();
+    const step = (now) => {
+      const t = Math.min(1, (now - t0) / ms), e = ease(t);
+      const w = start.w * (target.w / start.w) ** e, h = start.h * (target.h / start.h) ** e;
+      const cx = c0[0] + (c1[0] - c0[0]) * e, cy = c0[1] + (c1[1] - c0[1]) * e;
+      setView({ x: cx - w / 2, y: cy - h / 2, w, h, full: target.full });
+      if (t < 1) animRef.current = requestAnimationFrame(step);
+    };
+    animRef.current = requestAnimationFrame(step);
+  }, []);
+  useEffect(() => () => cancelAnimationFrame(animRef.current), []);
+
+  const fit = useCallback(() => animateView(frame()), [animateView, frame]);
+  useEffect(() => { cancelAnimationFrame(animRef.current); setView(frame()); }, [spaces, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** The view that shows a room, with the room kept in the part of the plan the panel does not cover. */
+  const viewForRoom = useCallback((space) => {
+    const whole = frame();
+    const rect = svgRef.current?.getBoundingClientRect();
+    const aspect = rect && rect.height ? rect.width / rect.height : 1.6;
+    const covered = rect && wide() ? Math.min(DRAWER_PX, rect.width * 0.6) / rect.width : 0;
+    const [x0, y0, x1, y1] = spaceBounds(space, mode);
+    const size = Math.max(x1 - x0, y1 - y0) * 1.8;
+    const fitW = Math.max(whole.w, whole.h * aspect);
+    const w = Math.min(fitW, Math.max(size / (1 - covered), size * aspect, fitW / 7)), h = w / aspect;
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    return { x: cx - (w * (1 - covered)) / 2, y: cy - h / 2, w, h, full: whole.full };
+  }, [frame, mode]);
+  // after the floor has changed (the effect above ran first), slide to the room that was asked for
   useEffect(() => {
     if (!flyId) return;
     const space = index?.spaceById.get(flyId);
-    if (space && space.floor_id === floorId) {
-      const whole = frame();
-      const [x0, y0, x1, y1] = spaceBounds(space, mode);
-      const size = Math.min(whole.full, Math.max(Math.max(x1 - x0, y1 - y0) * 1.8, whole.full / 7));
-      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-      setView({ x: cx - size / 2, y: cy - size / 2, w: size, h: size, full: whole.full });
-    }
+    if (space && space.floor_id === floorId) animateView(viewForRoom(space), flyFresh.current ? frame() : null);
+    flyFresh.current = false;
     setFlyId(null);
   }, [flyId, spaces, mode]); // eslint-disable-line react-hooks/exhaustive-deps
-  // moving to another floor yourself clears what was picked on the old one
-  const changeFloor = useCallback((id) => { setFloorId(id); setSelectedId(null); setHoverId(null); setHighlightAsset(null); }, []);
+  // a click on the plan only pans when the room would end up under the panel
+  const keepClear = useCallback((space) => {
+    const svg = svgRef.current, current = viewRef.current;
+    if (!svg || !current || !wide()) return;
+    const rect = svg.getBoundingClientRect(), ctm = svg.getScreenCTM();
+    if (!ctm) return;
+    const [x0, y0, x1, y1] = spaceBounds(space, mode);
+    const point = svg.createSVGPoint(); point.x = (x0 + x1) / 2; point.y = (y0 + y1) / 2;
+    const at = point.matrixTransform(ctm);
+    const limit = rect.right - Math.min(DRAWER_PX, rect.width * 0.6);
+    if (at.x < limit - 24) return;
+    const dx = (at.x - (rect.left + (limit - rect.left) / 2)) / ctm.a;
+    animateView({ ...current, x: current.x + dx });
+  }, [animateView, mode]);
 
   const zoomAt = useCallback((factor, clientX, clientY) => {
+    cancelAnimationFrame(animRef.current);
     setView((current) => {
       if (!current) return current;
       const svg = svgRef.current;
@@ -147,7 +205,8 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
   });
   function startDrag(event) {
     if (event.button !== 0 || !view) return;
-    const start = { x: event.clientX, y: event.clientY, view, moved: false };
+    cancelAnimationFrame(animRef.current);
+    const start = { x: event.clientX, y: event.clientY, view: viewRef.current || view, moved: false };
     dragRef.current = start;
     const move = (e) => {
       const dx = e.clientX - start.x, dy = e.clientY - start.y;
@@ -162,14 +221,16 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
   }
 
   // ---- choosing things
+  const changeFloor = useCallback((id) => { setFloorId(id); setSelectedId(null); setHoverId(null); setHighlightAsset(null); }, []);
   const pickRoom = useCallback((id, { fly = false, asset = null } = {}) => {
     const space = index?.spaceById.get(id);
     if (!space) return;
     const target = index.floorById.get(space.floor_id);
     if (target) { setBuilding(target.building); if (target.id !== floorId) setFloorId(target.id); }
     setUnlocated(null); setSelectedId(id); setHighlightAsset(asset);
-    if (fly) setFlyId(id);
-  }, [index, floorId]);
+    if (fly) { flyFresh.current = Boolean(target && target.id !== floorId); setFlyId(id); }
+    else keepClear(space);
+  }, [index, floorId, keepClear]);
   const clickRoom = (id) => { if (!dragRef.current?.moved) { if (selectedId === id) setSelectedId(null); else pickRoom(id); } };
   const chooseBuilding = (name) => {
     const here = floors.filter((item) => item.building === name);
@@ -210,9 +271,7 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
   const solid = ordered.filter((space) => space.space_type !== "void");
   const showLabels = view && view.full / view.w >= 2.4;
   const tag = selected || spaces.find((space) => space.id === hoverId) || null;
-  const drawerOpen = Boolean(selected) || unlocated !== null;
   const position = floorsHere.findIndex((item) => item.id === floorId);
-  const unlocatedAssets = unlocated ? index?.assetsByCode.get(unlocated) || [] : [];
 
   return (
     <section className="page geographic-page indoor-page">
@@ -240,7 +299,7 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
       {loading ? <p className="muted">正在讀取平面圖…</p> : error && !index ? <p className="form-error" role="alert">{error}</p> : !index || !floors.length || !data.spaces.length ? (
         <p className="muted">尚未匯入平面圖資料。{canAdmin ? "請按右上角「匯入平面圖資料」，選取描圖工具存出的 .rooms.json。" : "請洽系統管理員。"}</p>
       ) : (
-        <section className={`geo-workbench indoor-workbench ${drawerOpen ? "has-drawer" : ""}`} ref={workbenchRef}>
+        <section className="geo-workbench indoor-workbench" ref={workbenchRef}>
           <aside className="geo-list-panel">
             <header>
               <h2>房間清單</h2>
@@ -297,7 +356,7 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
 
           <section aria-label="室內平面圖" className="geo-map-panel indoor-map-panel">
             <header>
-              <div><span className="geo-live-dot" />{floor ? `${floor.building} ${floor.label}` : "平面圖"}　<span className="indoor-info">{stats.all} 個空間・{fmt(stats.area)} m²・財物 {fmt(stats.assets)} 筆</span></div>
+              <div><span className="geo-live-dot" />{floor ? `${floor.building} ${floor.label}` : "平面圖"}</div>
               <div className="geo-map-actions">
                 <span aria-label="選擇建築物" className="geo-basemap-toggle">
                   {buildings.map((name) => <button aria-pressed={building === name} className={building === name ? "is-active" : ""} key={name} onClick={() => chooseBuilding(name)} type="button">{name}</button>)}
@@ -307,17 +366,17 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
                   <button aria-pressed={mode === "flat"} className={mode === "flat" ? "is-active" : ""} onClick={() => setMode("flat")} type="button">平面</button>
                 </span>
                 <span aria-label="顏色依據" className="geo-basemap-toggle">
-                  <button aria-pressed={colorBy === "assets"} className={colorBy === "assets" ? "is-active" : ""} onClick={() => setColorBy("assets")} type="button">財物筆數</button>
                   <button aria-pressed={colorBy === "type"} className={colorBy === "type" ? "is-active" : ""} onClick={() => setColorBy("type")} type="button">空間類型</button>
+                  <button aria-pressed={colorBy === "assets"} className={colorBy === "assets" ? "is-active" : ""} onClick={() => setColorBy("assets")} type="button">財物筆數</button>
                 </span>
                 <button className="text-button" onClick={fit} type="button">回到全區</button>
                 <button className="text-button" onClick={toggleFullscreen} type="button">{fullscreen ? "離開全螢幕" : "全螢幕"}</button>
               </div>
             </header>
             <div className="indoor-stage">
-              <div className="indoor-plan">
-                {view && (
-                  <svg aria-label={`${floor?.building || ""}${floor?.label || ""}平面圖`} onMouseDown={startDrag} preserveAspectRatio="xMidYMid meet" ref={svgRef} role="img" viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}>
+              {view && (
+                <svg aria-label={`${floor?.building || ""}${floor?.label || ""}平面圖`} className="indoor-svg" onMouseDown={startDrag} preserveAspectRatio="xMidYMid meet" ref={svgRef} role="img" viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}>
+                  <g className="indoor-scene" key={`${floorId}-${mode}`}>
                     {mode === "iso" && <g className="indoor-slab">{solid.map((space) => <path d={spacePath(space, mode, SLAB)} fillRule="evenodd" key={space.id} />)}</g>}
                     <g className="indoor-edge">{solid.map((space) => <path d={spacePath(space, mode)} key={space.id} />)}</g>
                     <g className="indoor-rooms">
@@ -339,77 +398,75 @@ export function IndoorPlans({ canAdmin, assets, focus, onFocusHandled, onOpenAss
                         return <text fontSize={view.w / (showLabels ? 70 : 52)} key={space.id} x={x} y={y}>{spaceTitle(space)}</text>;
                       })}
                     </g>
-                  </svg>
-                )}
-                <nav aria-label="樓層" className="indoor-floors">
-                  {[...floorsHere].reverse().map((item) => <button aria-current={item.id === floorId} className={item.id === floorId ? "is-active" : ""} key={item.id} onClick={() => changeFloor(item.id)} title={`${item.building} ${item.label}`} type="button">{item.label}</button>)}
-                </nav>
-                <div className="indoor-zoom" role="group" aria-label="縮放">
-                  <button aria-label="放大" onClick={() => zoomAt(1 / 1.4)} type="button">+</button>
-                  <button aria-label="縮小" onClick={() => zoomAt(1.4)} type="button">−</button>
-                </div>
-                {position >= 0 && floorsHere.length > 1 && <span className="indoor-hint">{position + 1} / {floorsHere.length} 層</span>}
-              </div>
-
-              {drawerOpen && (
-                <aside aria-label={selected ? "房間財物" : "未定位財物"} className="indoor-drawer">
-                  {selected ? (
-                    <>
-                      <header>
-                        <div>
-                          <p>{SPACE_TYPE_LABELS[selected.space_type]}・{fmt(selected.area_m2, 1)} m²{selected.tool_id ? `・${selected.tool_id}` : ""}</p>
-                          <h2>{spaceTitle(selected)}</h2>
-                          {selected.name && selected.usage && <span className="indoor-note">{selected.usage}</span>}
-                        </div>
-                        <button aria-label="關閉" className="indoor-close" onClick={() => setSelectedId(null)} type="button">×</button>
-                      </header>
-                      <ul className="indoor-codes">
-                        {selectedLinks.map((link) => {
-                          const shared = (index.spacesByCode.get(link.location_code) || []).length > 1;
-                          return (
-                            <li key={link.location_code}>
-                              <strong>{link.location_code}</strong><span>{link.location_name || "—"}</span>
-                              <em>{fmt(index.countByCode.get(link.location_code) || 0)} 筆{shared ? "・共用" : ""}</em>
-                              {onOpenInQuery && <button className="row-action" onClick={() => onOpenInQuery({ code: link.location_code, name: link.location_name })} title="在財物查詢中列出這個存置地點的財物" type="button">查詢</button>}
-                            </li>
-                          );
-                        })}
-                        {!selectedLinks.length && <li className="is-empty">尚未對應存置地點，所以沒有財物。{canAdmin ? "可以按「編輯」指派。" : ""}</li>}
-                      </ul>
-                      {selectedLinks.some((link) => (index.spacesByCode.get(link.location_code) || []).length > 1) && (
-                        <p className="indoor-shared">共用代碼的財物只記錄存置地點，無法分辨在哪一間，所以每個共用的房間都會列出同一批財物。</p>
-                      )}
-                      {index.hasAssets
-                        ? <AssetList assets={selectedAssets} empty="這個房間目前沒有財物。" highlightId={highlightAsset} onOpenAsset={onOpenAsset} />
-                        : <p className="indoor-empty">財物清單尚未載入。</p>}
-                      {canAdmin && <button className="indoor-edit" onClick={() => setEditingId(selected.id)} type="button">編輯這個房間</button>}
-                    </>
-                  ) : (
-                    <>
-                      <header>
-                        <div>
-                          <p>這些存置地點還沒有對應到平面圖上的房間</p>
-                          <h2>{unlocated ? `${unlocated}　${index.nameByCode.get(unlocated) || ""}` : "未定位財物"}</h2>
-                        </div>
-                        <button aria-label="關閉" className="indoor-close" onClick={() => setUnlocated(null)} type="button">×</button>
-                      </header>
-                      {unlocated ? (
-                        <>
-                          <button className="indoor-back" onClick={() => setUnlocated("")} type="button">‹ 全部未定位的存置地點</button>
-                          {onOpenInQuery && <button className="row-action indoor-query" onClick={() => onOpenInQuery({ code: unlocated, name: index.nameByCode.get(unlocated) })} type="button">在財物查詢中列出</button>}
-                          <AssetList assets={unlocatedAssets} highlightId={highlightAsset} onOpenAsset={onOpenAsset} />
-                        </>
-                      ) : (
-                        <ul className="indoor-unlocated-list">
-                          {index.unlocated.map((item) => (
-                            <li key={item.code}><button onClick={() => setUnlocated(item.code)} type="button"><strong>{item.code}</strong><span>{item.name || "—"}</span><em>{fmt(item.count)} 筆</em></button></li>
-                          ))}
-                        </ul>
-                      )}
-                    </>
-                  )}
-                </aside>
+                  </g>
+                </svg>
               )}
+              <nav aria-label="樓層" className="indoor-floors">
+                {[...floorsHere].reverse().map((item) => <button aria-current={item.id === floorId} className={item.id === floorId ? "is-active" : ""} key={item.id} onClick={() => changeFloor(item.id)} title={`${item.building} ${item.label}`} type="button">{item.label}</button>)}
+              </nav>
+              <div className="indoor-zoom" role="group" aria-label="縮放">
+                <button aria-label="放大" onClick={() => zoomAt(1 / 1.4)} type="button">+</button>
+                <button aria-label="縮小" onClick={() => zoomAt(1.4)} type="button">−</button>
+              </div>
+              <p className="indoor-hint">{position >= 0 && floorsHere.length > 1 ? `${position + 1} / ${floorsHere.length} 層・` : ""}{stats.all} 個空間・{fmt(stats.area)} m²・財物 {fmt(stats.assets)} 筆</p>
+
+              <aside aria-hidden={!drawerOpen} aria-label={shownRoom ? "房間財物" : "未定位財物"} className={`indoor-drawer ${drawerOpen ? "is-open" : ""}`} inert={!drawerOpen}>
+                {shownRoom ? (
+                  <div className="indoor-drawer-body" key={shownRoom.id}>
+                    <header>
+                      <div>
+                        <p>{SPACE_TYPE_LABELS[shownRoom.space_type]}・{fmt(shownRoom.area_m2, 1)} m²{shownRoom.tool_id ? `・${shownRoom.tool_id}` : ""}</p>
+                        <h2>{spaceTitle(shownRoom)}</h2>
+                        {shownRoom.name && shownRoom.usage && <span className="indoor-note">{shownRoom.usage}</span>}
+                      </div>
+                      <button aria-label="關閉" className="indoor-close" onClick={() => setSelectedId(null)} type="button">×</button>
+                    </header>
+                    <ul className="indoor-codes">
+                      {shownLinks.map((link) => {
+                        const shared = (index.spacesByCode.get(link.location_code) || []).length > 1;
+                        return (
+                          <li key={link.location_code}>
+                            <strong>{link.location_code}</strong><span>{link.location_name || "—"}</span>
+                            <em>{fmt(index.countByCode.get(link.location_code) || 0)} 筆{shared ? "・共用" : ""}</em>
+                            {onOpenInQuery && <button className="row-action" onClick={() => onOpenInQuery({ code: link.location_code, name: link.location_name })} title="在財物查詢中列出這個存置地點的財物" type="button">查詢</button>}
+                          </li>
+                        );
+                      })}
+                      {!shownLinks.length && <li className="is-empty">尚未對應存置地點，所以沒有財物。{canAdmin ? "可以按「編輯」指派。" : ""}</li>}
+                    </ul>
+                    {shownLinks.some((link) => (index.spacesByCode.get(link.location_code) || []).length > 1) && (
+                      <p className="indoor-shared">共用代碼的財物只記錄存置地點，無法分辨在哪一間，所以每個共用的房間都會列出同一批財物。</p>
+                    )}
+                    {index.hasAssets
+                      ? <AssetList assets={shownAssets} empty="這個房間目前沒有財物。" highlightId={highlightAsset} onOpenAsset={onOpenAsset} />
+                      : <p className="indoor-empty">財物清單尚未載入。</p>}
+                    {canAdmin && <button className="indoor-edit" onClick={() => setEditingId(shownRoom.id)} type="button">編輯這個房間</button>}
+                  </div>
+                ) : shown.unlocated !== null ? (
+                  <div className="indoor-drawer-body" key={`unlocated-${shownCode}`}>
+                    <header>
+                      <div>
+                        <p>這些存置地點還沒有對應到平面圖上的房間</p>
+                        <h2>{shownCode ? `${shownCode}　${index.nameByCode.get(shownCode) || ""}` : "未定位財物"}</h2>
+                      </div>
+                      <button aria-label="關閉" className="indoor-close" onClick={() => setUnlocated(null)} type="button">×</button>
+                    </header>
+                    {shownCode ? (
+                      <>
+                        <button className="indoor-back" onClick={() => setUnlocated("")} type="button">‹ 全部未定位的存置地點</button>
+                        {onOpenInQuery && <button className="row-action indoor-query" onClick={() => onOpenInQuery({ code: shownCode, name: index.nameByCode.get(shownCode) })} type="button">在財物查詢中列出</button>}
+                        <AssetList assets={unlocatedAssets} highlightId={highlightAsset} onOpenAsset={onOpenAsset} />
+                      </>
+                    ) : (
+                      <ul className="indoor-unlocated-list">
+                        {index.unlocated.map((item) => (
+                          <li key={item.code}><button onClick={() => setUnlocated(item.code)} type="button"><strong>{item.code}</strong><span>{item.name || "—"}</span><em>{fmt(item.count)} 筆</em></button></li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ) : null}
+              </aside>
             </div>
             <footer>
               {colorBy === "assets"
