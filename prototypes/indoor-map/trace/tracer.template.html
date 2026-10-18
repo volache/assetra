@@ -2131,6 +2131,42 @@ function unionRings(a, b) {
     return Math.abs((v[0] - u[0]) * (p[1] - u[1]) - (v[1] - u[1]) * (p[0] - u[0])) / Math.max(1, dist(u, v)) > 0.3;
   });
 }
+/** Whether the outlines of two rings cross each other (touching or sharing an edge does not count). */
+function ringsCross(a, b) {
+  const edgesOf = (r) => r.map((p, i) => [p, r[(i + 1) % r.length]]);
+  const eb = edgesOf(b);
+  return edgesOf(a).some(([p, q]) => eb.some(([c, d]) => {
+    const den = (q[0] - p[0]) * (d[1] - c[1]) - (q[1] - p[1]) * (d[0] - c[0]);
+    if (Math.abs(den) < 1e-9) return false;
+    const s = ((c[0] - p[0]) * (d[1] - c[1]) - (c[1] - p[1]) * (d[0] - c[0])) / den;
+    const u = ((c[0] - p[0]) * (q[1] - p[1]) - (c[1] - p[1]) * (q[0] - p[0])) / den;
+    return s > 1e-4 && s < 1 - 1e-4 && u > 1e-4 && u < 1 - 1e-4;
+  }));
+}
+/**
+ * The outline of two rooms put together, whichever way they meet: one inside the other, overlapping, or sharing an edge.
+ * Null when the result would not be one piece.
+ */
+function unionAny(a, b) {
+  const onOrIn = (ring, p) => inRing(ring, p) || ring.some((v, i) => dist(p, closestOnSegment(p, v, ring[(i + 1) % ring.length]).point) < 0.6);
+  if (!ringsCross(a, b)) {
+    if (b.every((q) => onOrIn(a, q))) return a;
+    if (a.every((q) => onOrIn(b, q))) return b;
+    return unionRings(a, b);
+  }
+  // overlapping: cut both outlines at their crossings, keep the pieces that lie in either room and join them up again
+  const edgesOf = (r) => r.map((p, i) => [p, r[(i + 1) % r.length]]);
+  const faces = wallFaces([...edgesOf(a), ...edgesOf(b)], 1).filter((f) => { const c = interiorPoint(f); return inRing(a, c) || inRing(b, c); });
+  let outline = faces.shift();
+  for (let progress = true; progress && faces.length;) {
+    progress = false;
+    for (let i = 0; i < faces.length; i++) {
+      const joined = unionRings(outline, faces[i]);
+      if (joined) { outline = joined; faces.splice(i, 1); progress = true; break; }
+    }
+  }
+  return faces.length ? null : outline;
+}
 /** Join rooms that touch along an edge into one hand-drawn room (it keeps the name and location of the biggest named one). */
 function mergeRooms(ids) {
   const list = ids.map(roomById).filter(Boolean);
@@ -2140,15 +2176,16 @@ function mergeRooms(ids) {
   for (let progress = true; progress && rest.length;) {
     progress = false;
     for (let i = 0; i < rest.length; i++) {
-      const merged = unionRings(outline, rest[i].ring);
+      const merged = unionAny(outline, rest[i].ring);
       if (merged) { outline = merged; joined.push(rest[i]); rest.splice(i, 1); progress = true; break; }
     }
   }
-  if (rest.length) return { error: `有 ${rest.length} 個房間跟其他房間沒有共用邊，沒辦法合在一起` };
+  if (rest.length) return { error: `有 ${rest.length} 個房間跟其他房間不相連（沒有共用邊、也沒有重疊），沒辦法合在一起` };
   pushHistory();
   const keeper = [...joined].sort((p, q) => Number(!!(q.locationCode || q.name)) - Number(!!(p.locationCode || p.name)) || roomArea(q) - roomArea(p))[0];
   joined.forEach((r) => { if (r.auto) suppressed.push([...(r.anchor || interiorPoint(r.ring, r.holes || [])), 1]); });
-  const holes = joined.flatMap((r) => r.holes || []);
+  // a hole that now lies inside another of the joined rooms is part of the merged room
+  const holes = joined.flatMap((r) => (r.holes || []).filter((h) => !joined.some((o) => o !== r && inRing(o.ring, interiorPoint(h)))));
   const merged = { ...keeper, ring: outline.map((q) => [round1(q[0]), round1(q[1])]), auto: false };
   delete merged.anchor; delete merged.curve; delete merged.holes;
   if (holes.length) merged.holes = holes;
