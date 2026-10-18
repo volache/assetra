@@ -82,9 +82,6 @@ function normalizeRows(rows, sourceType) {
       };
     });
 }
-function toRocDate(value) {
-  return rocDate(value);
-}
 
 function readWorksheetRows(sheet) {
   const [headers = [], ...records] = XLSX.utils.sheet_to_json(sheet, {

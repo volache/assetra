@@ -20,9 +20,7 @@ import {
   highlightTermsFactory,
   looksLikeRuleSyntax,
   normalized,
-  searchFieldAliases,
   searchTermWarnings,
-  tokenizeSearch,
 } from "./search";
 import { KeywordSearchBox } from "./KeywordSearchBox";
 import { LocationMap } from "../indoor/LocationMap";

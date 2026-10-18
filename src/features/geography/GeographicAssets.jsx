@@ -216,7 +216,7 @@ export function GeographicAssets() {
           return result;
         }, {});
         if (isCurrent) setOwnershipDocumentsByLandId(grouped);
-      } catch (error) {
+      } catch {
         if (isCurrent) setOwnershipDocumentsByLandId({});
       }
     }

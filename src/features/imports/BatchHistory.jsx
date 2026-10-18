@@ -1,6 +1,6 @@
 import React, { Fragment, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../supabase";
-import { rocDate, rocDateTime } from "../../lib/formatters";
+import { rocDate } from "../../lib/formatters";
 import { sourceLabels } from "../../lib/labels";
 import { CapsuleSpinner } from "../../components/FeedbackCenter";
 
