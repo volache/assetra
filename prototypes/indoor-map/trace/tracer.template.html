@@ -12,8 +12,23 @@
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
   body { background: var(--paper); color: var(--ink); display: grid; font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif; grid-template-rows: auto auto minmax(0, 1fr) auto; }
-  header { align-items: center; background: #fff; border-bottom: 1px solid var(--rule); display: flex; flex-wrap: wrap; gap: 8px 12px; padding: 8px 14px; }
-  header h1 { font-size: 16px; margin: 0 6px 0 0; }
+  /* everything stays on one row; the shortcut hints and button padding give way first, and only then does the row scroll */
+  header { align-items: center; background: #fff; border-bottom: 1px solid var(--rule); display: flex; flex-wrap: nowrap; gap: 8px 10px; overflow-x: auto; padding: 8px 14px; scrollbar-width: thin; }
+  header > * { flex: none; }
+  header > .spacer { flex: 1 1 0; min-width: 0; }
+  header h1 { font-size: 16px; margin: 0 4px 0 0; white-space: nowrap; }
+  header button, header .group { white-space: nowrap; }
+  @media (max-width: 1900px) { header #tools kbd { display: none; } }
+  @media (max-width: 1560px) {
+    header .group button, header .btn, header .savechip { font-size: 12.5px; padding: 6px 7px; }
+    header { gap: 8px 6px; padding: 8px 10px; }
+    #floors .badge { display: none; }
+  }
+  @media (max-width: 1400px) {
+    header .group button, header .btn, header .savechip { font-size: 12px; padding: 6px 5px; }
+    header { gap: 6px 4px; padding: 8px 8px; }
+    header h1 { font-size: 14px; margin: 0 2px 0 0; }
+  }
   .group { align-items: center; background: #eef2f9; border-radius: 10px; display: inline-flex; padding: 3px; }
   button, select, input { font: inherit; }
   .group button, .btn { background: transparent; border: 0; border-radius: 8px; color: var(--ink-2); cursor: pointer; font-size: 13px; padding: 6px 11px; }
