@@ -5,7 +5,7 @@ import React, {
   useState,
 } from "react";
 import mapboxgl from "mapbox-gl";
-import { money } from "../../lib/formatters";
+import { money, formatNumber } from "../../lib/formatters";
 import { supabase } from "../../supabase";
 import { requestOwnershipDocument } from "../ownership/api";
 import { normalized } from "../inventory/search";
@@ -820,9 +820,9 @@ export function GeographicAssets() {
           </section>
           <div className="result-summary">
             <p className="result-count">
-              查詢結果：<strong>{filtered.length.toLocaleString()}</strong> 筆
+              查詢結果：<strong>{formatNumber(filtered.length)}</strong> 筆
             </p>
-            <p>土地總面積：{totalArea.toLocaleString()} m²</p>
+            <p>土地總面積：{formatNumber(totalArea)} m²</p>
             <p>帳面價值：NT$ {money(totalValue)}</p>
           </div>
           <div className="geo-table-wrap">
@@ -852,16 +852,16 @@ export function GeographicAssets() {
                         <small>{land.sectionCode}</small>
                       </td>
                       <td>{land.landNumber}</td>
-                      <td className="money">{land.area.toLocaleString()}</td>
+                      <td className="money">{formatNumber(land.area)}</td>
                       <td>
                         <strong>{land.zoningLabel}</strong>
                         <small>{land.landUseType}</small>
                       </td>
                       <td className="money">
-                        {land.announcedLandValue.toLocaleString()}
+                        {formatNumber(land.announcedLandValue)}
                       </td>
                       <td className="money">
-                        {land.announcedLandPrice.toLocaleString()}
+                        {formatNumber(land.announcedLandPrice)}
                       </td>
                       <td className="mono">
                         <strong>{number}</strong>
@@ -968,7 +968,7 @@ export function GeographicAssets() {
                       </strong>
                       <small>{land.assetNumber}</small>
                     </div>
-                    <em>{land.area.toLocaleString()} m²</em>
+                    <em>{formatNumber(land.area)} m²</em>
                   </button>
                 ))
               ) : (
@@ -982,7 +982,7 @@ export function GeographicAssets() {
               </div>
               <div>
                 <span>土地總面積</span>
-                <strong>{totalArea.toLocaleString()} m²</strong>
+                <strong>{formatNumber(totalArea)} m²</strong>
               </div>
               <div>
                 <span>帳面價值</span>
@@ -1084,7 +1084,7 @@ export function GeographicAssets() {
                   <dl>
                     <div>
                       <dt>面積</dt>
-                      <dd>{selected.area.toLocaleString()} m²</dd>
+                      <dd>{formatNumber(selected.area)} m²</dd>
                     </div>
                     <div>
                       <dt>帳面價值</dt>
@@ -1199,14 +1199,14 @@ export function GeographicAssets() {
                       <small>{land.sectionCode}</small>
                     </td>
                     <td>{land.landNumber}</td>
-                    <td className="money">{land.area.toLocaleString()}</td>
+                    <td className="money">{formatNumber(land.area)}</td>
                     <td>{land.zoning}</td>
                     <td>{land.landUseType}</td>
                     <td className="money">
-                      {land.announcedLandValue.toLocaleString()}
+                      {formatNumber(land.announcedLandValue)}
                     </td>
                     <td className="money">
-                      {land.announcedLandPrice.toLocaleString()}
+                      {formatNumber(land.announcedLandPrice)}
                     </td>
                     <td className="mono">{land.assetNumber}</td>
                     <td>{land.name}</td>

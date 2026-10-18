@@ -1,6 +1,6 @@
 import React, { Fragment, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../supabase";
-import { rocDate } from "../../lib/formatters";
+import { rocDate, formatNumber } from "../../lib/formatters";
 import { sourceLabels } from "../../lib/labels";
 import { CapsuleSpinner } from "../../components/FeedbackCenter";
 
@@ -220,7 +220,7 @@ export function BatchHistory({ imports, onDeleted }) {
       setSelected(null);
       setChanges([]);
       setMessage(
-        `已刪除匯入批次，以及 ${snapshots.toLocaleString()} 筆快照與 ${changesCount.toLocaleString()} 筆差異資料。`,
+        `已刪除匯入批次，以及 ${formatNumber(snapshots)} 筆快照與 ${formatNumber(changesCount)} 筆差異資料。`,
       );
       await onDeleted();
     } catch (deleteError) {
@@ -268,7 +268,7 @@ export function BatchHistory({ imports, onDeleted }) {
                 </span>
                 <strong>{entry.fileName}</strong>
                 <small>
-                  {entry.at} · {entry.count.toLocaleString()} 筆
+                  {entry.at} · {formatNumber(entry.count)} 筆
                 </small>
                 <em>
                   新增 {entry.summary?.added ?? "—"}／更新{" "}
@@ -342,7 +342,7 @@ export function BatchHistory({ imports, onDeleted }) {
                   <div className="result-summary">
                     <p className="result-count">
                       查詢結果：
-                      <strong>{filtered.length.toLocaleString()}</strong> 筆
+                      <strong>{formatNumber(filtered.length)}</strong> 筆
                     </p>
                     <label className="page-size">
                       每頁

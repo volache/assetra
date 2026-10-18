@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { formatNumber } from "../../lib/formatters";
 import { fetchFunction } from "../../lib/functions";
 import { accountCodeFor } from "../../lib/accounts";
 import { roleDescriptions, roleLabels } from "../../lib/labels";
@@ -561,10 +562,10 @@ export function Accounts({ store, setStore, onUsersChanged }) {
       </section>
       <div className="result-summary user-result-summary">
         <p className="result-count">
-          使用者：<strong>{filteredUsers.length.toLocaleString()}</strong> 位
+          使用者：<strong>{formatNumber(filteredUsers.length)}</strong> 位
         </p>
         <p className="directory-note">
-          清冊已辨識 {directory.length.toLocaleString()} 位保管人
+          清冊已辨識 {formatNumber(directory.length)} 位保管人
         </p>
         <label className="page-size">
           每頁顯示

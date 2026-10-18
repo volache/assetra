@@ -1,4 +1,4 @@
-import { money } from "../../lib/formatters";
+import { money, formatNumber } from "../../lib/formatters";
 import { FilterCombo } from "../inventory/QueryControls";
 
 function GeoListViewContent({
@@ -134,9 +134,9 @@ function GeoListViewContent({
       <section className="geo-table-panel">
         <div className="result-summary geo-result-summary">
           <p className="result-count">
-            查詢結果：<strong>{filtered.length.toLocaleString()}</strong> 筆
+            查詢結果：<strong>{formatNumber(filtered.length)}</strong> 筆
           </p>
-          <p>土地總面積：{totalArea.toLocaleString()} m²</p>
+          <p>土地總面積：{formatNumber(totalArea)} m²</p>
           <p>帳面價值：NT$ {money(totalValue)}</p>
           <label className="page-size">
             每頁顯示
@@ -181,16 +181,16 @@ function GeoListViewContent({
                       <small>{land.sectionCode}</small>
                     </td>
                     <td>{land.landNumber}</td>
-                    <td className="money">{land.area.toLocaleString()}</td>
+                    <td className="money">{formatNumber(land.area)}</td>
                     <td>
                       <strong>{land.zoningLabel}</strong>
                       <small>{land.landUseType}</small>
                     </td>
                     <td className="money">
-                      {land.announcedLandValue.toLocaleString()}
+                      {formatNumber(land.announcedLandValue)}
                     </td>
                     <td className="money">
-                      {land.announcedLandPrice.toLocaleString()}
+                      {formatNumber(land.announcedLandPrice)}
                     </td>
                     <td className="mono">
                       <strong>{number}</strong>
@@ -457,9 +457,9 @@ export function GeoListView({
       <section className="geo-table-panel">
         <div className="result-summary">
           <p className="result-count">
-            查詢結果：<strong>{filtered.length.toLocaleString()}</strong> 筆
+            查詢結果：<strong>{formatNumber(filtered.length)}</strong> 筆
           </p>
-          <p>土地總面積：{totalArea.toLocaleString()} m²</p>
+          <p>土地總面積：{formatNumber(totalArea)} m²</p>
           <p>帳面價值：NT$ {money(totalValue)}</p>
         </div>
         <div className="geo-table-wrap">
@@ -489,16 +489,16 @@ export function GeoListView({
                       <small>{land.sectionCode}</small>
                     </td>
                     <td>{land.landNumber}</td>
-                    <td className="money">{land.area.toLocaleString()}</td>
+                    <td className="money">{formatNumber(land.area)}</td>
                     <td>
                       <strong>{land.zoningLabel}</strong>
                       <small>{land.landUseType}</small>
                     </td>
                     <td className="money">
-                      {land.announcedLandValue.toLocaleString()}
+                      {formatNumber(land.announcedLandValue)}
                     </td>
                     <td className="money">
-                      {land.announcedLandPrice.toLocaleString()}
+                      {formatNumber(land.announcedLandPrice)}
                     </td>
                     <td className="mono">
                       <strong>{number}</strong>
